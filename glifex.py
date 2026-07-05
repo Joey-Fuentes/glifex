@@ -30,7 +30,7 @@ from pathlib import Path
 for _stream in (sys.stdout, sys.stderr):
     if _stream and hasattr(_stream, "reconfigure"):
         try:
-            _stream.reconfigure(encoding="utf-8")
+            _stream.reconfigure(encoding="utf-8", line_buffering=True)
         except Exception:
             pass
 
