@@ -109,7 +109,7 @@ plus `CodeQL` as its own workflow.
 
 | Job | Expectation | If it fails |
 |---|---|---|
-| lint | ✅ should pass (Biome is non-blocking on purpose) | `pip install ruff && ruff check glifex.py` locally, fix, push |
+| lint | ⚠️ first run found real issues (unused imports, format) — the triage loop below is normal | `pip install ruff && ruff check glifex.py` locally, fix, push |
 | corpus | ✅ should pass | run `node web/build.mjs`, commit the regenerated JSON |
 | matrix / ubuntu | ⚠️ the 7 unproven languages' first execution | failures are per-language and local to that language's harness or plugin `.toml` — fix one at a time; nothing else is blocked |
 | matrix / macos | ⚠️ same + `gcc` is clang here (C/C++/asm should still work) | asm-x86_64 will skip on Apple Silicon runners — correct behavior, not a failure |

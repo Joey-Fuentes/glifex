@@ -19,7 +19,7 @@ jobs:
         with: { python-version: "3.13" }
       - name: Ruff (Python lint + format check)
         run: |
-          pip install ruff
+          pip install ruff==0.15.20   # pinned: new ruff releases add rules; bump deliberately
           ruff check glifex.py
           ruff format --check glifex.py
       - uses: actions/setup-node@v4

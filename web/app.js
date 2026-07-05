@@ -153,9 +153,10 @@ async function run() {
   const runner = await window.Runtimes.get(state.lang);
   if (!runner || runner === "native") {
     res.innerHTML = `<div class="needs-runtime">The <b>${state.lang}</b> runtime isn't vendored.
-      JavaScript runs with zero setup; for Python/TypeScript/Ruby run
-      <code>node web/fetch-runtimes.mjs</code> once. Go, Java, C#, C++ are CLI-only:
-      <code>glifex test ${p.id} ${state.lang}</code>.</div>`;
+      JavaScript runs with zero setup. Python, TypeScript, and Ruby run in-browser once the
+      site operator vendors their runtimes (<code>node web/fetch-runtimes.mjs</code>).
+      All other languages — Go, Java, C#, C, C++, Rust, PHP, Dart, Zig, and the assembly
+      family — are CLI-only: <code>glifex test ${p.id} ${state.lang}</code>.</div>`;
     return;
   }
   res.innerHTML = `<div class="hint">Running on the ${state.lang} WASM runtime…</div>`;

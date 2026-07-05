@@ -194,8 +194,6 @@ glifex/
 │   └── ...                      # add a file here to add a language
 ├── AGENTS.md                    # the contract, for AI assistants
 ├── go.mod                       # ONE Go module covers every go/ directory
-├── package.json                 # JS harness deps + TypeScript
-├── tsconfig.json                # offline TS → JS compilation
 ├── .tool-versions               # pinned runtime versions (used by mise)
 ├── .devcontainer/               # Dev Container / Codespaces definition
 ├── .vscode/                     # tasks (run/test pickers), settings, launch, extensions

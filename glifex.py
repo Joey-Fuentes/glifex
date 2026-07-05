@@ -164,21 +164,22 @@ def _arch_ok(spec: dict) -> bool:
     return aliases.get(have, have) == aliases.get(want.lower(), want.lower())
 
 
-def _run_variant(prob: Path, name: str, spec: dict, variant: str, mode: str) -> bool:
+def _run_variant(prob: Path, name: str, spec: dict, variant: str, mode: str) -> bool | None:
+    """True = ran & passed, False = ran & failed, None = skipped."""
     langdir = prob / name
     if not langdir.is_dir():
         print(dim(f"  {name}: no {name}/ folder in this problem — skipping"))
-        return True
+        return None
     if not _arch_ok(spec):
         print(dim(f"  {name}: requires {spec['arch']} (this machine isn't) — skipping"))
-        return True
+        return None
     if not _platform_ok(spec):
         print(dim(f"  {name}: not supported on this OS ({', '.join(spec['platforms'])} only) — skipping"))
-        return True
+        return None
     exe = (spec.get("detect") or "x").split()[0]
     if not shutil.which(exe):
         print(dim(f"  {name}: toolchain not installed — skipping (run `glifex doctor`)"))
-        return True
+        return None
     key = {"test": "test_cmd", "run": "run_cmd", "bench": "bench_cmd"}[mode]
     cmd = _build_cmd(spec, key, variant) or _build_cmd(spec, "test_cmd", variant)
     r = run_cmd(cmd, langdir)
@@ -199,10 +200,12 @@ def cmd_test(args):
         print(dim(f"── {name} ──"))
         results[name] = _run_variant(prob, name, langs[name], variant, "test")
     print()
-    passed = sum(1 for v in results.values() if v)
-    line = f"{passed}/{len(results)} languages passed"
-    print(green(line) if passed == len(results) else red(line))
-    sys.exit(0 if passed == len(results) else 1)
+    ran_pass = sum(1 for v in results.values() if v is True)
+    ran_fail = sum(1 for v in results.values() if v is False)
+    skipped = sum(1 for v in results.values() if v is None)
+    line = f"{ran_pass} passed, {ran_fail} failed, {skipped} skipped ({len(results)} registered)"
+    print(red(line) if ran_fail else green(line))
+    sys.exit(1 if ran_fail else 0)
 
 
 def cmd_run(args):
