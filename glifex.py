@@ -15,11 +15,11 @@ Usage:
     glifex doctor                                    # toolchain ✓/✗ matrix
     glifex db test <problem>                         # run a database problem (SQLite offline / Postgres hosted)
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -35,13 +35,26 @@ PROBLEMS_DB = ROOT / "problems-db"
 VARIANTS = ("practice", "clean", "optimized")
 HIDDEN = ("clean", "optimized", "brute_force")
 
+
 # ─── colours (skipped when not a TTY) ───────────────────────────────
 def _c(code: str, s: str) -> str:
     return s if not sys.stdout.isatty() else f"\033[{code}m{s}\033[0m"
-def green(s): return _c("32", s)
-def red(s):   return _c("31", s)
-def dim(s):   return _c("2", s)
-def bold(s):  return _c("1", s)
+
+
+def green(s):
+    return _c("32", s)
+
+
+def red(s):
+    return _c("31", s)
+
+
+def dim(s):
+    return _c("2", s)
+
+
+def bold(s):
+    return _c("1", s)
 
 
 # ─── plugin registry ────────────────────────────────────────────────
@@ -73,7 +86,10 @@ def resolve_problem(name: str, db: bool = False) -> Path:
 # ─── command runner ─────────────────────────────────────────────────
 def run_cmd(cmd: str, cwd: Path, capture: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(
-        cmd, cwd=cwd, shell=True, text=True,
+        cmd,
+        cwd=cwd,
+        shell=True,
+        text=True,
         capture_output=capture,
     )
 
@@ -94,7 +110,9 @@ def cmd_doctor(args):
                 found = r.returncode == 0
                 version = (r.stdout or r.stderr or "").strip().splitlines()[0] if found else ""
         if found and not _arch_ok(spec):
-            print(f"  {dim('−')}  {name:<12} {dim('toolchain present but needs ' + spec['arch'] + ' hardware — will skip')}")
+            print(
+                f"  {dim('−')}  {name:<12} {dim('toolchain present but needs ' + spec['arch'] + ' hardware — will skip')}"
+            )
             continue
         mark = green("✓") if found else red("✗")
         ok += found
@@ -102,10 +120,9 @@ def cmd_doctor(args):
         print(f"  {mark}  {name:<12} {dim(version)}{hint}")
     # database engines
     print()
-    sqlite_ok = True  # stdlib
     print(f"  {green('✓')}  {'db:sqlite':<12} {dim('python stdlib (offline engine)')}")
     pg = shutil.which("psql") or shutil.which("docker")
-    mark = green('✓') if pg else red('✗')
+    mark = green("✓") if pg else red("✗")
     print(f"  {mark}  {'db:postgres':<12} {dim('docker or psql (hosted engine)')}")
     print(f"\n{ok}/{len(langs)} language toolchains present.\n")
 
@@ -120,6 +137,7 @@ def _build_cmd(spec: dict, key: str, variant: str) -> str | None:
 
 def _arch_ok(spec: dict) -> bool:
     import platform
+
     want = spec.get("arch")
     if not want:
         return True
@@ -155,7 +173,8 @@ def cmd_test(args):
     results = {}
     for name in targets:
         if name not in langs:
-            print(red(f"  unknown language '{name}'")); continue
+            print(red(f"  unknown language '{name}'"))
+            continue
         print(dim(f"── {name} ──"))
         results[name] = _run_variant(prob, name, langs[name], variant, "test")
     print()
@@ -185,6 +204,7 @@ def cmd_bench(args):
 # ─── database track ─────────────────────────────────────────────────
 def cmd_db_test(args):
     import sqlite3
+
     prob = resolve_problem(args.problem, db=True)
     schema = (prob / "schema.sql").read_text()
     seed = (prob / "seed.sql").read_text()
@@ -222,6 +242,7 @@ def cmd_db_test(args):
 def cmd_db_bench(args):
     """EXPLAIN-based plan comparison: the honest benchmark for SQL."""
     import sqlite3
+
     prob = resolve_problem(args.problem, db=True)
     schema = (prob / "schema.sql").read_text()
     seed = (prob / "seed.sql").read_text()
@@ -229,7 +250,8 @@ def cmd_db_bench(args):
     def plan(sql: str) -> list[str]:
         con = sqlite3.connect(":memory:")
         try:
-            con.executescript(schema); con.executescript(seed)
+            con.executescript(schema)
+            con.executescript(seed)
             return [r[3] for r in con.execute("EXPLAIN QUERY PLAN " + sql)]
         finally:
             con.close()
@@ -244,13 +266,18 @@ def cmd_db_bench(args):
         try:
             steps = plan(sql)
         except Exception as e:
-            print(red(f"  {variant}: query error: {e}")); continue
+            print(red(f"  {variant}: query error: {e}"))
+            continue
         print(f"\n  {bold(variant)}:")
         for s in steps:
             flag = red("  ← full scan") if s.startswith("SCAN") and "USING" not in s else ""
             print(f"    {s}{flag}")
-    print(dim("\nSCAN = walks every row; SEARCH ... USING INDEX = uses an index. "
-              "The optimized query should SEARCH where practice SCANs.\n"))
+    print(
+        dim(
+            "\nSCAN = walks every row; SEARCH ... USING INDEX = uses an index. "
+            "The optimized query should SEARCH where practice SCANs.\n"
+        )
+    )
 
 
 # ─── scaffolding ────────────────────────────────────────────────────
@@ -265,24 +292,26 @@ def cmd_new(args):
     if prob.exists():
         sys.exit(red(f"{prob} already exists"))
     prob.mkdir(parents=True)
-    (prob / "problem.md").write_text(f"# {args.problem}\n\n## Task\n\n_Describe the problem._\n\n## Signature\n\n`solve(input) -> output`\n")
+    (prob / "problem.md").write_text(
+        f"# {args.problem}\n\n## Task\n\n_Describe the problem._\n\n## Signature\n\n`solve(input) -> output`\n"
+    )
     (prob / "test_cases.json").write_text('[\n  { "input": {}, "expected": null }\n]\n')
     for name, spec in langs.items():
         if spec.get("scaffold") is False:
             continue  # special languages (asm, wat) are added per-problem by hand
         d = prob / name
         d.mkdir()
-        ext = spec["extension"]
+        spec["extension"]
         harness_tpl = spec.get("harness_template", "")
         if harness_tpl:
             (d / Path(harness_tpl).name).write_text(_tpl(harness_tpl))
         for sf in spec.get("support_files", []):
             (d / sf).write_text(_tpl(sf))
-        pf = spec["practice_file"]           # "practice.py" or "Practice.java"
+        pf = spec["practice_file"]  # "practice.py" or "Practice.java"
         cap = pf[0].isupper()
         for v in VARIANTS:
             target = v.capitalize() if cap else v
-            fname = target + pf[len("practice"):]   # swap the 8-char stem, keep extension
+            fname = target + pf[len("practice") :]  # swap the 8-char stem, keep extension
             stub = spec.get("stub", "// TODO\n").replace("{variant}", v).replace("{Variant}", v.capitalize())
             (d / fname).write_text(stub)
     print(green(f"scaffolded {prob.relative_to(ROOT)} in {len(langs)} languages"))
@@ -329,17 +358,43 @@ def main():
     p = argparse.ArgumentParser(prog="glifex", description="Polyglot algorithm & database practice engine.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    t = sub.add_parser("test"); t.add_argument("problem"); t.add_argument("language", nargs="?"); t.add_argument("variant", nargs="?"); t.set_defaults(fn=cmd_test)
-    r = sub.add_parser("run"); r.add_argument("problem"); r.add_argument("language"); r.add_argument("variant", nargs="?"); r.set_defaults(fn=cmd_run)
-    b = sub.add_parser("bench"); b.add_argument("problem"); b.add_argument("language"); b.add_argument("variant", nargs="?"); b.set_defaults(fn=cmd_bench)
-    n = sub.add_parser("new"); n.add_argument("problem"); n.set_defaults(fn=cmd_new)
-    nd = sub.add_parser("new-db"); nd.add_argument("problem"); nd.set_defaults(fn=cmd_new_db)
-    rv = sub.add_parser("reveal"); rv.add_argument("problem"); rv.add_argument("language", nargs="?"); rv.add_argument("variant", nargs="?"); rv.set_defaults(fn=cmd_reveal)
+    t = sub.add_parser("test")
+    t.add_argument("problem")
+    t.add_argument("language", nargs="?")
+    t.add_argument("variant", nargs="?")
+    t.set_defaults(fn=cmd_test)
+    r = sub.add_parser("run")
+    r.add_argument("problem")
+    r.add_argument("language")
+    r.add_argument("variant", nargs="?")
+    r.set_defaults(fn=cmd_run)
+    b = sub.add_parser("bench")
+    b.add_argument("problem")
+    b.add_argument("language")
+    b.add_argument("variant", nargs="?")
+    b.set_defaults(fn=cmd_bench)
+    n = sub.add_parser("new")
+    n.add_argument("problem")
+    n.set_defaults(fn=cmd_new)
+    nd = sub.add_parser("new-db")
+    nd.add_argument("problem")
+    nd.set_defaults(fn=cmd_new_db)
+    rv = sub.add_parser("reveal")
+    rv.add_argument("problem")
+    rv.add_argument("language", nargs="?")
+    rv.add_argument("variant", nargs="?")
+    rv.set_defaults(fn=cmd_reveal)
     sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
 
-    db = sub.add_parser("db"); dbsub = db.add_subparsers(dest="dbcmd", required=True)
-    dbt = dbsub.add_parser("test"); dbt.add_argument("problem"); dbt.add_argument("variant", nargs="?"); dbt.set_defaults(fn=cmd_db_test)
-    dbb = dbsub.add_parser("bench"); dbb.add_argument("problem"); dbb.set_defaults(fn=cmd_db_bench)
+    db = sub.add_parser("db")
+    dbsub = db.add_subparsers(dest="dbcmd", required=True)
+    dbt = dbsub.add_parser("test")
+    dbt.add_argument("problem")
+    dbt.add_argument("variant", nargs="?")
+    dbt.set_defaults(fn=cmd_db_test)
+    dbb = dbsub.add_parser("bench")
+    dbb.add_argument("problem")
+    dbb.set_defaults(fn=cmd_db_bench)
 
     args = p.parse_args()
     args.fn(args)
