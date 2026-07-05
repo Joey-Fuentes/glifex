@@ -24,7 +24,9 @@ const Runtimes = (() => {
 
   async function vendored(lang) {
     try {
-      const r = await fetch(`vendor/${lang}/manifest.json`, { cache: "force-cache" });
+      // no-cache (not force-cache): a fossilized 404 from before vendoring must
+      // never win. Offline still works — the SW's SWR path serves its cached copy.
+      const r = await fetch(`vendor/${lang}/manifest.json`, { cache: "no-cache" });
       return r.ok;
     } catch { return false; }
   }
