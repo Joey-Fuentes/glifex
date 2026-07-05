@@ -1,0 +1,81 @@
+[problem]
+title = "Two Sum"
+difficulty = "easy"
+tags = ["arrays", "hash-map"]
+
+[languages]
+python      = { variants = ["practice", "brute-force", "clean", "optimized"] }
+javascript  = { variants = ["practice", "brute-force", "clean", "optimized"] }
+typescript  = { variants = ["practice", "brute-force", "clean", "optimized"] }
+go          = { variants = ["practice", "clean", "optimized"] }
+java        = { variants = ["practice", "clean", "optimized"] }
+kotlin      = { variants = ["practice", "clean", "optimized"] }
+swift       = { variants = ["practice", "clean", "optimized"] }
+ruby        = { variants = ["practice", "brute-force", "clean", "optimized"] }
+csharp      = { variants = ["practice", "clean", "optimized"] }
+cpp         = { variants = ["practice", "brute-force", "clean", "optimized"] }
+c           = { variants = ["practice", "brute-force", "clean", "optimized"] }
+rust        = { variants = ["practice", "clean", "optimized"] }
+php         = { variants = ["practice", "brute-force", "clean", "optimized"] }
+dart        = { variants = ["practice", "clean", "optimized"] }
+zig         = { variants = ["practice", "clean", "optimized"] }
+wat         = { variants = ["practice", "brute-force", "clean", "optimized"] }
+
+[exclusions]
+asm-x86_64 = "help-wanted: feasible via the C-shim pattern (see 001)"
+asm-arm64  = "help-wanted"
+
+[complexity.default.practice]
+time = "O(n)"
+space = "O(n)"
+notes = "single-pass hash map"
+[complexity.default.clean]
+time = "O(n)"
+space = "O(n)"
+[complexity.default.optimized]
+time = "O(n)"
+space = "O(n)"
+
+[complexity.javascript.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop baseline -- the pedagogical starting point clean.js/optimized.js improve on"
+[complexity.typescript.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop baseline -- the pedagogical starting point clean.ts/optimized.ts improve on"
+[complexity.python.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop baseline -- the pedagogical starting point clean.py/optimized.py improve on"
+[complexity.ruby.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop baseline -- the pedagogical starting point clean.rb/optimized.rb improve on"
+[complexity.php.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop baseline -- the pedagogical starting point clean.php/optimized.php improve on"
+[complexity.c.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop brute force -- the pedagogical baseline (this was previously, incorrectly, sitting in clean.c)"
+[complexity.cpp.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop baseline -- the pedagogical starting point clean.cpp/optimized.cpp improve on"
+[complexity.wat.practice]
+time = "O(n^2)"
+space = "O(1)"
+[complexity.wat.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop baseline -- the pedagogical starting point every other WAT approach here improves on"
+[complexity.wat.clean]
+time = "O(n)"
+space = "O(n)"
+notes = "open-addressing hash table in linear memory, fused lookup+insert loop, explicit full-table clear each call (see clean.wat's header comment for the design and why the clear was checked not to distort the O(n) measurement in practice)"
+[complexity.wat.optimized]
+time = "O(n)"
+space = "O(n)"
+notes = "a different hash-table design from clean.wat, not just a micro-optimized copy -- generation counter instead of an explicit clear, 2048 slots (headroom above clean.wat's exact-fit 1024) -- measured ~15-20% faster across multiple interleaved timing rounds, see optimized.wat's header comment"
