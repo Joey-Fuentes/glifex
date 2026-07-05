@@ -18,7 +18,7 @@ module.exports = defineConfig({
     // threads, GC) lags — enable once wasm runtimes land, with feature checks.
   ],
   webServer: {
-    command: "python3 -m http.server -d web 8080",
+    command: "python3 -m http.server -d ../web 8080",   // webServer cwd = config dir (e2e/), so web/ is one level up
     url: "http://localhost:8080",
     reuseExistingServer: !process.env.CI,
   },
