@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="glifex-version" content="dev" />
+<meta name="glifex-commit" content="local" />
+<title>Glifex — polyglot practice playground</title>
+<meta name="description" content="Practice algorithms in 18 languages -- entirely in your browser, offline, with no account and no tracking." />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Glifex" />
+<meta property="og:title" content="Glifex: polyglot practice playground" />
+<meta property="og:description" content="Practice algorithms in 18 languages. Runs in your browser, offline. No account, no tracking." />
+<meta property="og:url" content="https://glifex.dev/" />
+<meta property="og:image" content="https://glifex.dev/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Glifex: polyglot practice playground" />
+<meta name="twitter:description" content="Practice algorithms in 18 languages. Runs in your browser, offline. No account, no tracking." />
+<meta name="twitter:image" content="https://glifex.dev/og.png" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header>
+  <div class="brand">glifex<span>.dev</span></div>
+  <nav>
+    <button data-view="play" class="active">Playground</button>
+    <button data-view="docs">Docs</button>
+  </nav>
+  <div class="progress-actions">
+    <button id="export-btn" class="ghost sm" aria-label="Export your progress to a file" title="Download your progress as a file you own">↓ Export</button>
+    <button id="import-btn" class="ghost sm" aria-label="Import a progress file" title="Merge a progress file (newest wins; solved never lost)">↑ Import</button>
+    <input type="file" id="import-file" accept="application/json" hidden />
+  </div>
+  <div class="status" id="offline-badge" title="Runs fully offline">● offline-ready</div>
+  <button id="refresh-btn" class="ghost sm" title="Reload the latest version">&#10227;</button>
+</header>
+
+<div id="hero" class="hero" hidden>
+  <span><b>Practice algorithms in 18 languages.</b> Runs in your browser, offline. No account.</span>
+  <button id="hero-dismiss" class="ghost sm" aria-label="Dismiss intro">×</button>
+</div>
+
+<main>
+  <!-- Playground -->
+  <section id="view-play" class="view active">
+    <aside class="problems">
+      <h2>Problems</h2>
+      <ul id="problem-list"></ul>
+    </aside>
+
+    <div class="workspace">
+      <div class="problem-head">
+        <h1 id="problem-title">Loading…</h1>
+        <div id="problem-meta" class="problem-meta"></div>
+        <div class="controls">
+          <label>Language
+            <select id="lang-select"></select>
+          </label>
+          <button id="lab-btn" class="ghost" hidden title="Complexity Lab: empirical growth analysis -- refutes declared bounds, never proves them">Analyze growth</button><!-- L1-btn -->
+          <button id="reveal-btn" class="ghost" title="Show reference solution">Reveal</button>
+          <button id="run-btn" class="primary">▶ Run tests</button>
+        </div>
+      </div>
+
+      <div id="statement" class="statement"></div>
+
+      <div class="editor-col">
+      <div class="editor-wrap">
+        <div class="editor-label" id="editor-label">practice</div>
+        <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
+        <div class="run-hint">press cmd+enter to run</div>
+      </div>
+
+      <div class="preview-wrap" id="preview-wrap" hidden>
+        <div class="editor-label">live preview</div>
+        <iframe id="preview" sandbox="allow-same-origin" title="Live preview"></iframe>
+      </div>
+
+      <div class="reference-panel" id="reference-panel" hidden>
+        <div class="ref-tabs">
+          <span class="editor-label">reference</span>
+          <button id="ref-brute-force" class="ghost sm">brute force</button>
+          <button id="ref-clean" class="ghost sm">clean</button>
+          <button id="ref-optimized" class="ghost sm active">optimized</button>
+          <button id="ref-copy" class="ghost sm" title="Copy the reference solution">copy</button>
+        </div>
+        <textarea id="reference-code" readonly spellcheck="false" wrap="off"></textarea>
+      </div>
+
+      <div class="results" id="results" role="status" aria-live="polite">
+        <div class="hint">Write your <code>solve()</code> and press Run. JavaScript executes
+        natively in your browser — no download, works offline. Other languages need a
+        one-time runtime fetch (see Docs).</div>
+      </div>
+
+      <div id="lab" class="lab" hidden></div><!-- L1-panel -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Docs -->
+  <section id="view-docs" class="view">
+    <article id="docs-body" class="docs"></article>
+  </section>
+</main>
+
+<footer>
+  Educational tool · provided as-is (MIT) · no accounts, no tracking ·
+  <a href="privacy.html">Privacy</a> · <a href="licenses.html">Licenses</a> ·
+  <a href="https://github.com/Joey-Fuentes/glifex">GitHub</a>
+</footer>
+
+<script src="md.js"></script>
+<script src="storage.js"></script>
+<script src="editor.js"></script>
+<script src="assertions.js"></script>
+<script src="runtimes.js"></script>
+<script src="js-runtime.js"></script>
+<script src="lab.js"></script><!-- L1-script -->
+<script src="app.js"></script>
+<script src="wiring.js"></script>
+</body>
+</html>

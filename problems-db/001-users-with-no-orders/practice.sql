@@ -1,0 +1,4 @@
+SELECT u.name
+FROM users u
+LEFT JOIN orders o ON o.user_id = u.id
+WHERE o.id IS NULL;

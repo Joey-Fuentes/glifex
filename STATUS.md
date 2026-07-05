@@ -1,92 +1,81 @@
 # Project status — honest build report
 
-What is **proven by execution** versus **written but not yet run**. Updated after
-the Phase B–E build (CI, benchmarking, playground WASM glue, new languages).
+Updated after launch day: full CI matrix green on Linux, macOS, and Windows;
+E2E suite green in real browsers; site live at https://glifex.dev with
+build-time versioning. This ledger records what is **proven by execution**
+versus what remains written-but-unrun.
 
-## ✅ Verified green (executed in the build environment)
+## ✅ Verified by execution
 
-- **CLI**: `doctor`, `test`, `run`, `bench`, `new`, `new-db`, `reveal`,
-  `db test`, `db bench` — all plugin-driven, no hardcoded language list.
-- **Python / JavaScript / TypeScript** — `001` and `002`, all variants, pass.
-- **C** — fully verified end-to-end with gcc: both problems, all variants,
-  and bench showing a real 3× spread (practice ~338 vs optimized ~110 ns/case).
-  Includes a vendored portable C JSON parser (no POSIX-only calls, MinGW-safe).
-- **C++** — fully verified end-to-end with g++: both problems, all variants,
-  compile stage, and coarse bench (~87 ns/case for optimized anagram). This
-  proves the plugin registry's optional compile stage works.
-- **Database track** — `db test` passes (SQLite) for all three query variants;
-  **`db bench` shows real query-plan diffs** via `EXPLAIN QUERY PLAN`, and in
-  doing so caught a genuine missing index in the sample schema (now fixed —
-  plans show `SEARCH ... USING COVERING INDEX`).
-- **Scaffolder** — generates correct, non-colliding files for all fifteen scaffolded languages (assembly/WAT are scaffold-opt-out by design).
-- **Playground JS engine** — runs the baked corpus green, flags wrong answers.
-- **Registry extensibility** — cpp/kotlin/swift were added as pure plugin files;
-  `doctor`, `test`, and `new` picked them up with **zero runner changes**.
+### Languages (15 of 18 registered)
 
-- **asm-x86_64** — REAL hand-written x86-64 assembly (AT&T syntax, SysV ABI)
-  verified end-to-end: anagram in all variants passes, ~66 ns/case — the
-  fastest implementation in the repo. The `arch` guard is verified too:
-  asm-arm64 correctly skips on this x86_64 host instead of failing.
-- **Frontend track** — the declarative assertion engine is unit-verified in
-  Node (all five assertion types, pass and fail paths, with useful failure
-  details); real computed-style verification runs in the Playwright suite.
-  The card-layout problem bakes into the corpus correctly.
+| Language    | Linux | macOS (ARM64) | Windows | Notes |
+|-------------|:-----:|:-----:|:-------:|-------|
+| Python      | ✅ | ✅ | ✅ | |
+| JavaScript  | ✅ | ✅ | ✅ | also runs natively in the playground |
+| TypeScript  | ✅ | ✅ | ✅ | explicit-filename compile (no glob; cmd.exe-safe) |
+| Go          | ✅ | ✅ | ✅ | root `go.mod` provides module context |
+| Java        | ✅ | ✅ | ✅ | vendored minimal JSON parser |
+| Ruby        | ✅ | ✅ | ✅ | passed native Windows first try |
+| C#          | ✅ | ✅ | ✅ | harness compares JSON-to-JSON |
+| C++         | ✅ | ✅ | ✅ | gcc-is-clang on macOS confirmed fine |
+| C           | ✅ | ✅ | ✅ | `_POSIX_C_SOURCE 200809L` (Apple libc hides snprintf under 199309L) |
+| Rust        | ✅ | ✅ | ✅ | dependency-free vendored JSON parser |
+| PHP         | ✅ | ✅ | ✅ | |
+| Dart        | ✅ | ✅ | ✅ | |
+| Zig         | ✅ | ⏭ env | ✅ | macOS runners: zig 0.14.0 can't locate libSystem at link time — **runner environment, not code**; platform-skipped until fixed |
+| asm-x86_64  | ✅ | ⏭ arch | ⏭ ABI | SysV ABI (rdi/rsi); Windows x64 uses rcx/rdx — platform-scoped by design |
+| asm-arm64   | ⏭ arch | ✅ | ⏭ ABI | hand-written AArch64, first-ever run passed 4/4 on Apple Silicon |
 
-## ⚠️ Written but NOT executed here (verify locally / in CI)
+⏭ = deliberate, guard-enforced skip (arch/platform/environment), shown honestly in logs.
 
-No Go, Ruby, .NET, Kotlin, or Swift toolchain here, and a JRE without `javac`:
+### Tracks & infrastructure
 
-- **Go, Ruby, Java, C#** — harnesses + solutions for both problems.
-- **Kotlin, Swift** — plugins + harness templates (no problem implementations
-  yet; scaffold with `glifex new` and fill in).
-- **Rust** — plugin, vendored dependency-free JSON parser, and solutions for
-  both problems (module-based single-crate `rustc -O` build; `cargo
-  bench`/criterion noted as the rigorous path). Verify: `glifex test 001 rust`.
-- **asm-arm64** — AArch64 assembly (AAPCS64) for anagram; needs ARM hardware
-  (Apple Silicon, RPi, Graviton). Verify there: `glifex test 001 asm-arm64`.
-- **wat** — WebAssembly Text plugin + two-sum in hand-written WAT with a Node
-  host that marshals arrays into linear memory. Needs `wabt` (`wat2wasm`).
-- **Frontend E2E** — the three Playwright frontend tests (real computed styles,
-  live preview) run with the rest of the E2E suite once Playwright is installed.
-- **Dart** — plugin + solutions (stdlib `dart:convert`; variants namespaced
-  via `import as`). Verify: `glifex test 001 dart`.
-- **Zig** — plugin + solutions written against **Zig 0.14** `std.json`. Zig is
-  pre-1.0 and std APIs shift between releases: expect small fixes on other
-  versions; the pin lives in `.tool-versions`. Verify: `glifex test 001 zig`.
-- **PHP** — plugin (stdlib `json_decode`, the cheapest harness in the repo) and
-  solutions for both problems. Verify: `glifex test 001 php`.
-- **Go real benchmarking** — `bench_test.go` template for `go test -bench .`.
-- **CI workflows** (`.github/workflows/ci.yml`, `codeql.yml`) — written to
-  spec but a workflow can only truly run on GitHub. First push will tell.
-- **Playwright E2E** (`e2e/`) — includes the **offline-mode test** that proves
-  the core promise. Needs `npm i -D @playwright/test && npx playwright install`.
-- **Playground WASM glue** (`web/runtimes.js`) — loaders/executors for
-  TypeScript, Pyodide (Python), ruby.wasm, and PGlite (in-browser Postgres).
-  The package registry was proxy-blocked here, so runtimes could not be
-  vendored or the glue executed. Run `node web/fetch-runtimes.mjs`, then test
-  each language in the browser. **Expect small API-version fixes** — WASM
-  runtime APIs move fast; verify current Pyodide/ruby.wasm/PGlite versions.
-- **Pre-commit hooks / Ruff / Biome configs** — written; installs were blocked.
-  Hook `rev:` pins should be bumped to current on first `pre-commit autoupdate`.
+- **Database track** — `db test` (ephemeral SQLite) and `db bench`
+  (`EXPLAIN` query-plan diff) green locally and in CI on all three OSes.
+- **Frontend track** — assertion engine unit-verified in Node AND verified in
+  real Chromium + Firefox via E2E (computed styles, live preview).
+- **E2E suite** — 18 passed (9 specs × 2 browsers), **including the
+  offline-mode test**: the core "offline === hosted" promise is now a
+  machine-checked regression test.
+- **CI pipeline** — lint (ruff), corpus-staleness gate, 3-OS polyglot matrix,
+  playground engine check, Playwright E2E, Trivy, CodeQL: all green.
+  Dependabot loop confirmed working (opened and validated action bumps).
+- **Runner guard system** — `arch` and `platforms` guards verified in all
+  directions (x86_64↔ARM64, linux/darwin/windows), plus Windows UTF-8 output
+  and per-plugin `*_windows` command overrides.
+- **Deployment** — GitHub Pages → https://glifex.dev with custom domain, TLS,
+  and build-time version stamping (`/version.json` + header badge);
+  service worker is stale-while-revalidate so deploys reach returning visitors
+  while the offline guarantee holds.
 
-## 🔧 One-time steps
+## ⚠️ Still written but NOT executed
 
-- Playground non-JS languages + in-browser DB: `node web/fetch-runtimes.mjs`.
-- Local hooks: `pip install pre-commit && pre-commit install`.
-- E2E: `npm i -D @playwright/test && npx playwright install chromium firefox`.
-- GitHub repo settings (not files): enable **secret push protection**, branch
-  protection on `main` requiring the CI checks, squash-merge for linear history.
-  CodeRabbit: install as advisory, do **not** make it a required check.
+- **Kotlin & Swift** — plugins + harness templates exist; no problem
+  implementations and no toolchain has ever run them. Scaffold and verify.
+- **WAT** (WebAssembly Text) — plugin + hand-written two-sum exist, but
+  `wabt`/`wat2wasm` has never been installed anywhere it ran. Verify with:
+  `apt install wabt && python3 glifex.py test 002 wat`.
+- **Playground WASM tier** — `web/fetch-runtimes.mjs` and the runtime loaders
+  in `web/runtimes.js` (Pyodide, ruby.wasm, in-browser TS, PGlite). Expect
+  version/API drift on first contact. **Do not deploy vendored runtimes
+  without adding THIRD_PARTY_NOTICES.md** (license obligation).
+- **Postgres hosted DB engine** — SQLite path is proven; the Docker/psql
+  Postgres path has not run.
+- **Go real benchmarking** — `bench_test.go` templates exist;
+  `go test -bench .` has not been executed.
+- **Dev Container** — first Codespaces build stalled unresolved; the container
+  definition remains unconfirmed. Consider Codespaces prebuilds.
+- **pre-commit hooks** — configured, not yet installed/run (`pre-commit
+  autoupdate && pre-commit install`).
 
-## Known limitations (by design)
+## Recommended follow-ups (not blockers)
 
-- Cross-language nanosecond comparison is not offered — it measures runtimes,
-  not algorithms. In-harness `bench` is coarse and labeled as such; real rigor
-  is per-language tools (Go's is wired; JMH/BenchmarkDotNet need dependency
-  management and are future work).
-- Java/Kotlin JSON parsers are vendored minimal implementations — correct for
-  the corpus format, not general-purpose JSON libraries.
-- The name `Glifex` still needs your GitHub/PyPI/npm + USPTO checks.
+- Pin ruff in CI (`pip install ruff==0.15.20`) so new rule releases can't
+  redden the gate unprompted.
+- Stale UI copy: the playground's "CLI-only" message names only four
+  languages; there are now nine. Batch with docs cleanup (README's phantom
+  root `package.json`/`tsconfig.json` mention, LAUNCH.md triage-table result).
 
 ## Verify everything
 
@@ -96,4 +85,6 @@ for p in problems/*/;    do python3 glifex.py test    "$(basename $p)"; done
 for p in problems-db/*/; do python3 glifex.py db test "$(basename $p)"; done
 python3 glifex.py db bench 001
 node web/build.mjs && python3 -m http.server -d web 8080
+npx playwright test e2e/ --config e2e/playwright.config.js
+curl https://glifex.dev/version.json     # live-deploy health check
 ```

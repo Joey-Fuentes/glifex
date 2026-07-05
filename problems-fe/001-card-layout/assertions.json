@@ -1,0 +1,12 @@
+[
+  { "type": "exists", "selector": "section.cards",
+    "label": "a <section class=\"cards\"> container exists" },
+  { "type": "style",  "selector": "section.cards", "property": "display", "equals": "flex",
+    "label": "the container is display: flex" },
+  { "type": "count",  "selector": "section.cards > .card", "equals": 3,
+    "label": "exactly three .card children" },
+  { "type": "count",  "selector": ".card h2", "equals": 3,
+    "label": "every card has an <h2> title" },
+  { "type": "style",  "selector": "section.cards", "property": "gap", "minPx": 8,
+    "label": "container gap is at least 8px" }
+]
