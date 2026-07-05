@@ -26,6 +26,14 @@ import sys
 import tomllib
 from pathlib import Path
 
+# Windows consoles default to cp1252, which can't print ✓/✗/− — force UTF-8.
+for _stream in (sys.stdout, sys.stderr):
+    if _stream and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
 ROOT = Path(__file__).resolve().parent
 LANG_DIR = ROOT / "languages"
 TPL_DIR = LANG_DIR / "templates"
@@ -296,9 +304,11 @@ def cmd_new(args):
         f"# {args.problem}\n\n## Task\n\n_Describe the problem._\n\n## Signature\n\n`solve(input) -> output`\n"
     )
     (prob / "test_cases.json").write_text('[\n  { "input": {}, "expected": null }\n]\n')
+    made = 0
     for name, spec in langs.items():
         if spec.get("scaffold") is False:
             continue  # special languages (asm, wat) are added per-problem by hand
+        made += 1
         d = prob / name
         d.mkdir()
         spec["extension"]
@@ -314,7 +324,7 @@ def cmd_new(args):
             fname = target + pf[len("practice") :]  # swap the 8-char stem, keep extension
             stub = spec.get("stub", "// TODO\n").replace("{variant}", v).replace("{Variant}", v.capitalize())
             (d / fname).write_text(stub)
-    print(green(f"scaffolded {prob.relative_to(ROOT)} in {len(langs)} languages"))
+    print(green(f"scaffolded {prob.relative_to(ROOT)} in {made} languages"))
 
 
 def cmd_new_db(args):
