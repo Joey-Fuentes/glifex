@@ -12,6 +12,7 @@ pub enum JVal {
     Obj(BTreeMap<String, JVal>),
 }
 
+#[allow(dead_code)]
 impl JVal {
     pub fn get(&self, key: &str) -> &JVal {
         match self { JVal::Obj(m) => &m[key], _ => panic!("not an object") }

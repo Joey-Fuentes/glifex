@@ -3,6 +3,7 @@ import java.nio.file.*;
 import java.util.*;
 
 public class Harness {
+    @SuppressWarnings("unchecked")
     public static void main(String[] args) throws Exception {
         String variant = args.length > 0 ? args[0] : "practice";
         String cls = variant.substring(0, 1).toUpperCase() + variant.substring(1);

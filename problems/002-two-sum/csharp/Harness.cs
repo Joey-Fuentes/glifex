@@ -16,8 +16,8 @@ class Harness {
         for (int i = 0; i < cases.Count; i++) {
             var input = JsonSerializer.Deserialize<Dictionary<string, object>>(cases[i].GetProperty("input").GetRawText());
             var got = sol.Solve(input);
-            var exp = cases[i].GetProperty("expected").ToString();
-            bool ok = Convert.ToString(got) == exp || (got is bool bg && bg.ToString().ToLower() == exp.ToLower());
+            var exp = JsonSerializer.Serialize(cases[i].GetProperty("expected"));
+            bool ok = JsonSerializer.Serialize(got) == exp;
             if (ok) { passed++; Console.WriteLine($"  [PASS] case {i}"); }
             else Console.WriteLine($"  [FAIL] case {i}  expected={exp} got={got}");
         }

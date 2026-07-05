@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-05T17:11:43.200Z",
+  "generatedAt": "2026-07-05T20:32:48.393Z",
   "problems": [
     {
       "id": "001-anagram-detection",
@@ -125,19 +125,19 @@
       ],
       "languages": {
         "csharp": {
-          "practice": "using System.Collections.Generic;\nclass Practice : ISolution {\n    public object Solve(Dictionary<string,object> c) {\n        throw new System.NotImplementedException();\n    }\n}\n",
-          "clean": "using System.Collections.Generic;\nclass Clean : ISolution {\n    public object Solve(Dictionary<string,object> c) {\n        throw new System.NotImplementedException();\n    }\n}\n",
-          "optimized": "using System.Collections.Generic;\nclass Optimized : ISolution {\n    public object Solve(Dictionary<string,object> c) {\n        throw new System.NotImplementedException();\n    }\n}\n"
+          "practice": "using System.Collections.Generic;\nusing System.Text.Json;\nclass Practice : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        var target = ((JsonElement)c[\"target\"]).GetInt64();\n        var seen = new Dictionary<long, int>();\n        int i = 0;\n        foreach (var el in ((JsonElement)c[\"nums\"]).EnumerateArray()) {\n            long n = el.GetInt64();\n            if (seen.TryGetValue(target - n, out var j)) return new[] { j, i };\n            seen[n] = i; i++;\n        }\n        return new int[0];\n    }\n}\n",
+          "clean": "using System.Collections.Generic;\nusing System.Text.Json;\nclass Clean : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        var target = ((JsonElement)c[\"target\"]).GetInt64();\n        var seen = new Dictionary<long, int>();\n        int i = 0;\n        foreach (var el in ((JsonElement)c[\"nums\"]).EnumerateArray()) {\n            long n = el.GetInt64();\n            if (seen.TryGetValue(target - n, out var j)) return new[] { j, i };\n            seen[n] = i; i++;\n        }\n        return new int[0];\n    }\n}\n",
+          "optimized": "using System.Collections.Generic;\nusing System.Text.Json;\nclass Optimized : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        var target = ((JsonElement)c[\"target\"]).GetInt64();\n        var seen = new Dictionary<long, int>();\n        int i = 0;\n        foreach (var el in ((JsonElement)c[\"nums\"]).EnumerateArray()) {\n            long n = el.GetInt64();\n            if (seen.TryGetValue(target - n, out var j)) return new[] { j, i };\n            seen[n] = i; i++;\n        }\n        return new int[0];\n    }\n}\n"
         },
         "go": {
-          "practice": "package main\n\nfunc practice(c map[string]any) any {\n\t// TODO: implement\n\tpanic(\"not implemented\")\n}\n",
-          "clean": "package main\n\nfunc clean(c map[string]any) any {\n\t// TODO: implement\n\tpanic(\"not implemented\")\n}\n",
-          "optimized": "package main\n\nfunc optimized(c map[string]any) any {\n\t// TODO: implement\n\tpanic(\"not implemented\")\n}\n"
+          "practice": "package main\n\nfunc practice(c map[string]any) any {\n\tnums := c[\"nums\"].([]any)\n\ttarget := c[\"target\"].(float64)\n\tseen := map[float64]int{}\n\tfor i, v := range nums {\n\t\tn := v.(float64)\n\t\tif j, ok := seen[target-n]; ok {\n\t\t\treturn []int{j, i}\n\t\t}\n\t\tseen[n] = i\n\t}\n\treturn []int{}\n}\n",
+          "clean": "package main\n\nfunc clean(c map[string]any) any {\n\tnums := c[\"nums\"].([]any)\n\ttarget := c[\"target\"].(float64)\n\tseen := map[float64]int{}\n\tfor i, v := range nums {\n\t\tn := v.(float64)\n\t\tif j, ok := seen[target-n]; ok {\n\t\t\treturn []int{j, i}\n\t\t}\n\t\tseen[n] = i\n\t}\n\treturn []int{}\n}\n",
+          "optimized": "package main\n\nfunc optimized(c map[string]any) any {\n\tnums := c[\"nums\"].([]any)\n\ttarget := c[\"target\"].(float64)\n\tseen := map[float64]int{}\n\tfor i, v := range nums {\n\t\tn := v.(float64)\n\t\tif j, ok := seen[target-n]; ok {\n\t\t\treturn []int{j, i}\n\t\t}\n\t\tseen[n] = i\n\t}\n\treturn []int{}\n}\n"
         },
         "java": {
-          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String,Object> c) {\n        throw new RuntimeException(\"not implemented\");\n    }\n}\n",
-          "clean": "import java.util.*;\npublic class Clean implements Solution {\n    public Object solve(Map<String,Object> c) {\n        throw new RuntimeException(\"not implemented\");\n    }\n}\n",
-          "optimized": "import java.util.*;\npublic class Optimized implements Solution {\n    public Object solve(Map<String,Object> c) {\n        throw new RuntimeException(\"not implemented\");\n    }\n}\n"
+          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        Map<Long, Integer> seen = new HashMap<>();\n        for (int i = 0; i < nums.size(); i++) {\n            long n = ((Number) nums.get(i)).longValue();\n            if (seen.containsKey(target - n)) return List.of(seen.get(target - n), i);\n            seen.put(n, i);\n        }\n        return List.of();\n    }\n}\n",
+          "clean": "import java.util.*;\npublic class Clean implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        Map<Long, Integer> seen = new HashMap<>();\n        for (int i = 0; i < nums.size(); i++) {\n            long n = ((Number) nums.get(i)).longValue();\n            if (seen.containsKey(target - n)) return List.of(seen.get(target - n), i);\n            seen.put(n, i);\n        }\n        return List.of();\n    }\n}\n",
+          "optimized": "import java.util.*;\npublic class Optimized implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        Map<Long, Integer> seen = new HashMap<>();\n        for (int i = 0; i < nums.size(); i++) {\n            long n = ((Number) nums.get(i)).longValue();\n            if (seen.containsKey(target - n)) return List.of(seen.get(target - n), i);\n            seen.put(n, i);\n        }\n        return List.of();\n    }\n}\n"
         },
         "javascript": {
           "practice": "module.exports = function solve(c) {\n  const seen = {};\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (need in seen) return [seen[need], i];\n    seen[c.nums[i]] = i;\n  }\n  return null;\n};\n",
@@ -150,9 +150,9 @@
           "optimized": "def solve(case):\n    # TODO: implement\n    raise NotImplementedError\n"
         },
         "ruby": {
-          "practice": "def solve(c)\n  # TODO: implement\n  raise 'not implemented'\nend\n",
-          "clean": "def solve(c)\n  # TODO: implement\n  raise 'not implemented'\nend\n",
-          "optimized": "def solve(c)\n  # TODO: implement\n  raise 'not implemented'\nend\n"
+          "practice": "def solve(c)\n  seen = {}\n  c[\"nums\"].each_with_index do |n, i|\n    need = c[\"target\"] - n\n    return [seen[need], i] if seen.key?(need)\n    seen[n] = i\n  end\n  []\nend\n",
+          "clean": "def solve(c)\n  seen = {}\n  c[\"nums\"].each_with_index do |n, i|\n    need = c[\"target\"] - n\n    return [seen[need], i] if seen.key?(need)\n    seen[n] = i\n  end\n  []\nend\n",
+          "optimized": "def solve(c)\n  seen = {}\n  c[\"nums\"].each_with_index do |n, i|\n    need = c[\"target\"] - n\n    return [seen[need], i] if seen.key?(need)\n    seen[n] = i\n  end\n  []\nend\n"
         },
         "typescript": {
           "practice": "export function solve(c: any): number[] | null {\n  const seen: Record<number, number> = {};\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (need in seen) return [seen[need], i];\n    seen[c.nums[i]] = i;\n  }\n  return null;\n}\n",
