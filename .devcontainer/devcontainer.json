@@ -1,0 +1,44 @@
+{
+  "name": "Glifex",
+  // Pinned to 24.04 LTS: the floating :ubuntu tag rolled to 25.10 (resolute),
+  // where docker-in-docker cannot install Moby and the build fails.
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+
+  // 4-core/16GB minimum: the 2-core (8GB) machine OOMs bringing up the
+  // toolchains in parallel and hangs the build. See docs/codespaces.md.
+  "hostRequirements": { "cpus": 4 },
+
+  // Each language Glifex ships with, plus Docker-in-Docker so the database
+  // track can spin up throwaway Postgres instances for inline testing.
+  "features": {
+    "ghcr.io/devcontainers/features/python:1":        { "version": "3.13" },
+    "ghcr.io/devcontainers/features/node:1":          { "version": "24" },
+    "ghcr.io/devcontainers/features/go:1":            { "version": "1.25" },
+    "ghcr.io/devcontainers/features/java:1":          { "version": "25", "jdkDistro": "tem" },
+    "ghcr.io/devcontainers/features/ruby:1":          { "version": "3.4" },
+    "ghcr.io/devcontainers/features/dotnet:2":        { "version": "10.0" },
+    "ghcr.io/devcontainers/features/rust:1":          {},
+    "ghcr.io/devcontainers/features/php:1":           { "version": "8.4" },
+    "ghcr.io/devcontainers/features/common-utils:2":  {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1":       {}
+  },
+
+  // TypeScript rides on Node. Once the runner lands (Phase 1), doctor runs
+  // here automatically; the guard keeps a Phase 0-only clone from erroring.
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y g++ && npm install -g typescript && cargo install customasm --locked && ([ -f glifex.py ] && python3 glifex.py doctor || echo 'Run: python3 glifex.py doctor (after the runner lands)')",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "editorconfig.editorconfig",
+        "ms-python.python",
+        "golang.go",
+        "redhat.java",
+        "ms-dotnettools.csharp",
+        "shopify.ruby-lsp",
+        "ms-ossdata.vscode-pgsql"
+      ]
+    }
+  }
+}

@@ -1,0 +1,11 @@
+name = "java"
+extension = "java"
+practice_file = "Practice.java"
+detect = "javac -version"
+install_hint = "brew install temurin | apt install temurin-25-jdk | winget install EclipseAdoptium.Temurin.25.JDK"
+test_cmd = "javac *.java && java Harness {variant}"
+run_cmd = "javac *.java && java Harness {variant}"
+harness_template = "Harness.java"
+tool_version = "java temurin-25"
+stub = "import java.util.*;\npublic class {Variant} implements Solution {\n    public Object solve(Map<String,Object> c) {\n        throw new RuntimeException(\"not implemented\");\n    }\n}\n"
+support_files = ["Solution.java", "Json.java"]

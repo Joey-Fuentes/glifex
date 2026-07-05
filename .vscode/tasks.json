@@ -1,0 +1,163 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Glifex: Test (pick language)",
+      "type": "shell",
+      "command": "python3",
+      "windows": {
+        "command": "python"
+      },
+      "args": [
+        "glifex.py",
+        "test",
+        "${input:problem}",
+        "${input:language}"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "clear": true
+      }
+    },
+    {
+      "label": "Glifex: Test (all installed languages)",
+      "type": "shell",
+      "command": "python3",
+      "windows": {
+        "command": "python"
+      },
+      "args": [
+        "glifex.py",
+        "test",
+        "${input:problem}"
+      ],
+      "presentation": {
+        "clear": true
+      }
+    },
+    {
+      "label": "Glifex: Database test",
+      "type": "shell",
+      "command": "python3",
+      "windows": {
+        "command": "python"
+      },
+      "args": [
+        "glifex.py",
+        "db",
+        "test",
+        "${input:problem}"
+      ],
+      "presentation": {
+        "clear": true
+      }
+    },
+    {
+      "label": "Glifex: Reveal reference",
+      "type": "shell",
+      "command": "python3",
+      "windows": {
+        "command": "python"
+      },
+      "args": [
+        "glifex.py",
+        "reveal",
+        "${input:problem}",
+        "${input:language}",
+        "optimized"
+      ]
+    },
+    {
+      "label": "Glifex: Doctor",
+      "type": "shell",
+      "command": "python3",
+      "windows": {
+        "command": "python"
+      },
+      "args": [
+        "glifex.py",
+        "doctor"
+      ]
+    },
+    {
+      "label": "Glifex: Build playground",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "web/build.mjs"
+      ]
+    },
+    {
+      "label": "Glifex: Bench (pick language)",
+      "type": "shell",
+      "command": "python3",
+      "windows": {
+        "command": "python"
+      },
+      "args": [
+        "glifex.py",
+        "bench",
+        "${input:problem}",
+        "${input:language}",
+        "optimized"
+      ],
+      "presentation": {
+        "clear": true
+      }
+    },
+    {
+      "label": "Glifex: Database bench (query plans)",
+      "type": "shell",
+      "command": "python3",
+      "windows": {
+        "command": "python"
+      },
+      "args": [
+        "glifex.py",
+        "db",
+        "bench",
+        "${input:problem}"
+      ],
+      "presentation": {
+        "clear": true
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "problem",
+      "type": "promptString",
+      "description": "Problem id (e.g. 001)",
+      "default": "001"
+    },
+    {
+      "id": "language",
+      "type": "pickString",
+      "description": "Language",
+      "options": [
+        "python",
+        "javascript",
+        "typescript",
+        "go",
+        "java",
+        "ruby",
+        "csharp",
+        "cpp",
+        "c",
+        "rust",
+        "php",
+        "kotlin",
+        "swift",
+        "dart",
+        "zig",
+        "asm-x86_64",
+        "asm-arm64",
+        "wat"
+      ],
+      "default": "python"
+    }
+  ]
+}

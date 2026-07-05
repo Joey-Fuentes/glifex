@@ -1,0 +1,23 @@
+{
+  "recommendations": [
+    // Shared tooling
+    "editorconfig.editorconfig",
+
+    // Languages that ship out of the box
+    "ms-python.python",
+    "golang.go",
+    "redhat.java",
+    "vscjava.vscode-java-debug",
+    "ms-dotnettools.csharp",
+    "shopify.ruby-lsp",
+    "dbaeumer.vscode-eslint",
+
+    // Database track (Postgres problems)
+    "ms-ossdata.vscode-pgsql",
+
+    // Planned languages (harmless to recommend early)
+    "ms-vscode.cpptools",
+    "fwcd.kotlin",
+    "swiftlang.swift-vscode"
+  ]
+}

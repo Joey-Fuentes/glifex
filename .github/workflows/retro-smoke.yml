@@ -1,0 +1,19 @@
+name: retro-smoke
+# Prove the customasm assembler works in this environment (assemble half of the
+# 6502 tier). Green here => customasm is good; the cpu6502 execution half is
+# proven when the browser runtime lands. Independent of the main CI matrix.
+on:
+  # TEMP(free-tier): auto triggers disabled to save minutes; run manually from the Actions tab.
+  workflow_dispatch: {}
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - name: Install customasm (Rust CLI)
+        run: cargo install customasm --locked
+      - name: Retro toolchain smoke (assemble check)
+        run: node retro/smoke.mjs

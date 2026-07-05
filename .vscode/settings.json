@@ -1,0 +1,27 @@
+{
+  // Blind practice: hide reference solutions from the explorer and search so
+  // you attempt each problem cold. They still exist on disk (and still
+  // compile) — reveal them on demand with `glifex reveal <problem> <lang>`.
+  "files.exclude": {
+    "**/clean.*": true,
+    "**/optimized.*": true,
+    "**/brute_force.*": true,
+    "**/.solutions": true,
+    // common build/output noise
+    "**/__pycache__": true,
+    "**/node_modules": true,
+    "**/bin": true,
+    "**/obj": true,
+    "**/target": true,
+    "**/.build": true
+  },
+  "search.exclude": {
+    "**/clean.*": true,
+    "**/optimized.*": true,
+    "**/brute_force.*": true,
+    "**/.solutions": true
+  },
+
+  "files.eol": "\n",
+  "editor.formatOnSave": false
+}

@@ -1,0 +1,51 @@
+[
+  {
+    "input": {
+      "s": "clinteastwood",
+      "t": "oldwestaction"
+    },
+    "expected": true
+  },
+  {
+    "input": {
+      "s": "hello",
+      "t": "world"
+    },
+    "expected": false
+  },
+  {
+    "input": {
+      "s": "",
+      "t": ""
+    },
+    "expected": true
+  },
+  {
+    "input": {
+      "s": "a",
+      "t": "ab"
+    },
+    "expected": false
+  },
+  {
+    "input": {
+      "s": "a",
+      "t": "b"
+    },
+    "expected": false
+  },
+  {
+    "input": {
+      "s": "aab",
+      "t": "abb"
+    },
+    "expected": false
+  },
+  {
+    "input": {
+      "s": "ab",
+      "t": "abc"
+    },
+    "expected": false
+  }
+]

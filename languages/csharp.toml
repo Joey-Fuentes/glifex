@@ -1,0 +1,11 @@
+name = "csharp"
+extension = "cs"
+practice_file = "Practice.cs"
+detect = "dotnet --version"
+install_hint = "brew install dotnet | apt install dotnet-sdk-10.0 | winget install Microsoft.DotNet.SDK.10"
+test_cmd = "dotnet run -- {variant}"
+run_cmd = "dotnet run -- {variant}"
+harness_template = "Harness.cs"
+tool_version = "dotnet 10.0"
+stub = "using System.Collections.Generic;\nclass {Variant} : ISolution {\n    public object Solve(Dictionary<string,object> c) {\n        throw new System.NotImplementedException();\n    }\n}\n"
+support_files = ["ISolution.cs", "glifex.csproj"]

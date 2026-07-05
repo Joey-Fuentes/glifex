@@ -1,0 +1,272 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Stage 1: fast checks — fail in seconds, not minutes ─────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.13" }
+      - name: Ruff (Python lint + format check)
+        run: |
+          pip install ruff==0.15.20   # pinned: new ruff releases add rules; bump deliberately
+          ruff check glifex.py
+          ruff format --check glifex.py
+      - uses: actions/setup-node@v6
+        with: { node-version: "24" }
+      - name: Biome (JS/TS lint + format check)
+        run: npx --yes @biomejs/biome check web/ languages/templates/ || true
+        # '|| true' until the codebase is Biome-formatted; flip to blocking then.
+      - name: Asset-stamp transform test
+        run: node web/stamp.test.mjs
+
+  corpus:
+    name: Playground corpus is not stale
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with: { node-version: "24" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - name: Harness drift gate (copies must equal templates)
+        run: python3 glifex.py sync-harnesses --check
+      - name: Rebuild corpus and diff against committed
+        run: |
+          node web/build.mjs
+          git diff --exit-code -I '"generatedAt"' web/problems.generated.json \
+            || (echo "::error::web/problems.generated.json is stale — run 'node web/build.mjs' and commit" && exit 1)
+      - name: Corpus integrity (declared+runnable languages are baked)
+        run: node web/corpus-integrity.test.mjs
+      - name: Complexity Lab engine battery (L1)
+        run: node web/lab-engine.test.mjs
+      - name: JS runtime battery (compile-once/measure-many)
+        run: node web/js-runtime.test.mjs
+      - name: Retro 8080 core (unit battery + fast CP/M diagnostics, <5s)
+        run: |
+          node web/retro/cpu8080.test.mjs
+          node web/retro/harness8080.mjs --suite web/retro/test-roms/8080 --quiet
+
+  # ── Stage 2: the core promise — every problem, every language, 3 OSes ──
+  matrix:
+    name: glifex test (${{ matrix.os }})
+    needs: [lint, corpus]
+    if: ${{ false }}   # TEMP(free-tier): 3-OS matrix disabled to save minutes (macOS bills 10x, Windows 2x). Re-enable by deleting this line.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.13" }
+      - uses: actions/setup-node@v6
+        with: { node-version: "24" }
+      - uses: actions/setup-go@v6
+        with: { go-version: "1.25" }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "25" }
+      - uses: ruby/setup-ruby@v1
+        with: { ruby-version: "3.4" }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "10.0.x" }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: "8.4" }
+      - uses: dart-lang/setup-dart@v1
+      - uses: mlugg/setup-zig@v1
+        with: { version: "0.14.0" }
+      # C/C++ use the runners' system compilers (gcc/clang preinstalled on
+      # ubuntu/macos; Windows runners include MinGW gcc — doctor skips if absent)
+      - name: TypeScript
+        run: npm install -g typescript
+      - name: WABT (WebAssembly Text toolchain)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then sudo apt-get update -qq && sudo apt-get install -y wabt; fi
+          if [ "$RUNNER_OS" = "macOS" ]; then brew install wabt; fi
+          # Windows: wabt not installed — wat skips honestly on that leg
+      - name: Toolchain report
+        run: python3 glifex.py doctor || python glifex.py doctor
+        shell: bash
+      - name: Test all problems, all installed languages
+        shell: bash
+        run: |
+          PY=python3; command -v python3 >/dev/null || PY=python
+          for p in problems/*/; do
+            $PY glifex.py test "$(basename "$p")"
+          done
+      - name: Verify manifests + reference variants (glifex verify)
+        shell: bash
+        run: |
+          PY=python3; command -v python3 >/dev/null || PY=python
+          for p in problems/*/; do
+            $PY glifex.py verify "$(basename "$p")"
+          done
+      - name: Database track (SQLite engine)
+        shell: bash
+        run: |
+          PY=python3; command -v python3 >/dev/null || PY=python
+          for p in problems-db/*/; do
+            $PY glifex.py db test "$(basename "$p")"
+          done
+
+  # ── Stage 3: the playground engine runs the same corpus ─────────────
+  playground:
+    needs: [corpus]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with: { node-version: "24" }
+      - name: Browser JS engine executes the corpus green
+        run: |
+          node web/build.mjs
+          node -e '
+            const { runJavaScript } = require("./web/js-runtime.js");
+            const c = require("./web/problems.generated.json");
+            let ok = true;
+            for (const p of c.problems.filter(x => x.track === "algorithm" && x.worked)) {
+              const o = runJavaScript(p.languages.javascript.practice, p.cases);
+              const pass = !o.error && o.results.every(r => r.ok);
+              console.log((pass ? "GREEN " : "RED   ") + p.id);
+              ok = ok && pass;
+            }
+            process.exit(ok ? 0 : 1);'
+
+  # ── Stage 4: E2E — real browsers, including the offline guarantee ────
+  e2e:
+    needs: [playground]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with: { node-version: "24" }
+      - name: Install Playwright
+        run: |
+          npm init -y >/dev/null
+          npm install -D @playwright/test
+          npx playwright install --with-deps chromium firefox
+      - name: Restore vendored runtimes cache (e2e flavor, no CodeMirror)
+        uses: actions/cache@v4
+        with:
+          path: web/vendor
+          key: vendor-v1-ci-${{ hashFiles('web/fetch-runtimes.mjs') }}
+      - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; echo "fetch-runtimes attempt $i failed; retrying in 20s"; sleep 20; done; [ "$ok" = 1 ]
+          # e2e drives the plain #editor textarea directly; keep CodeMirror OUT so it
+          # doesn't wrap (and hide) the textarea. CM is a production-only UI enhancement
+          # exercised manually — the runtimes are what e2e must regression-cover.
+          rm -rf web/vendor/codemirror
+      - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          mkdir -p web/vendor/c
+          VER=0.8.0-beta.1
+          npm pack @wasmer/sdk@${VER}
+          tar xzf wasmer-sdk-*.tgz
+          cp -r package/dist/. web/vendor/c/
+          rm -rf package wasmer-sdk-*.tgz
+          curl --retry 5 --retry-delay 15 --retry-all-errors https://get.wasmer.io -sSfL | sh
+          export PATH="$HOME/.wasmer/bin:$PATH"
+          ok=0; for i in 1 2 3 4 5; do wasmer package download clang/clang -o web/vendor/c/clang.webc && { ok=1; break; }; echo "wasmer download attempt $i failed; retrying in 15s"; sleep 15; done; [ "$ok" = 1 ]
+          echo '{"runtime":"c","via":"wasmer"}' > web/vendor/c/manifest.json
+          ls -la web/vendor/c
+      - name: Vendor C++ toolchain (Binji wasm-clang)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          mkdir -p web/vendor/cpp
+          BASE=https://raw.githubusercontent.com/binji/wasm-clang/master
+          for f in clang lld memfs sysroot.tar shared.js worker.js; do
+            curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/$f" -o "web/vendor/cpp/$f"
+          done
+          # Binji's Memory.check() refreshes only on detachment; also refresh on
+          # buffer-identity change so growing the app's wasm memory during a large
+          # fread doesn't leave copy_out viewing a stale/too-small ArrayBuffer.
+          sed -i 's/if (this.buffer.byteLength === 0) {/if (this.buffer !== this.memory.buffer || this.buffer.byteLength === 0) {/' web/vendor/cpp/shared.js
+          grep -q 'this.buffer !== this.memory.buffer' web/vendor/cpp/shared.js || { echo 'shared.js check() patch failed'; exit 1; }
+          echo '{"runtime":"cpp","via":"binji-wasm-clang","clang":"8.0.1","std":"c++17"}' > web/vendor/cpp/manifest.json
+          ls -la web/vendor/cpp
+          test "$(stat -c%s web/vendor/cpp/clang)" -gt 1000000 || { echo "clang too small (LFS pointer?)"; exit 1; }
+      - name: Mark vendor complete (cached for future runs)
+        run: touch web/vendor/.vendor-complete
+      - name: Build corpus & run E2E (incl. offline-mode test)
+        run: |
+          node web/build.mjs
+          npx playwright test e2e/ --config e2e/playwright.config.js
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces
+          path: test-results/
+
+  # ── Stage 4.5: the single required status check ──────────────────────
+  # GitHub's branch protection treats a SKIPPED job as satisfying a
+  # required check, not as a failure. That let a red `playground` job
+  # (which skips its downstream `e2e` via `needs:`) through auto-merge
+  # anyway, since only `e2e` itself was configured as required and
+  # "skipped" reads as "passed" to GitHub. This job is the fix: it
+  # depends on every currently-active job, runs unconditionally via
+  # `if: always()` (so it still runs even when an upstream job failed or
+  # was skipped, rather than being skipped itself the same way), and
+  # explicitly fails if any of them isn't a genuine "success". Point
+  # branch protection's required check at THIS job, not at e2e directly
+  # -- see the repo's Settings > Branches (not something this workflow
+  # file can configure by itself). Deliberately no `name:` field here --
+  # GitHub then reports it under the job id itself ("ci-status-gate"),
+  # so the string typed into Settings > Branches, the job id in this
+  # file, and what actually gets reported are all the same one string,
+  # not two that can silently drift apart.
+  #
+  # matrix and security are deliberately excluded: both are currently
+  # disabled (if: ${{ false }}), so their result is always "skipped" by
+  # design, not a real signal -- including them here would permanently
+  # block every merge. Add them back in if/when they're re-enabled.
+  ci-status-gate:
+    needs: [lint, corpus, playground, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any required job did not succeed
+        run: |
+          echo "lint:       ${{ needs.lint.result }}"
+          echo "corpus:     ${{ needs.corpus.result }}"
+          echo "playground: ${{ needs.playground.result }}"
+          echo "e2e:        ${{ needs.e2e.result }}"
+          if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.corpus.result }}" != "success" ] || \
+             [ "${{ needs.playground.result }}" != "success" ] || \
+             [ "${{ needs.e2e.result }}" != "success" ]; then
+            echo "::error::One or more required CI jobs did not succeed (see results above) -- this must block merge"
+            exit 1
+          fi
+          echo "All required jobs succeeded."
+
+  # ── Stage 5: security ────────────────────────────────────────────────
+  security:
+    if: ${{ false }}   # TEMP(free-tier): advisory job disabled to save minutes. Re-enable by deleting this line.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy — dependencies + secrets (blocking)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          scanners: vuln,secret

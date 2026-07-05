@@ -1,0 +1,13 @@
+name = "rust"
+extension = "rs"
+practice_file = "practice.rs"
+detect = "rustc --version"
+install_hint = "curl https://sh.rustup.rs | sh   (rustup; all platforms)"
+test_cmd = "rustc -O --edition 2021 -o .glifex_bin main.rs && ./.glifex_bin {variant}"
+test_cmd_windows = "rustc -O --edition 2021 -o glifex_bin.exe main.rs && .\\glifex_bin.exe {variant}"
+run_cmd = "rustc -O --edition 2021 -o .glifex_bin main.rs && ./.glifex_bin {variant}"
+bench_cmd = "rustc -O --edition 2021 -o .glifex_bin main.rs && ./.glifex_bin {variant} --bench"
+harness_template = "main.rs"
+tool_version = "rust 1.85"
+stub = "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    // TODO: implement\n    unimplemented!()\n}\n"
+support_files = ["json.rs"]

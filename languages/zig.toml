@@ -1,0 +1,11 @@
+name = "zig"
+platforms = ["linux", "windows"]   # macOS GitHub runners: zig 0.14.0 cannot locate libSystem at link time — code passes on linux+windows; re-enable when runner/zig fix ships
+extension = "zig"
+practice_file = "practice.zig"
+detect = "zig version"
+install_hint = "brew install zig | ziglang.org/download | winget install zig.zig  (pre-1.0: pin the version; harness targets 0.14)"
+test_cmd = "zig run -O ReleaseFast main.zig -- {variant}"
+run_cmd = "zig run -O ReleaseFast main.zig -- {variant}"
+harness_template = "main.zig"
+tool_version = "zig 0.14"
+stub = "const std = @import(\"std\");\nconst json = std.json;\n\npub fn solve(alloc: std.mem.Allocator, c: json.Value) !json.Value {\n    _ = alloc;\n    _ = c;\n    // TODO: implement\n    return error.NotImplemented;\n}\n"

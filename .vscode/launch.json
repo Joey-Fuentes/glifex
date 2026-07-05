@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug: glifex test 001 python",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/glifex.py",
+      "args": ["test", "001", "python"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug: current Python harness",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${fileDirname}/harness.py",
+      "args": ["practice"],
+      "cwd": "${fileDirname}",
+      "console": "integratedTerminal"
+    }
+  ]
+}

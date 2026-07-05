@@ -1,0 +1,48 @@
+[problem]
+title = "Anagram Detection"
+difficulty = "easy"
+tags = ["strings", "hash-map", "sorting"]
+
+[languages]
+python      = { variants = ["practice", "clean", "optimized"] }
+javascript  = { variants = ["practice", "clean", "optimized"] }
+typescript  = { variants = ["practice", "clean", "optimized"] }
+go          = { variants = ["practice", "clean", "optimized"] }
+java        = { variants = ["practice", "clean", "optimized"] }
+kotlin      = { variants = ["practice", "clean", "optimized"] }
+swift       = { variants = ["practice", "clean", "optimized"] }
+ruby        = { variants = ["practice", "clean", "optimized"] }
+csharp      = { variants = ["practice", "clean", "optimized"] }
+cpp         = { variants = ["practice", "clean", "optimized"] }
+c           = { variants = ["practice", "clean", "optimized"] }
+rust        = { variants = ["practice", "clean", "optimized"] }
+php         = { variants = ["practice", "clean", "optimized"] }
+dart        = { variants = ["practice", "clean", "optimized"] }
+zig         = { variants = ["practice", "clean", "optimized"] }
+asm-x86_64  = { variants = ["practice", "clean", "optimized"] }
+asm-arm64   = { variants = ["practice", "clean", "optimized"] }
+
+[exclusions]
+wat = "not-applicable: string inputs; WAT's contract is numeric-only"
+
+# Worst-case time+space REQUIRED per declared variant.
+# `default` covers all languages; per-language tables override.
+[complexity.default.practice]
+time = "O(n log n)"
+space = "O(n)"
+notes = "sort both strings, compare"
+[complexity.default.clean]
+time = "O(n log n)"
+space = "O(n)"
+[complexity.default.optimized]
+time = "O(n)"
+space = "O(1)"
+notes = "counting table; O(1) under the fixed-alphabet convention"
+
+[complexity.asm-x86_64.practice]
+time = "O(n)"
+space = "O(1)"
+notes = "asm practice already uses the counting table"
+[complexity.asm-arm64.practice]
+time = "O(n)"
+space = "O(1)"

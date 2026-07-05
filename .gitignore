@@ -1,0 +1,87 @@
+# ─── Operating system ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Editors ────────────────────────────────────────────────────────
+*.swp
+*~
+.idea/
+*.iml
+
+# ─── Python ─────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Node / JavaScript / TypeScript ─────────────────────────────────
+node_modules/
+dist/
+*.tsbuildinfo
+.tsbuild/
+npm-debug.log*
+
+# ─── Go ─────────────────────────────────────────────────────────────
+/bin/
+
+# ─── JVM (Java / Kotlin) ────────────────────────────────────────────
+*.class
+target/
+.gradle/
+build/
+
+# ─── C# / .NET ──────────────────────────────────────────────────────
+obj/
+*.user
+
+# ─── Ruby ───────────────────────────────────────────────────────────
+.bundle/
+vendor/bundle/
+
+# ─── C++ ────────────────────────────────────────────────────────────
+*.o
+*.out
+cmake-build-*/
+
+# ─── Swift ──────────────────────────────────────────────────────────
+.build/
+Packages/
+*.xcodeproj/
+
+# ─── Rust (planned) ─────────────────────────────────────────────────
+# target/  (already ignored above)
+
+# ─── Tooling / secrets ──────────────────────────────────────────────
+.mise.local.toml
+.env
+.env.local
+
+# ─── VS Code: commit shared workspace config, ignore everything else ─
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ─── Glifex compiled harness artifacts ──────────────────────────────
+.glifex_bin
+.glifex.jar
+
+# ─── Playground vendored WASM runtimes (fetched, never committed) ───
+web/vendor/
+test-results/
+node_modules/
+glifex_bin.exe
+web/version.json
+.glifex.wasm
+
+# .NET build outputs — machine-specific, never commit
+bin/
+obj/
+# .NET file-based-app run cache — contains absolute Codespace paths
+dotnet/runfile-discovery/
+*Zone.Identifier

@@ -1,0 +1,104 @@
+name: Deploy Pages
+on:
+  workflow_run:
+    workflows: ["CI"]   # must match ci.yml's `name:` field exactly
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency: { group: pages, cancel-in-progress: false }   # queue, don't cancel: cancelling mid-deploy orphans a server-side Pages deployment that blocks successors
+
+jobs:
+  # Split build/deploy: a re-run of the deploy job no longer re-uploads the
+  # artifact, so the "multiple artifacts named github-pages" failure mode
+  # from launch day is structurally impossible now.
+  build:
+    # CRITICAL: previously this workflow triggered on any push to main with
+    # zero knowledge of whether CI passed -- a broken change that merged
+    # despite a red CI workflow (see the branch-protection gap fixed in
+    # ci.yml) still deployed straight to production. Now gated on the CI
+    # workflow's own conclusion; workflow_dispatch (a human explicitly
+    # requesting a manual redeploy) is always allowed through, since that's
+    # not automated and carries its own judgment call.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Build the exact commit CI tested, not whatever main happens to
+          # be when this event fires (best practice for workflow_run
+          # triggers -- avoids a drift window on rapid successive pushes).
+          # Falls back to the default ref for workflow_dispatch, which has
+          # no workflow_run context at all.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v6
+        with: { node-version: "24" }
+      - name: Restore vendored runtimes cache (production, keeps CodeMirror)
+        uses: actions/cache@v4
+        with:
+          path: web/vendor
+          key: vendor-v1-pages-${{ hashFiles('web/fetch-runtimes.mjs') }}
+      - name: Vendor WASM runtimes
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; echo "fetch-runtimes attempt $i failed; retrying in 20s"; sleep 20; done; [ "$ok" = 1 ]
+      - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          mkdir -p web/vendor/c
+          VER=0.8.0-beta.1
+          npm pack @wasmer/sdk@${VER}
+          tar xzf wasmer-sdk-*.tgz
+          cp -r package/dist/. web/vendor/c/
+          rm -rf package wasmer-sdk-*.tgz
+          curl --retry 5 --retry-delay 15 --retry-all-errors https://get.wasmer.io -sSfL | sh
+          export PATH="$HOME/.wasmer/bin:$PATH"
+          ok=0; for i in 1 2 3 4 5; do wasmer package download clang/clang -o web/vendor/c/clang.webc && { ok=1; break; }; echo "wasmer download attempt $i failed; retrying in 15s"; sleep 15; done; [ "$ok" = 1 ]
+          echo '{"runtime":"c","via":"wasmer"}' > web/vendor/c/manifest.json
+          ls -la web/vendor/c
+      - name: Vendor C++ toolchain (Binji wasm-clang)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          mkdir -p web/vendor/cpp
+          BASE=https://raw.githubusercontent.com/binji/wasm-clang/master
+          for f in clang lld memfs sysroot.tar shared.js worker.js; do
+            curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/$f" -o "web/vendor/cpp/$f"
+          done
+          sed -i 's/if (this.buffer.byteLength === 0) {/if (this.buffer !== this.memory.buffer || this.buffer.byteLength === 0) {/' web/vendor/cpp/shared.js
+          grep -q 'this.buffer !== this.memory.buffer' web/vendor/cpp/shared.js || { echo 'shared.js check() patch failed'; exit 1; }
+          echo '{"runtime":"cpp","via":"binji-wasm-clang","clang":"8.0.1","std":"c++17"}' > web/vendor/cpp/manifest.json
+          ls -la web/vendor/cpp
+          test "$(stat -c%s web/vendor/cpp/clang)" -gt 1000000 || { echo "clang too small (LFS pointer?)"; exit 1; }
+      - name: Mark vendor complete (cached for future runs)
+        run: touch web/vendor/.vendor-complete
+      - run: node web/build.mjs
+      - name: Stamp document version (badge reports the page it lives in)
+        run: |
+          STAMP=$(date -u +%Y.%m.%d-%H%M)
+          SHA=${GITHUB_SHA::7}
+          sed -i "s/<meta name=\"glifex-version\" content=\"dev\" \/>/<meta name=\"glifex-version\" content=\"$STAMP\" \/>/" web/index.html
+          sed -i "s/<meta name=\"glifex-commit\" content=\"local\" \/>/<meta name=\"glifex-commit\" content=\"$SHA\" \/>/" web/index.html
+          # B2: content-stamp asset URLs (?v=<sha>) + self-version the SW cache.
+          node web/stamp.mjs "$SHA"
+          grep glifex-version web/index.html && grep -m1 "app.js?v=" web/index.html && grep "const CACHE" web/sw.js
+      - uses: actions/configure-pages@v5
+      - name: Strip repo-only test fixtures from the site artifact
+        # web/retro/test-roms are CPU-validation fixtures (incl. GPLv3 CP/M
+        # diagnostics) executed only by the test harness -- never deployed.
+        # See THIRD_PARTY_NOTICES.md "Repo-only test fixtures".
+        run: rm -rf web/retro/test-roms
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: web }
+
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,13 @@
+name = "c"
+extension = "c"
+practice_file = "practice.c"
+detect = "gcc --version"
+install_hint = "brew install gcc | apt install gcc | Windows: use WSL2 (or MSYS2 mingw)"
+test_cmd = "gcc -std=c11 -O2 -o .glifex_bin *.c -lm && ./.glifex_bin {variant}"
+test_cmd_windows = "gcc -std=c11 -O2 -o glifex_bin.exe *.c -lm && .\\glifex_bin.exe {variant}"
+run_cmd = "gcc -std=c11 -O2 -o .glifex_bin *.c -lm && ./.glifex_bin {variant}"
+bench_cmd = "gcc -std=c11 -O2 -o .glifex_bin *.c -lm && ./.glifex_bin {variant} --bench"
+harness_template = "harness.c"
+tool_version = "gcc 14"
+stub = "#include \"solution.h\"\n\nJVal *solve(JVal *c) {\n    /* TODO: implement */\n    fprintf(stderr, \"not implemented\\n\");\n    exit(2);\n}\n"
+support_files = ["solution.h", "json.h"]

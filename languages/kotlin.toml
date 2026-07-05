@@ -1,0 +1,11 @@
+name = "kotlin"
+extension = "kt"
+practice_file = "Practice.kt"
+detect = "kotlinc -version"
+install_hint = "brew install kotlin | sdk install kotlin | winget install JetBrains.Kotlin.Compiler (needs a JDK)"
+test_cmd = "kotlinc HarnessKt.kt SolutionKt.kt JsonKt.kt Practice.kt Clean.kt Optimized.kt -include-runtime -d .glifex.jar && java -jar .glifex.jar {variant}"   # explicit files: kotlinc.bat does not glob on Windows
+run_cmd = "kotlinc HarnessKt.kt SolutionKt.kt JsonKt.kt Practice.kt Clean.kt Optimized.kt -include-runtime -d .glifex.jar && java -jar .glifex.jar {variant}"
+harness_template = "HarnessKt.kt"
+tool_version = "kotlin 2.1"
+stub = "class {Variant} : Solution {\n    override fun solve(c: Map<String, Any?>): Any? {\n        TODO(\"implement\")\n    }\n}\n"
+support_files = ["SolutionKt.kt", "JsonKt.kt"]

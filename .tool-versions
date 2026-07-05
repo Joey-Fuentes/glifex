@@ -1,0 +1,25 @@
+# Pinned runtime versions, read by `mise install`.
+# These are the languages Glifex ships with out of the box. Adding a new
+# language is a plugin file (languages/<name>.toml) plus its pin here.
+#
+# Pins track current LTS / stable as of 2026. Adjust as you like — mise
+# fuzzy-matches, so "python 3.13" installs the latest 3.13.x.
+
+python  3.13
+nodejs  24
+go      1.25
+ruby    3.4
+java    temurin-25
+dotnet  10.0
+
+# TypeScript is not a runtime — it compiles to JavaScript and installs via
+# npm once Node is present (`npm install -g typescript`).
+#
+# C++ uses the system compiler (g++/clang++); no mise pin needed.
+kotlin  2.1
+swift   6.0
+rust    1.85
+php     8.4
+dart    3.7
+zig     0.14.0
+# C uses the system compiler (gcc/clang), like C++.

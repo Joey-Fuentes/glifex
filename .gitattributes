@@ -1,0 +1,13 @@
+# Normalize line endings so Windows contributors don't commit CRLF and
+# break shell scripts, diffs, or harness comparisons.
+* text=auto eol=lf
+
+# Explicit binaries (never touch line endings).
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
+*.gz   binary

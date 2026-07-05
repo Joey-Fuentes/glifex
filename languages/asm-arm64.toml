@@ -1,0 +1,12 @@
+name = "asm-arm64"
+extension = "s"
+practice_file = "practice.s"
+family = "assembly"
+arch = "aarch64"
+platforms = ["linux", "darwin"]
+scaffold = false
+detect = "gcc --version"
+install_hint = "gcc assembles .s natively on ARM64 hosts (Apple Silicon, RPi, Graviton)"
+test_cmd = "gcc -O2 -o .glifex_bin harness.c *.s && ./.glifex_bin {variant}"
+run_cmd = "gcc -O2 -o .glifex_bin harness.c *.s && ./.glifex_bin {variant}"
+tool_version = "gcc 14"
