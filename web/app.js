@@ -3,49 +3,6 @@
 
 const state = { corpus: null, current: null, lang: "javascript", revealed: false };
 
-// ── JavaScript execution engine (native, offline, no WASM) ───────────
-// Runs the user's `module.exports = function solve(c){...}` against the cases.
-function runJavaScript(source, cases) {
-  let solve;
-  try {
-    const module = { exports: {} };
-    // eslint-disable-next-line no-new-func
-    new Function("module", "exports", source)(module, module.exports);
-    solve = typeof module.exports === "function" ? module.exports : module.exports.solve;
-    if (typeof solve !== "function") throw new Error("no solve() exported");
-  } catch (e) {
-    return { error: `Compile error: ${e.message}` };
-  }
-  // Correctness pass (recorded once)…
-  const results = [];
-  for (let i = 0; i < cases.length; i++) {
-    try {
-      const got = solve(cases[i].input);
-      const ok = JSON.stringify(got) === JSON.stringify(cases[i].expected);
-      results.push({ i, ok, got, expected: cases[i].expected });
-    } catch (e) {
-      results.push({ i, ok: false, error: e.message, expected: cases[i].expected });
-    }
-  }
-  // …then timing. performance.now() is coarsened to ~0.1ms, and fast solutions
-  // finish all cases in microseconds — so adaptively repeat the whole case set
-  // until one sample fills a measurable window, then take a median of 3.
-  let nsPerCase = 0;
-  if (results.every((r) => r.ok) && cases.length) {
-    let iters = 1;
-    const sample = () => {
-      const t0 = performance.now();
-      for (let k = 0; k < iters; k++) for (const c of cases) solve(c.input);
-      return performance.now() - t0;
-    };
-    let dt = sample();
-    while (dt < 5 && iters < 65536) { iters *= 2; dt = sample(); }
-    const samples = [dt, sample(), sample()].sort((a, b) => a - b);
-    nsPerCase = (samples[1] * 1e6) / (iters * cases.length);
-  }
-  return { results, nsPerCase };
-}
-
 // ── rendering ────────────────────────────────────────────────────────
 const $ = (s) => document.querySelector(s);
 
@@ -192,7 +149,7 @@ async function compareOptimized(userOut, res) {
   const src = (p.languages[state.lang] || {}).optimized;
   if (!src) return;
   let refOut;
-  if (state.lang === "javascript") refOut = runJavaScript(src, p.cases);
+  if (state.lang === "javascript") refOut = GlifexJsRuntime.runJavaScript(src, p.cases);
   else {
     const runner = await window.Runtimes.get(state.lang);
     if (!runner || runner === "native") return;
@@ -265,7 +222,7 @@ async function run() {
 
   // ── algorithm track ─────────────────────────────────────────────────
   if (state.lang === "javascript") {
-    renderResults(runJavaScript((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases), res);
+    renderResults(GlifexJsRuntime.runJavaScript((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases), res);
     return;
   }
   const runner = await window.Runtimes.get(state.lang);
@@ -396,5 +353,3 @@ async function boot() {
 
 if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", boot);
 
-// export the pure engine for Node-side testing
-if (typeof module !== "undefined") module.exports = { runJavaScript };

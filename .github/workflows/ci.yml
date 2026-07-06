@@ -121,7 +121,7 @@ jobs:
         run: |
           node web/build.mjs
           node -e '
-            const { runJavaScript } = require("./web/app.js");
+            const { runJavaScript } = require("./web/js-runtime.js");
             const c = require("./web/problems.generated.json");
             let ok = true;
             for (const p of c.problems.filter(x => x.track === "algorithm")) {
