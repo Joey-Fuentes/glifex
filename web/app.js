@@ -186,12 +186,12 @@ function renderDocs() {
     <code>python -m http.server</code> — identical behaviour, because nothing is fetched
     at run time.</p>
     <h2>What runs where</h2>
-    <p><b>JavaScript</b> executes natively in your browser — no download, works offline
-    immediately. Other languages (Python, Ruby, TypeScript) need a one-time
-    <code>node web/fetch-runtimes.mjs</code> that vendors their WASM runtimes into
-    <code>web/vendor/</code>. Go, Java, and C# are CLI-only for now.</p>
-    <p>The <b>database track</b> runs on a WASM Postgres (PGlite) once vendored; offline it
-    is CLI-only via <code>glifex db test</code>.</p>
+    <p><b>JavaScript, TypeScript, Python, and Ruby</b> run right here in your
+    browser — desktop or mobile. First run downloads a runtime once; after
+    that it works offline too. The <b>database track</b> runs on an in-browser
+    PostgreSQL (PGlite). All other languages — Go, Java, C#, C, C++, Rust,
+    PHP, Dart, Zig, Kotlin, Swift, and the assembly family — run via the CLI:
+    <code>glifex test &lt;problem&gt; &lt;lang&gt;</code>.</p>
     <h2>The contract</h2>
     <pre><code>// implement this, in practice.js
 module.exports = function solve(input) {
