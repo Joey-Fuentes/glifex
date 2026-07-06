@@ -16,7 +16,7 @@ async function boot() {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
   document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => switchView(b.dataset.view)));
-  $("#lang-select").onchange = (e) => { state.lang = e.target.value; loadEditor(); syncReference(); };
+  $("#lang-select").onchange = (e) => { state.lang = e.target.value; loadEditor(); syncReference(); clearResults(); };
   function setRevealVisible(show) {
     // Single writer for the panel: visibility, button label, and content
     // move together — the label IS the state, so they can't disagree.

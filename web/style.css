@@ -169,3 +169,9 @@ button.ghost.active { color: var(--accent); border-color: var(--accent); }
 .hero b { color: var(--fg); font-weight: 600; }
 .hero span { flex: 1; }
 .hero[hidden] { display: none; }
+
+/* results: failed/attempted mark + run spinner */
+.failed-mark { color: var(--fail); margin-right: .35rem; font-weight: 700; }
+.running { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-size: .85rem; }
+.spinner { width: 14px; height: 14px; flex: none; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: glifex-spin .7s linear infinite; }
+@keyframes glifex-spin { to { transform: rotate(360deg); } }

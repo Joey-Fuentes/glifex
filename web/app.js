@@ -6,14 +6,21 @@ var state = { corpus: null, current: null, lang: "javascript", revealed: false }
 // ── rendering ────────────────────────────────────────────────────────
 function $(s) { return document.querySelector(s); }
 
+// clear the results panel back to the neutral prompt (problem/lang switch)
+function clearResults() { $("#results").innerHTML = `<div class="hint">Write your solution and press Run.</div>`; }
+// loading state: spinner + message during compile/runtime fetch/execution
+function showRunning(res, msg) { res.innerHTML = `<div class="running"><span class="spinner" aria-hidden="true"></span>${msg}</div>`; }
+
 function renderProblemList() {
   const ul = $("#problem-list");
   ul.innerHTML = "";
   for (const p of state.corpus.problems) {
     const li = document.createElement("li");
-    const solved = window.GlifexStorage && Object.entries(GlifexStorage.load().entries)
-      .some(([k, v]) => k.split(":")[1] === p.id && v.solved);
-    li.innerHTML = `${solved ? '<span class="solved-mark">✓</span>' : ""}<span class="track">${p.track === "database" ? "db" : p.track === "frontend" ? "fe" : "algo"}</span>${p.title}${p.difficulty ? `<span class="diff diff-${p.difficulty}">${p.difficulty}</span>` : ""}`;
+    const mine = window.GlifexStorage ? Object.entries(GlifexStorage.load().entries).filter(([k]) => k.split(":")[1] === p.id).map(([, v]) => v) : [];
+    const solved = mine.some((v) => v.solved);
+    const attempted = mine.some((v) => (v.attempts || 0) > 0);
+    const mark = solved ? '<span class="solved-mark">✓</span>' : attempted ? '<span class="failed-mark">✗</span>' : "";
+    li.innerHTML = `${mark}<span class="track">${p.track === "database" ? "db" : p.track === "frontend" ? "fe" : "algo"}</span>${p.title}${p.difficulty ? `<span class="diff diff-${p.difficulty}">${p.difficulty}</span>` : ""}`;
     li.onclick = () => selectProblem(p.id);
     if (state.current && state.current.id === p.id) li.classList.add("active");
     li.dataset.id = p.id;
@@ -43,7 +50,7 @@ function selectProblem(id) {
   loadEditor();
   $("#preview-wrap").hidden = p.track !== "frontend";
   if (p.track === "frontend") updatePreview();
-  $("#results").innerHTML = `<div class="hint">Write your solution and press Run.</div>`;
+  clearResults();
   document.querySelectorAll("#problem-list li").forEach((li) => li.classList.toggle("active", li.dataset.id === id));
   if (location.hash.slice(1) !== id) location.hash = id;   // U0-4 permalink (same value = no-op)
 }
@@ -175,6 +182,7 @@ function updatePreview() {
 }
 
 function runFrontend(p, res) {
+  showRunning(res, "Rendering…");
   updatePreview();
   const frame = $("#preview");
   frame.onload = () => {
@@ -185,6 +193,7 @@ function runFrontend(p, res) {
       `<div class="case ${r.ok ? "pass" : "fail"}">[${r.ok ? "PASS" : "FAIL"}] ${r.label}` +
       (r.ok ? "" : `  — ${r.detail}`) + `</div>`).join("") +
       `<div class="summary ${passed === results.length ? "ok" : "bad"}">${passed}/${results.length} assertions passed</div>`;
+    recordOutcome(passed === results.length);
   };
 }
 
@@ -195,6 +204,7 @@ async function run() {
 
   // ── database track: PGlite (Postgres-in-WASM) if vendored ──────────
   if (p.track === "database") {
+    showRunning(res, "Starting in-browser Postgres…");
     const db = await window.Runtimes.get("postgres");
     if (!db) {
       const err = window.Runtimes.error("postgres");
@@ -207,7 +217,7 @@ async function run() {
         <code>glifex db test ${p.id}</code>.</div>`;
       return;
     }
-    res.innerHTML = `<div class="hint">Running on in-browser Postgres…</div>`;
+    showRunning(res, "Running query…");
     try {
       const rows = await db.query(p.schema, p.seed, (window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value));
       const exp = p.expected.rows;
@@ -216,8 +226,10 @@ async function run() {
       res.innerHTML = `<div class="case ${ok ? "pass" : "fail"}">[${ok ? "PASS" : "FAIL"}] ${rows.length} rows (ordered=${!!p.expected.ordered})` +
         (ok ? "" : `<br>expected=${JSON.stringify(exp)}<br>got=${JSON.stringify(rows)}`) + `</div>` +
         `<div class="summary ${ok ? "ok" : "bad"}">${ok ? "PASS" : "FAIL"}</div>`;
+      recordOutcome(ok);
     } catch (e) {
       res.innerHTML = `<div class="summary bad">query error: ${e.message}</div>`;
+      recordOutcome(false);
     }
     return;
   }
@@ -227,6 +239,7 @@ async function run() {
     renderResults(GlifexJsRuntime.runJavaScript((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases), res);
     return;
   }
+  showRunning(res, `Preparing ${state.lang} runtime…`);
   const runner = await window.Runtimes.get(state.lang);
   if (!runner || runner === "native") {
     const err = window.Runtimes.error(state.lang);
@@ -241,11 +254,12 @@ async function run() {
       family — are CLI-only: <code>glifex test ${p.id} ${state.lang}</code>.</div>`;
     return;
   }
-  res.innerHTML = `<div class="hint">Running on the ${state.lang} WASM runtime…</div>`;
+  showRunning(res, `Running ${state.lang}…`);
   try {
     renderResults(await runner.run((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases), res);
   } catch (e) {
     res.innerHTML = `<div class="summary bad">runtime error: ${e.message}</div>`;
+    recordOutcome(false);
   }
 }
 
