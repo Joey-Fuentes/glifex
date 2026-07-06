@@ -6,7 +6,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
-concurrency: { group: pages, cancel-in-progress: true }
+concurrency: { group: pages, cancel-in-progress: false }   # queue, don't cancel: cancelling mid-deploy orphans a server-side Pages deployment that blocks successors
 
 jobs:
   # Split build/deploy: a re-run of the deploy job no longer re-uploads the
