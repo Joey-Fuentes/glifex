@@ -15,6 +15,11 @@
     <button data-view="play" class="active">Playground</button>
     <button data-view="docs">Docs</button>
   </nav>
+  <div class="progress-actions">
+    <button id="export-btn" class="ghost sm" title="Download your progress as a file you own">⭳ Export</button>
+    <button id="import-btn" class="ghost sm" title="Merge a progress file (newest wins; solved never lost)">⭱ Import</button>
+    <input type="file" id="import-file" accept="application/json" hidden />
+  </div>
   <div class="status" id="offline-badge" title="Runs fully offline">● offline-ready</div>
 </header>
 
@@ -50,6 +55,15 @@
         <iframe id="preview" sandbox="allow-same-origin" title="Live preview"></iframe>
       </div>
 
+      <div class="reference-panel" id="reference-panel" hidden>
+        <div class="ref-tabs">
+          <span class="editor-label">reference</span>
+          <button id="ref-clean" class="ghost sm">clean</button>
+          <button id="ref-optimized" class="ghost sm active">optimized</button>
+        </div>
+        <pre id="reference-code"></pre>
+      </div>
+
       <div class="results" id="results">
         <div class="hint">Write your <code>solve()</code> and press Run. JavaScript executes
         natively in your browser — no download, works offline. Other languages need a
@@ -70,6 +84,8 @@
   <a href="https://github.com/Joey-Fuentes/glifex">GitHub</a>
 </footer>
 
+<script src="storage.js"></script>
+<script src="editor.js"></script>
 <script src="assertions.js"></script>
 <script src="runtimes.js"></script>
 <script src="app.js"></script>

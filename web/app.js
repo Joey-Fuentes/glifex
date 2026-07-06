@@ -17,16 +17,25 @@ function runJavaScript(source, cases) {
     return { error: `Compile error: ${e.message}` };
   }
   const results = [];
-  for (let i = 0; i < cases.length; i++) {
-    try {
-      const got = solve(cases[i].input);
-      const ok = JSON.stringify(got) === JSON.stringify(cases[i].expected);
-      results.push({ i, ok, got, expected: cases[i].expected });
-    } catch (e) {
-      results.push({ i, ok: false, error: e.message, expected: cases[i].expected });
+  const times = [];
+  for (let rep = 0; rep < 5; rep++) {
+    const t0 = performance.now();
+    for (let i = 0; i < cases.length; i++) {
+      try {
+        const got = solve(cases[i].input);
+        if (rep === 0) {
+          const ok = JSON.stringify(got) === JSON.stringify(cases[i].expected);
+          results.push({ i, ok, got, expected: cases[i].expected });
+        }
+      } catch (e) {
+        if (rep === 0) results.push({ i, ok: false, error: e.message, expected: cases[i].expected });
+      }
     }
+    times.push(((performance.now() - t0) * 1e6) / Math.max(1, cases.length));
+    if (results.some((r) => !r.ok)) break;   // don't bench broken code
   }
-  return { results };
+  const nsPerCase = times.sort((a, b) => a - b)[Math.floor(times.length / 2)];
+  return { results, nsPerCase };
 }
 
 // ── rendering ────────────────────────────────────────────────────────
@@ -37,7 +46,9 @@ function renderProblemList() {
   ul.innerHTML = "";
   for (const p of state.corpus.problems) {
     const li = document.createElement("li");
-    li.innerHTML = `<span class="track">${p.track === "database" ? "db" : "algo"}</span>${p.title}`;
+    const solved = window.GlifexStorage && Object.entries(GlifexStorage.load().entries)
+      .some(([k, v]) => k.split(":")[1] === p.id && v.solved);
+    li.innerHTML = `${solved ? '<span class="solved-mark">✓</span>' : ""}<span class="track">${p.track === "database" ? "db" : p.track === "frontend" ? "fe" : "algo"}</span>${p.title}`;
     li.onclick = () => selectProblem(p.id);
     if (state.current && state.current.id === p.id) li.classList.add("active");
     li.dataset.id = p.id;
@@ -54,7 +65,6 @@ function languagesFor(p) {
 function selectProblem(id) {
   const p = state.corpus.problems.find((x) => x.id === id);
   state.current = p;
-  state.revealed = false;
   const langs = languagesFor(p);
   if (!langs.includes(state.lang)) state.lang = langs.includes("javascript") ? "javascript" : langs[0];
 
@@ -81,25 +91,112 @@ function currentSource(variant = "practice") {
   return (p.languages[state.lang] || {})[variant];
 }
 
-function loadEditor() {
-  const src = currentSource(state.revealed ? "optimized" : "practice");
-  $("#editor").value = src || `// no ${state.lang} source for this problem`;
-  $("#editor-label").textContent = state.revealed ? "optimized (reference)" : "practice";
-  $("#editor").readOnly = state.revealed;
+function modeFor() {
+  const p = state.current;
+  if (p.track === "database") return "text/x-sql";
+  if (p.track === "frontend") return "htmlmixed";
+  return { javascript: "javascript", typescript: "javascript", python: "python",
+           ruby: "ruby", go: "go", java: "text/x-java", csharp: "text/x-csharp",
+         }[state.lang] || "javascript";
 }
 
-function renderResults(out, res) {
-  if (out.error) { res.innerHTML = `<div class="summary bad">${out.error}</div>`; return; }
+function loadEditor() {
+  // Persistence: a saved draft beats the starter; the starter is always
+  // one click away via the restore chip.
+  const starter = currentSource("practice") || `// no ${state.lang} source for this problem`;
+  let src = starter, restored = false;
+  if (window.GlifexStorage) {
+    const key = GlifexStorage.entryKey(state.current.track, state.current.id,
+      state.current.track === "database" ? "sql" : state.current.track === "frontend" ? "html" : state.lang);
+    const entry = GlifexStorage.load().entries[key];
+    if (entry && entry.code != null && entry.code !== starter) { src = entry.code; restored = true; }
+  }
+  if (window.GlifexEditor) { GlifexEditor.setValue(src); GlifexEditor.setMode(modeFor()); }
+  else (window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value) = src;
+  $("#editor-label").innerHTML = restored
+    ? `draft restored · <a href="#" id="reset-starter">reset to starter</a>`
+    : "practice";
+  const rs = document.getElementById("reset-starter");
+  if (rs) rs.onclick = (e) => {
+    e.preventDefault();
+    if (window.GlifexEditor) GlifexEditor.setValue(starter); else (window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value) = starter;
+    saveDraft(starter);
+    $("#editor-label").textContent = "practice";
+  };
+  $("#reference-panel").hidden = true;
+}
+
+function showReference(variant) {
+  state.refVariant = variant;
+  const src = currentSource(variant) || "(no reference for this variant)";
+  $("#reference-code").textContent = src;
+  $("#ref-clean").classList.toggle("active", variant === "clean");
+  $("#ref-optimized").classList.toggle("active", variant === "optimized");
+}
+
+let saveTimer = null;
+function saveDraft(code) {
+  if (!window.GlifexStorage || !state.current) return;
+  const p = state.current;
+  const lang = p.track === "database" ? "sql" : p.track === "frontend" ? "html" : state.lang;
+  const store = GlifexStorage.load();
+  GlifexStorage.putEntry(store, GlifexStorage.entryKey(p.track, p.id, lang),
+    { code }, new Date().toISOString());
+  GlifexStorage.persist(store);
+}
+
+function fmtNs(ns) {
+  if (ns >= 1e6) return (ns / 1e6).toFixed(1) + " ms";
+  if (ns >= 1e3) return (ns / 1e3).toFixed(1) + " µs";
+  return Math.round(ns) + " ns";
+}
+
+function renderResults(out, res, opts = {}) {
+  if (out.error) { res.innerHTML = `<div class="summary bad">${out.error}</div>`; recordOutcome(false); return; }
   const passed = out.results.filter((r) => r.ok).length;
-  res.innerHTML = out.results.map((r) =>
+  const allPass = passed === out.results.length;
+  let html = out.results.map((r) =>
     `<div class="case ${r.ok ? "pass" : "fail"}">[${r.ok ? "PASS" : "FAIL"}] case ${r.i}` +
     (r.ok ? "" : `  expected=${JSON.stringify(r.expected)} ${r.error ? "error=" + r.error : "got=" + JSON.stringify(r.got)}`) +
     `</div>`).join("") +
-    `<div class="summary ${passed === out.results.length ? "ok" : "bad"}">${passed}/${out.results.length} passed</div>`;
+    `<div class="summary ${allPass ? "ok" : "bad"}">${passed}/${out.results.length} passed</div>`;
+  if (allPass && out.nsPerCase) {
+    html += `<div class="timing">~${fmtNs(out.nsPerCase)}/case <span class="dim">(coarse — this device, this runtime; cross-language comparison is not meaningful)</span>` +
+      (opts.compared ? ` · reference optimized: ~${fmtNs(opts.compared)}/case` :
+       ` <a href="#" id="compare-btn">compare vs optimized</a>`) + `</div>`;
+  }
+  res.innerHTML = html;
+  const cb = document.getElementById("compare-btn");
+  if (cb) cb.onclick = (e) => { e.preventDefault(); compareOptimized(out, res); };
+  recordOutcome(allPass, allPass ? out.nsPerCase : null);
+}
+
+async function compareOptimized(userOut, res) {
+  const p = state.current;
+  const src = (p.languages[state.lang] || {}).optimized;
+  if (!src) return;
+  let refOut;
+  if (state.lang === "javascript") refOut = runJavaScript(src, p.cases);
+  else {
+    const runner = await window.Runtimes.get(state.lang);
+    if (!runner || runner === "native") return;
+    refOut = await runner.run(src, p.cases);
+  }
+  renderResults(userOut, res, { compared: refOut.nsPerCase });
+}
+
+function recordOutcome(passed, nsPerCase = null) {
+  const p = state.current;
+  if (!p || !window.GlifexStorage) return;
+  const lang = p.track === "database" ? "sql" : p.track === "frontend" ? "html" : state.lang;
+  const store = GlifexStorage.load();
+  GlifexStorage.recordResult(store, GlifexStorage.entryKey(p.track, p.id, lang), passed, nsPerCase, new Date().toISOString());
+  GlifexStorage.persist(store);
+  renderProblemList();   // refresh solved ✓ marks
 }
 
 function updatePreview() {
-  $("#preview").srcdoc = $("#editor").value;
+  $("#preview").srcdoc = (window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value);
 }
 
 function runFrontend(p, res) {
@@ -137,7 +234,7 @@ async function run() {
     }
     res.innerHTML = `<div class="hint">Running on in-browser Postgres…</div>`;
     try {
-      const rows = await db.query(p.schema, p.seed, $("#editor").value);
+      const rows = await db.query(p.schema, p.seed, (window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value));
       const exp = p.expected.rows;
       const norm = (xs) => p.expected.ordered ? JSON.stringify(xs) : JSON.stringify(xs.map(String).sort());
       const ok = norm(rows) === norm(exp);
@@ -152,7 +249,7 @@ async function run() {
 
   // ── algorithm track ─────────────────────────────────────────────────
   if (state.lang === "javascript") {
-    renderResults(runJavaScript($("#editor").value, p.cases), res);
+    renderResults(runJavaScript((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases), res);
     return;
   }
   const runner = await window.Runtimes.get(state.lang);
@@ -171,7 +268,7 @@ async function run() {
   }
   res.innerHTML = `<div class="hint">Running on the ${state.lang} WASM runtime…</div>`;
   try {
-    renderResults(await runner.run($("#editor").value, p.cases), res);
+    renderResults(await runner.run((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases), res);
   } catch (e) {
     res.innerHTML = `<div class="summary bad">runtime error: ${e.message}</div>`;
   }
@@ -213,11 +310,39 @@ async function boot() {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
   document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => switchView(b.dataset.view)));
-  $("#lang-select").onchange = (e) => { state.lang = e.target.value; state.revealed = false; loadEditor(); };
-  $("#reveal-btn").onclick = () => { state.revealed = !state.revealed; loadEditor(); };
+  $("#lang-select").onchange = (e) => { state.lang = e.target.value; loadEditor(); };
+  $("#reveal-btn").onclick = () => {
+    const panel = $("#reference-panel");
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) showReference(state.refVariant || "optimized");
+  };
+  $("#ref-clean").onclick = () => showReference("clean");
+  $("#ref-optimized").onclick = () => showReference("optimized");
   $("#run-btn").onclick = run;
+  $("#export-btn").onclick = () => {
+    const text = GlifexStorage.exportBlobText(GlifexStorage.load(), new Date().toISOString());
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    a.download = `glifex-progress-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); URL.revokeObjectURL(a.href);
+  };
+  $("#import-btn").onclick = () => $("#import-file").click();
+  $("#import-file").onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const imported = GlifexStorage.normalize(JSON.parse(await f.text()));
+      const merged = GlifexStorage.mergeStores(GlifexStorage.load(), imported);
+      GlifexStorage.persist(merged);
+      renderProblemList();
+      if (state.current) loadEditor();
+      alert(`Imported ${Object.keys(imported.entries).length} entries (merged, newest wins; solved status never lost).`);
+    } catch { alert("That file isn't a Glifex progress export."); }
+    e.target.value = "";
+  };
   $("#editor").addEventListener("input", () => {
     if (state.current && state.current.track === "frontend") updatePreview();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveDraft(window.GlifexEditor ? GlifexEditor.getValue() : (window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value)), 500);
   });
 
   try {

@@ -18,6 +18,23 @@ const VENDOR = join(dirname(fileURLToPath(import.meta.url)), "vendor");
 const CDN = "https://cdn.jsdelivr.net";
 
 const RUNTIMES = {
+  codemirror: {
+    version: "5.65.18", license: "MIT",
+    files: [
+      { url: `${CDN}/npm/codemirror@5.65.18/lib/codemirror.js`, save: "codemirror.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/lib/codemirror.css`, save: "codemirror.css", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/javascript/javascript.js`, save: "javascript.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/python/python.js`, save: "python.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/ruby/ruby.js`, save: "ruby.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/sql/sql.js`, save: "sql.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/xml/xml.js`, save: "xml.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/css/css.js`, save: "css.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/htmlmixed/htmlmixed.js`, save: "htmlmixed.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/clike/clike.js`, save: "clike.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/go/go.js`, save: "go.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/LICENSE`, save: "LICENSE", required: true },
+    ],
+  },
   typescript: {
     version: "6.0.3", license: "Apache-2.0",
     files: [

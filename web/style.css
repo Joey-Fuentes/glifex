@@ -78,3 +78,21 @@ footer a:hover { text-decoration: underline; }
 
 .update-available { color: var(--accent); margin-left: .4rem; text-decoration: none; }
 .update-available:hover { text-decoration: underline; }
+
+/* ── playground v2 ── */
+.progress-actions { display: flex; gap: .35rem; margin-left: auto; }
+.progress-actions + .status { margin-left: 1rem; }
+button.sm { padding: .25rem .55rem; font-size: .74rem; }
+button.ghost.active { color: var(--accent); border-color: var(--accent); }
+.solved-mark { color: var(--accent-2); margin-right: .35rem; font-weight: 700; }
+.timing { font-family: var(--mono); font-size: .8rem; color: var(--fg); margin-top: .4rem; }
+.timing .dim { color: var(--muted); }
+.timing a { color: var(--accent); text-decoration: none; }
+.reference-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.ref-tabs { display: flex; gap: .4rem; align-items: center; padding: .4rem .6rem; border-bottom: 1px solid var(--line); }
+.ref-tabs .editor-label { position: static; border: 0; background: none; padding: 0 .4rem 0 0; }
+#reference-code { margin: 0; padding: .9rem 1rem; font-family: var(--mono); font-size: .84rem; line-height: 1.6; overflow: auto; max-height: 320px; }
+.CodeMirror { height: auto; min-height: 260px; background: var(--panel-2); color: var(--fg); font-family: var(--mono); font-size: .86rem; }
+.CodeMirror-gutters { background: var(--panel); border-right: 1px solid var(--line); }
+.CodeMirror-linenumber { color: var(--muted); }
+.CodeMirror-cursor { border-left: 1px solid var(--fg); }

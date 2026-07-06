@@ -52,11 +52,22 @@ test("OFFLINE: the playground still runs after the network is cut", async ({ pag
   await context.setOffline(false);
 });
 
-test("reveal shows the reference solution read-only", async ({ page }) => {
+test("reveal opens a side reference panel without touching the editor", async ({ page }) => {
   await page.goto("/");
+  await page.locator("#editor").fill("// my precious draft");
   await page.locator("#reveal-btn").click();
-  await expect(page.locator("#editor-label")).toContainText("reference");
-  await expect(page.locator("#editor")).toHaveAttribute("readonly", "");
+  await expect(page.locator("#reference-panel")).toBeVisible();
+  await expect(page.locator("#reference-code")).not.toBeEmpty();
+  await expect(page.locator("#editor")).toHaveValue("// my precious draft");   // draft-safe
+});
+
+test("a typed draft survives a full page reload", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#editor").fill("module.exports = () => 'my draft';");
+  await page.waitForTimeout(700);   // autosave debounce
+  await page.reload();
+  await expect(page.locator("#editor")).toHaveValue("module.exports = () => 'my draft';");
+  await expect(page.locator("#editor-label")).toContainText("draft restored");
 });
 
 test("non-vendored language degrades gracefully with CLI guidance", async ({ page }) => {

@@ -34,6 +34,7 @@ const Runtimes = (() => {
 
   function caseLoop(callSolve, cases) {
     const results = [];
+    const t0 = performance.now();
     for (let i = 0; i < cases.length; i++) {
       try {
         const got = callSolve(cases[i].input);
@@ -42,7 +43,8 @@ const Runtimes = (() => {
         results.push({ i, ok: false, error: String(e.message || e), expected: cases[i].expected });
       }
     }
-    return { results };
+    const nsPerCase = cases.length ? ((performance.now() - t0) * 1e6) / cases.length : 0;
+    return { results, nsPerCase };
   }
 
   // ── TypeScript: vendored compiler transpiles, then runs as JS ────────
