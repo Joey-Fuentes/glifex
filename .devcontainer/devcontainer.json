@@ -1,6 +1,8 @@
 {
   "name": "Glifex",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  // Pinned to 24.04 LTS: the floating :ubuntu tag rolled to 25.10 (resolute),
+  // where docker-in-docker cannot install Moby and the build fails.
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
 
   // 4-core/16GB minimum: the 2-core (8GB) machine OOMs bringing up the
   // toolchains in parallel and hangs the build. See docs/codespaces.md.
