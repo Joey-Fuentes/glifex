@@ -1,5 +1,7 @@
 # Project status — honest build report
 
+> Planned work is tracked in [docs/ROADMAP.md](docs/ROADMAP.md) — this file records only what has shipped and been verified.
+
 **All 18 registered languages are execution-verified.** Full CI matrix green
 on Linux, macOS (Apple Silicon), and Windows; E2E green in real browsers
 including the offline-mode test; site live at https://glifex.dev with honest

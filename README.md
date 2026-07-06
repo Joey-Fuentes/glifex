@@ -342,6 +342,7 @@ python3 -m http.server -d web 8080   # → http://localhost:8080
 
 See [`STATUS.md`](STATUS.md) for exactly what's verified vs written-pending-local-check,
 and [`docs/LAUNCH.md`](docs/LAUNCH.md) for the full step-by-step launch & verification walkthrough.
+The sequenced plan lives in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 
 
