@@ -141,3 +141,13 @@ button.ghost.active { color: var(--accent); border-color: var(--accent); }
 #statement code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: .08rem .35rem; font-family: var(--mono); font-size: .84em; }
 #statement pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: .7rem .9rem; overflow: auto; }
 #statement pre code { border: 0; background: none; padding: 0; }
+
+/* ── U0-6: statement | editor side-by-side on wide screens (grid, no resizable panes) ── */
+.editor-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+
+@media (min-width: 1080px) {
+  .workspace { display: grid; grid-template-columns: minmax(300px, 2fr) 3fr; align-content: start; }
+  .problem-head { grid-column: 1 / -1; }
+  .statement { grid-column: 1; align-self: start; position: sticky; top: 0; max-height: calc(100vh - 190px); overflow: auto; }
+  .editor-col { grid-column: 2; }
+}
