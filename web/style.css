@@ -132,3 +132,12 @@ button.ghost.active { color: var(--accent); border-color: var(--accent); }
    syncReference read hidden=true on a visibly-open panel). Author-level
    re-assertion restores the hidden attribute's authority. */
 .reference-panel[hidden] { display: none; }
+
+/* rendered problem statements */
+#statement h2 { font-size: 1rem; margin: .9rem 0 .35rem; color: var(--fg); }
+#statement h3 { font-size: .9rem; margin: .7rem 0 .3rem; }
+#statement p, #statement li { line-height: 1.65; color: var(--fg); }
+#statement ul { padding-left: 1.2rem; margin: .3rem 0 .6rem; }
+#statement code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: .08rem .35rem; font-family: var(--mono); font-size: .84em; }
+#statement pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: .7rem .9rem; overflow: auto; }
+#statement pre code { border: 0; background: none; padding: 0; }

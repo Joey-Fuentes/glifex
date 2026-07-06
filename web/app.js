@@ -77,7 +77,7 @@ function selectProblem(id) {
   if (!langs.includes(state.lang)) state.lang = langs.includes("javascript") ? "javascript" : langs[0];
 
   $("#problem-title").textContent = p.title;
-  $("#statement").textContent = p.statement.replace(/^#.*\n/, "");
+  $("#statement").innerHTML = renderMarkdown(p.statement.replace(/^#.*\n/, ""));
   const sel = $("#lang-select");
   sel.innerHTML = langs.map((l) => `<option value="${l}">${l}</option>`).join("");
   sel.value = state.lang;

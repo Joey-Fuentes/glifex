@@ -48,6 +48,23 @@ input that triggers the worst case) → the empirical falsifier (future
 `glifex complexity`: fits growth curves on scaled inputs — it can **refute a
 claim, never confirm one**) → reviewer sign-off.
 
+## Originality and intellectual property
+
+Problem statements must be **original prose you wrote**. Algorithmic ideas
+are not copyrightable — a two-sum-shaped problem is fine — but *expression*
+is: never copy statement text, examples, or constraint wording from LeetCode
+or any other site. If a problem is inspired by a well-known one, say so in a
+comment or the editorial; write every visible word yourself. PRs with
+recognizably copied text will be closed.
+
+## Test-case minimum
+
+Every problem ships **at least 6 test cases** (enforced by `glifex verify`),
+and reviewers check that they include the edge classes that actually break
+naive solutions: empty/minimal input, single element, duplicate values,
+negative numbers where the domain allows, and answers at boundaries. A happy
+path plus five variations of it does not count.
+
 ## Conventions
 
 Trees and linked lists use LeetCode's level-order-with-nulls JSON convention

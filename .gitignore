@@ -78,3 +78,9 @@ node_modules/
 glifex_bin.exe
 web/version.json
 .glifex.wasm
+
+# .NET build outputs — machine-specific, never commit
+bin/
+obj/
+# .NET file-based-app run cache — contains absolute Codespace paths
+dotnet/runfile-discovery/
