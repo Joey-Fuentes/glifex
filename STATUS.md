@@ -33,6 +33,27 @@ what remains written-but-unrun.
 **arch** (wrong hardware) · **ABI** (calling convention scoped by design) ·
 **tc** (toolchain absent on that runner) · **env** (runner environment defect).
 
+## ✅ Playground WASM tier — verified in production, desktop + Android, online + offline
+
+Five languages plus SQL run in the browser on glifex.dev: JavaScript (native),
+TypeScript (vendored compiler 6.0.3), Python (Pyodide 0.28.0), Ruby
+(ruby.wasm 3.4, `@ruby/wasm-wasi` umd), and PostgreSQL (PGlite 0.5.4).
+Verified on desktop **and Android Chrome**, and **offline after first use**
+(Python and Ruby replayed with the network severed — the SW caches runtimes on
+demand; vendor files are deliberately not precached).
+
+Runtimes are vendored at build time by `web/fetch-runtimes.mjs` (release-proof:
+PGlite's hashed ESM chunks and wasm/data assets like `initdb.wasm` are
+auto-discovered by scanning), each with its LICENSE; THIRD_PARTY_NOTICES.md
+records the shipped set. First-contact lessons encoded:
+- ruby's *iife* dist is the auto-run flavor with **no API**; the umd build
+  carries `DefaultRubyVM`.
+- **Capture UMD exports explicitly** (evaluate with an `exports` object) —
+  probing window globals was device-dependent: passed desktop, failed Android.
+- Loader failures surface as "failed to start" with console detail, never a
+  false "isn't vendored"; the vendored-check uses `no-cache` so a fossilized
+  pre-vendor 404 can never mask a present runtime.
+
 ## ✅ Tracks & infrastructure
 
 - **Database track** — `db test` (ephemeral SQLite) and `db bench`
@@ -55,10 +76,6 @@ what remains written-but-unrun.
 
 ## ⚠️ Still written but NOT executed
 
-- **Playground WASM tier** — `web/fetch-runtimes.mjs` and the loaders in
-  `web/runtimes.js` (Pyodide, ruby.wasm, in-browser TS, PGlite). Expect
-  version/API drift on first contact. Amend THIRD_PARTY_NOTICES.md with exact
-  versions in the same commit that first vendors them.
 - **Postgres hosted DB engine** — SQLite path proven; Docker/psql path unrun
   (Docker IS present on Linux/Windows runners, so it's CI-verifiable).
 - **Go real benchmarking** — `bench_test.go` templates exist; `go test -bench`
