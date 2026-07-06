@@ -2,6 +2,10 @@
   "name": "Glifex",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
 
+  // 4-core/16GB minimum: the 2-core (8GB) machine OOMs bringing up the
+  // toolchains in parallel and hangs the build. See docs/codespaces.md.
+  "hostRequirements": { "cpus": 4 },
+
   // Each language Glifex ships with, plus Docker-in-Docker so the database
   // track can spin up throwaway Postgres instances for inline testing.
   "features": {
@@ -14,7 +18,8 @@
     "ghcr.io/devcontainers/features/rust:1":          {},
     "ghcr.io/devcontainers/features/php:1":           { "version": "8.4" },
     "ghcr.io/devcontainers/features/common-utils:2":  {},
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1":       {}
   },
 
   // TypeScript rides on Node. Once the runner lands (Phase 1), doctor runs

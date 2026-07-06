@@ -51,7 +51,7 @@ Pick whichever path fits. All end at the same place: a green run.
 
 ### Path A — GitHub Codespaces (zero install)
 
-Click **Code → Codespaces → Create codespace**. Every toolchain is preinstalled in the browser. Then:
+Click **Code → Codespaces → Create codespace** and choose a **4-core (16 GB) machine or larger** — the 2-core box can't build the container ([why](docs/codespaces.md)). Every toolchain, plus `gh` (pre-authenticated), is preinstalled. Then:
 
 ```bash
 python3 glifex.py test 001-anagram-detection python
@@ -96,6 +96,8 @@ The pins track current LTS/stable: Node.js 24 (Active LTS), Java 25 (LTS), .NET 
 ### 2. Dev Container / Codespaces — guaranteed environment
 
 With Docker (or Codespaces), **Reopen in Container** gives every contributor a byte-identical Linux environment with all toolchains present — and Docker-in-Docker for the database track. This is the only path that *guarantees* rather than *reports*, and it's the smoothest on Windows.
+
+Full setup, machine-size requirements, and the `gh` PR flow: [docs/codespaces.md](docs/codespaces.md).
 
 ### 3. Native package managers — last resort
 

@@ -109,9 +109,13 @@ records the shipped set. First-contact lessons encoded:
   (Docker IS present on Linux/Windows runners, so it's CI-verifiable).
 - **Go real benchmarking** — `bench_test.go` templates exist; `go test -bench`
   has not been executed.
-- ~~Dev Container~~ — **verified**: Codespaces build succeeded (Jul 2026);
-  delivers exactly the declared 12 toolchains incl. docker-in-docker.
-  Codespaces prebuilds remain worthwhile (first build is slow).
+- ~~Dev Container~~ — **verified**: Codespaces build succeeded (Jul 2026) on a
+  4-core/16 GB machine, delivering exactly the declared 12 toolchains incl.
+  docker-in-docker. The 2-core/8 GB machine hangs at build (parallel toolchain
+  compile exhausts 8 GB); `hostRequirements.cpus: 4` now pins the floor. `gh` was
+  absent on first build; the `github-cli` feature now ships it prebuilt and the
+  injected Codespaces token was verified to authenticate it (`gh api user`).
+  Prebuilds remain worthwhile (first build is slow). Setup: docs/codespaces.md.
 - **pre-commit hooks** — configured, not yet installed/run locally.
 
 ## Verify everything
