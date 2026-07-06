@@ -112,14 +112,14 @@ function loadEditor() {
     if (entry && entry.code != null && entry.code !== starter) { src = entry.code; restored = true; }
   }
   if (window.GlifexEditor) { GlifexEditor.setValue(src); GlifexEditor.setMode(modeFor()); }
-  else (window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value) = src;
+  else document.getElementById("editor").value = src;
   $("#editor-label").innerHTML = restored
     ? `draft restored · <a href="#" id="reset-starter">reset to starter</a>`
     : "practice";
   const rs = document.getElementById("reset-starter");
   if (rs) rs.onclick = (e) => {
     e.preventDefault();
-    if (window.GlifexEditor) GlifexEditor.setValue(starter); else (window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value) = starter;
+    if (window.GlifexEditor) GlifexEditor.setValue(starter); else document.getElementById("editor").value = starter;
     saveDraft(starter);
     $("#editor-label").textContent = "practice";
   };
