@@ -55,6 +55,18 @@ async function boot() {
     saveTimer = setTimeout(() => saveDraft(window.GlifexEditor ? GlifexEditor.getValue() : (window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value)), 500);
   });
 
+  // U0-4: direct links + back/forward select the problem (guarded against loops).
+  window.addEventListener("hashchange", () => {
+    const id = location.hash.slice(1);
+    if (id && state.current && id !== state.current.id && state.corpus.problems.some((p) => p.id === id)) selectProblem(id);
+  });
+
+  // U0-5: dismissible first-visit hero.
+  const heroSeen = (() => { try { return localStorage.getItem("glifex-hero-dismissed") === "1"; } catch { return false; } })();
+  const hero = $("#hero");
+  if (hero && !heroSeen) hero.hidden = false;
+  $("#hero-dismiss")?.addEventListener("click", () => { if (hero) hero.hidden = true; try { localStorage.setItem("glifex-hero-dismissed", "1"); } catch {} });
+
   try {
     state.corpus = await (await fetch("problems.generated.json", { cache: "force-cache" })).json();
   } catch {
@@ -81,7 +93,10 @@ async function boot() {
       }
     })
     .catch(() => {});   // offline / file:// — badge already shows the truth
-  if (state.corpus.problems.length) selectProblem(state.corpus.problems[0].id);
+  const wanted = location.hash.slice(1);
+  const has = (pid) => state.corpus.problems.some((p) => p.id === pid);
+  if (wanted && has(wanted)) selectProblem(wanted);
+  else if (state.corpus.problems.length) selectProblem(state.corpus.problems[0].id);
 }
 
 if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", boot);

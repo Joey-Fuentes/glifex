@@ -1,9 +1,15 @@
 {
-  "generatedAt": "2026-07-06T17:18:32.602Z",
+  "generatedAt": "2026-07-06T22:03:58.788Z",
   "problems": [
     {
       "id": "001-anagram-detection",
       "track": "algorithm",
+      "difficulty": "easy",
+      "tags": [
+        "strings",
+        "hash-map",
+        "sorting"
+      ],
       "title": "001 · Anagram Detection",
       "statement": "# 001 · Anagram Detection\n\n## Task\nGiven two strings `s` and `t`, return `true` if `t` is an anagram of `s`\n(same characters, same counts), else `false`.\n\n## Signature\n`solve(input) -> bool`  where `input = { \"s\": string, \"t\": string }`\n\n## Notes\nThis is a *worked example*: `practice.*` ships with a correct naive solution so\n`glifex test 001 <lang>` is green on a fresh clone. Compare it against the hidden\nreferences with `glifex reveal 001 <lang> optimized`. New problems created with\n`glifex new` start from blank stubs instead.\n",
       "cases": [
@@ -98,6 +104,11 @@
     {
       "id": "002-two-sum",
       "track": "algorithm",
+      "difficulty": "easy",
+      "tags": [
+        "arrays",
+        "hash-map"
+      ],
       "title": "002 · Two Sum",
       "statement": "# 002 · Two Sum\n\n## Task\nGiven `nums` and a `target`, return the indices `[i, j]` (i < j) of the two\nnumbers adding to `target`. Exactly one solution exists.\n\n## Signature\n`solve(input) -> [int, int]`  where `input = { \"nums\": int[], \"target\": int }`\n",
       "cases": [
@@ -230,6 +241,8 @@
     {
       "id": "001-users-with-no-orders",
       "track": "database",
+      "difficulty": null,
+      "tags": [],
       "title": "DB 001 · Users With No Orders",
       "statement": "# DB 001 · Users With No Orders\n\n## Task\nReturn the `name` of every user who has never placed an order.\n\n## Order matters\nNo — the harness compares row sets order-independently unless a problem says otherwise.\n\n## Engines\nRuns offline on SQLite (`glifex db test 001`) and on Postgres when hosted.\nThe schema is dialect-neutral so both engines accept it.\n",
       "schema": "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\nCREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, total REAL);\nCREATE INDEX idx_orders_user ON orders(user_id);\n",
@@ -254,6 +267,8 @@
     {
       "id": "001-card-layout",
       "track": "frontend",
+      "difficulty": null,
+      "tags": [],
       "title": "FE 001 · Three-Card Flex Row",
       "statement": "# FE 001 · Three-Card Flex Row\n\n## Task\nBuild a horizontal row of exactly three cards inside a flex container.\n\nRequirements (each is an automated assertion):\n1. A `<section class=\"cards\">` container exists and is `display: flex`.\n2. It contains exactly **three** elements with class `card`.\n3. Each card contains an `<h2>` title.\n4. The container has a `gap` of at least `8px`.\n\n## How it's checked\nThe playground renders your markup live and evaluates `assertions.json`\nagainst the real DOM and computed styles — no pixel-diffing, so results are\ndeterministic across browsers.\n",
       "starter": "<!-- Build the three-card flex row described in the problem. -->\n<style>\n  /* your CSS here */\n</style>\n\n<!-- your markup here -->\n",

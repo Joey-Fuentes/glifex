@@ -8,6 +8,19 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const title = (md) => (md.match(/^#\s+(.+)$/m)?.[1] ?? "Untitled").trim();
 const read = (p) => (existsSync(p) ? readFileSync(p, "utf8") : null);
 
+// U0-2: surface manifest metadata (difficulty, tags) into the corpus so the
+// playground can badge problems. Targeted extraction — the manifests are
+// template-authored and `glifex verify` enforces their structure, so a full
+// TOML parser is overkill for two single-occurrence keys.
+const manifestMeta = (dir) => {
+  const t = read(join(dir, "manifest.toml"));
+  if (!t) return { difficulty: null, tags: [] };
+  const difficulty = t.match(/^\s*difficulty\s*=\s*"([^"]+)"/m)?.[1] ?? null;
+  const raw = t.match(/^\s*tags\s*=\s*\[([^\]]*)\]/m)?.[1] ?? "";
+  const tags = raw.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+  return { difficulty, tags };
+};
+
 function algoProblems() {
   const base = join(ROOT, "problems");
   return readdirSync(base).filter((d) => existsSync(join(base, d, "test_cases.json"))).sort().map((id) => {
@@ -22,7 +35,7 @@ function algoProblems() {
       const f = (v) => read(join(ld, (cap ? v[0].toUpperCase() + v.slice(1) : v) + "." + ext));
       languages[lang] = { practice: f("practice"), clean: f("clean"), optimized: f("optimized") };
     }
-    return { id, track: "algorithm", title: title(md), statement: md,
+    return { id, track: "algorithm", ...manifestMeta(dir), title: title(md), statement: md,
              cases: JSON.parse(read(join(dir, "test_cases.json"))), languages };
   });
 }
@@ -33,7 +46,7 @@ function dbProblems() {
   return readdirSync(base).filter((d) => existsSync(join(base, d, "schema.sql"))).sort().map((id) => {
     const dir = join(base, id);
     const md = read(join(dir, "problem.md")) || `# ${id}`;
-    return { id, track: "database", title: title(md), statement: md,
+    return { id, track: "database", ...manifestMeta(dir), title: title(md), statement: md,
              schema: read(join(dir, "schema.sql")), seed: read(join(dir, "seed.sql")),
              expected: JSON.parse(read(join(dir, "expected.json"))),
              practice: read(join(dir, "practice.sql")),
@@ -47,7 +60,7 @@ function feProblems() {
   return readdirSync(base).filter((d) => existsSync(join(base, d, "assertions.json"))).sort().map((id) => {
     const dir = join(base, id);
     const md = read(join(dir, "problem.md")) || `# ${id}`;
-    return { id, track: "frontend", title: title(md), statement: md,
+    return { id, track: "frontend", ...manifestMeta(dir), title: title(md), statement: md,
              starter: read(join(dir, "starter.html")),
              assertions: JSON.parse(read(join(dir, "assertions.json"))),
              solutions: { clean: read(join(dir, ".solutions", "clean.html")) } };

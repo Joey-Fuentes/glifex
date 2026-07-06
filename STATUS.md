@@ -91,7 +91,7 @@ records the shipped set. First-contact lessons encoded:
   real Chromium + Firefox via E2E (computed styles, live preview).
 - **E2E suite** — 18 passed (9 specs × 2 browsers), including the
   offline-mode test: "offline === hosted" is a machine-checked regression test.
-- **CI pipeline** — ruff (pinned), corpus-staleness gate, 3-OS polyglot matrix
+- **CI pipeline** — ruff (pinned), corpus-staleness gate, harness drift gate, 3-OS polyglot matrix
   with honest ran/failed/skipped summaries, playground engine check,
   Playwright E2E, Trivy, CodeQL: all green. Dependabot loop proven.
 - **Guard system** — `arch` and `platforms` guards verified in all directions;

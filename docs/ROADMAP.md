@@ -9,35 +9,35 @@ decisions don't get relitigated by forgetting.
 ## Sequenced batches
 
 ### A — Architecture gates (before problem 003)
-- [ ] **A1. Harness single-sourcing + drift gate** — `glifex sync-harnesses`
+- [x] **A1. Harness single-sourcing + drift gate** — `glifex sync-harnesses`
       command + CI check that every problem's harness copies are
       byte-identical to `languages/templates/`. Kills the copy-divergence
       landmine at 34 files instead of 400. *Critical.*
-- [ ] **A2. IP + test-minimum policy** — contribution-policy additions:
+- [x] **A2. IP + test-minimum policy** — contribution-policy additions:
       problem statements must be original prose (ideas aren't copyrightable;
       expression is — never copy LeetCode text); ≥6 test cases including
       named edge classes (empty, single, duplicates, negatives); verifier
       enforces the count. *Critical, one paragraph each.*
-- [ ] **A3. app.js modularization** — extract run-engines + UI wiring
+- [x] **A3. app.js modularization** — extract run-engines + UI wiring
       (storage/editor/assertions/runtimes are already out). Gate for all
       Phase U work: three silent failures came from string-surgery on this
       file. *High.*
 
 ### U0 — UI bug-tier + structural (with or right after A)
-- [ ] **U0-1. Markdown rendering** — statements currently show raw `##` and
+- [x] **U0-1. Markdown rendering** — statements currently show raw `##` and
       backticks. Bug, not enhancement. *Critical.*
-- [ ] **U0-2. Bake manifests into the corpus** → difficulty/tags/language
+- [x] **U0-2. Bake manifests into the corpus** → difficulty/tags/language
       badges in the problem list + statement header. The data exists since
       the policy landed; this is plumbing. Unlocks search/filter later. *High.*
-- [ ] **U0-3. Accessibility slice** — `aria-live` on results (screen readers
+- [x] **U0-3. Accessibility slice** — `aria-live` on results (screen readers
       currently hear nothing on Run), `:focus-visible`, labeled
       Export/Import buttons. *High.*
-- [ ] **U0-4. URL-hash permalinks** — link directly to a problem;
+- [x] **U0-4. URL-hash permalinks** — link directly to a problem;
       prerequisite for sharing and SEO. *High.*
-- [ ] **U0-5. Run button shortcut hint (Ctrl+⏎)** + a 3-line hero for
+- [x] **U0-5. Run button shortcut hint (Ctrl+⏎)** + a 3-line hero for
       first-time visitors ("Practice algorithms in 18 languages. Runs in
       your browser, offline. No account."). *Medium.*
-- [ ] **U0-6. Statement | editor side-by-side on wide screens** (CSS grid;
+- [x] **U0-6. Statement | editor side-by-side on wide screens** (CSS grid;
       no resizable panes). *Medium.*
 
 ### B — Coverage + infrastructure (after A, interleaved with early corpus)

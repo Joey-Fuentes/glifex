@@ -13,7 +13,7 @@ function renderProblemList() {
     const li = document.createElement("li");
     const solved = window.GlifexStorage && Object.entries(GlifexStorage.load().entries)
       .some(([k, v]) => k.split(":")[1] === p.id && v.solved);
-    li.innerHTML = `${solved ? '<span class="solved-mark">✓</span>' : ""}<span class="track">${p.track === "database" ? "db" : p.track === "frontend" ? "fe" : "algo"}</span>${p.title}`;
+    li.innerHTML = `${solved ? '<span class="solved-mark">✓</span>' : ""}<span class="track">${p.track === "database" ? "db" : p.track === "frontend" ? "fe" : "algo"}</span>${p.title}${p.difficulty ? `<span class="diff diff-${p.difficulty}">${p.difficulty}</span>` : ""}`;
     li.onclick = () => selectProblem(p.id);
     if (state.current && state.current.id === p.id) li.classList.add("active");
     li.dataset.id = p.id;
@@ -34,6 +34,8 @@ function selectProblem(id) {
   if (!langs.includes(state.lang)) state.lang = langs.includes("javascript") ? "javascript" : langs[0];
 
   $("#problem-title").textContent = p.title;
+  $("#problem-meta").innerHTML = (p.difficulty ? `<span class="diff diff-${p.difficulty}">${p.difficulty}</span>` : "")
+    + (p.tags || []).map((t) => `<span class="tag">${t}</span>`).join("");
   $("#statement").innerHTML = renderMarkdown(p.statement.replace(/^#.*\n/, ""));
   const sel = $("#lang-select");
   sel.innerHTML = langs.map((l) => `<option value="${l}">${l}</option>`).join("");
@@ -43,6 +45,7 @@ function selectProblem(id) {
   if (p.track === "frontend") updatePreview();
   $("#results").innerHTML = `<div class="hint">Write your solution and press Run.</div>`;
   document.querySelectorAll("#problem-list li").forEach((li) => li.classList.toggle("active", li.dataset.id === id));
+  if (location.hash.slice(1) !== id) location.hash = id;   // U0-4 permalink (same value = no-op)
 }
 
 function currentSource(variant = "practice") {
