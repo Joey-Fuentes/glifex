@@ -1,7 +1,7 @@
 // Cache-first service worker: after one visit, the playground works with the
 // network fully severed. Version-bump CACHE on breaking asset changes.
-const CACHE = "glifex-v3";
-const ASSETS = ["./", "index.html", "style.css", "app.js", "md.js", "assertions.js", "runtimes.js", "storage.js", "editor.js", "problems.generated.json", "privacy.html", "licenses.html"];
+const CACHE = "glifex-v4";
+const ASSETS = ["./", "index.html", "style.css", "app.js", "md.js", "assertions.js", "runtimes.js", "storage.js", "editor.js", "js-runtime.js", "wiring.js", "problems.generated.json", "privacy.html", "licenses.html"];
 
 self.addEventListener("install", (e) => {
   // Resilient install: one missing asset must not fail the whole SW
