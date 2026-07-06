@@ -109,8 +109,9 @@ records the shipped set. First-contact lessons encoded:
   (Docker IS present on Linux/Windows runners, so it's CI-verifiable).
 - **Go real benchmarking** — `bench_test.go` templates exist; `go test -bench`
   has not been executed.
-- **Dev Container** — first Codespaces build stalled unresolved; definition
-  unconfirmed. Consider Codespaces prebuilds.
+- ~~Dev Container~~ — **verified**: Codespaces build succeeded (Jul 2026);
+  delivers exactly the declared 12 toolchains incl. docker-in-docker.
+  Codespaces prebuilds remain worthwhile (first build is slow).
 - **pre-commit hooks** — configured, not yet installed/run locally.
 
 ## Verify everything

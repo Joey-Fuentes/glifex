@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-06T05:01:54.370Z",
+  "generatedAt": "2026-07-06T17:18:32.602Z",
   "problems": [
     {
       "id": "001-anagram-detection",
@@ -32,6 +32,27 @@
           "input": {
             "s": "a",
             "t": "ab"
+          },
+          "expected": false
+        },
+        {
+          "input": {
+            "s": "a",
+            "t": "b"
+          },
+          "expected": false
+        },
+        {
+          "input": {
+            "s": "aab",
+            "t": "abb"
+          },
+          "expected": false
+        },
+        {
+          "input": {
+            "s": "ab",
+            "t": "abc"
           },
           "expected": false
         }
@@ -120,6 +141,51 @@
           "expected": [
             0,
             1
+          ]
+        },
+        {
+          "input": {
+            "nums": [
+              -3,
+              4,
+              3,
+              90
+            ],
+            "target": 0
+          },
+          "expected": [
+            0,
+            2
+          ]
+        },
+        {
+          "input": {
+            "nums": [
+              1,
+              5,
+              9,
+              2
+            ],
+            "target": 3
+          },
+          "expected": [
+            0,
+            3
+          ]
+        },
+        {
+          "input": {
+            "nums": [
+              0,
+              4,
+              3,
+              0
+            ],
+            "target": 0
+          },
+          "expected": [
+            0,
+            3
           ]
         }
       ],

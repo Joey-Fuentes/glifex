@@ -35,6 +35,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v6
         with: { node-version: "24" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - name: Harness drift gate (copies must equal templates)
+        run: python3 glifex.py sync-harnesses --check
       - name: Rebuild corpus and diff against committed
         run: |
           node web/build.mjs

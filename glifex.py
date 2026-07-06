@@ -404,6 +404,16 @@ def cmd_verify(args):
         if (prob / lang).is_dir():
             errors.append(f"'{lang}' is excluded but {lang}/ exists - declare it or delete it")
 
+    tc = prob / "test_cases.json"
+    if tc.exists():
+        import json as _json
+
+        n_cases = len(_json.loads(tc.read_text(encoding="utf-8")))
+        if n_cases < 6:
+            errors.append(f"only {n_cases} test cases - minimum is 6, including edge classes (see policy)")
+    else:
+        errors.append("test_cases.json missing")
+
     if not worked:
         warnings.append("practice stubs must be BLANK for new problems (reviewer-checked; 001/002 are worked examples)")
 
@@ -435,6 +445,58 @@ def cmd_verify(args):
         print(f"\n{prob.name}: verify FAILED - broken references: {', '.join(failed)}")
         _sys.exit(1)
     print(f"{prob.name}: verify PASSED (references green on every installed toolchain)")
+
+
+def cmd_sync_harnesses(args):
+    """Harness single-sourcing: languages/templates/ is canonical; every
+    problem's copies must be byte-identical. Default: overwrite copies from
+    templates. --check: report drift and exit 1 (the CI gate). Languages
+    without a harness_template (asm, wat: per-problem hosts by design) are
+    skipped."""
+    import sys as _sys
+    import tomllib
+    from pathlib import Path as _P
+
+    root = _P(__file__).parent
+    tpl = root / "languages" / "templates"
+    registry = {}
+    for f in sorted((root / "languages").glob("*.toml")):
+        spec = tomllib.loads(f.read_text(encoding="utf-8"))
+        registry[spec["name"]] = spec
+
+    drift, synced = [], 0
+    for prob in sorted((root / "problems").iterdir()):
+        if not prob.is_dir():
+            continue
+        for lang, spec in registry.items():
+            d = prob / lang
+            ht = spec.get("harness_template")
+            if not d.is_dir() or not ht:
+                continue
+            for name in [ht, *spec.get("support_files", [])]:
+                src = tpl / name
+                dst = d / name
+                if not src.exists():
+                    print(f"  ! template missing: {src} (registry names it)")
+                    continue
+                same = dst.exists() and dst.read_bytes() == src.read_bytes()
+                if same:
+                    continue
+                if getattr(args, "check", False):
+                    drift.append(f"{prob.name}/{lang}/{name}" + ("" if dst.exists() else " (missing)"))
+                else:
+                    dst.write_bytes(src.read_bytes())
+                    print(f"  synced {prob.name}/{lang}/{name}")
+                    synced += 1
+    if getattr(args, "check", False):
+        if drift:
+            for x in drift:
+                print(f"  x drift: {x}")
+            print(f"\nharness drift: {len(drift)} file(s) differ - run `glifex sync-harnesses`")
+            _sys.exit(1)
+        print("harness copies are byte-identical to templates")
+    else:
+        print(f"sync complete: {synced} file(s) updated" if synced else "already in sync")
 
 
 # ─── scaffolding ────────────────────────────────────────────────────
@@ -548,6 +610,9 @@ def main():
     vf.add_argument("problem")
     vf.add_argument("--static", action="store_true")
     vf.set_defaults(fn=cmd_verify)
+    sh = sub.add_parser("sync-harnesses")
+    sh.add_argument("--check", action="store_true")
+    sh.set_defaults(fn=cmd_sync_harnesses)
 
     db = sub.add_parser("db")
     dbsub = db.add_subparsers(dest="dbcmd", required=True)
