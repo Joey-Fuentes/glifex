@@ -27,6 +27,8 @@ jobs:
       - name: Biome (JS/TS lint + format check)
         run: npx --yes @biomejs/biome check web/ languages/templates/ || true
         # '|| true' until the codebase is Biome-formatted; flip to blocking then.
+      - name: Asset-stamp transform test
+        run: node web/stamp.test.mjs
 
   corpus:
     name: Playground corpus is not stale

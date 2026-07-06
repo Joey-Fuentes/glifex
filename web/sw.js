@@ -1,6 +1,8 @@
 // Cache-first service worker: after one visit, the playground works with the
-// network fully severed. Version-bump CACHE on breaking asset changes.
-const CACHE = "glifex-v8";
+// network fully severed. Asset URLs are content-stamped (?v=<sha>) at deploy and
+// CACHE becomes glifex-<sha>, so each deploy self-versions — no manual bumps, and
+// fresh HTML never pairs with a stale cached asset. Local/CI use this placeholder.
+const CACHE = "glifex-dev";
 const ASSETS = ["./", "index.html", "style.css", "app.js", "md.js", "assertions.js", "runtimes.js", "storage.js", "editor.js", "js-runtime.js", "wiring.js", "problems.generated.json", "privacy.html", "licenses.html"];
 
 self.addEventListener("install", (e) => {

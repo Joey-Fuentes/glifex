@@ -32,7 +32,9 @@ jobs:
           SHA=${GITHUB_SHA::7}
           sed -i "s/<meta name=\"glifex-version\" content=\"dev\" \/>/<meta name=\"glifex-version\" content=\"$STAMP\" \/>/" web/index.html
           sed -i "s/<meta name=\"glifex-commit\" content=\"local\" \/>/<meta name=\"glifex-commit\" content=\"$SHA\" \/>/" web/index.html
-          grep glifex-version web/index.html
+          # B2: content-stamp asset URLs (?v=<sha>) + self-version the SW cache.
+          node web/stamp.mjs "$SHA"
+          grep glifex-version web/index.html && grep -m1 "app.js?v=" web/index.html && grep "const CACHE" web/sw.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: { path: web }

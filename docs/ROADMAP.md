@@ -44,7 +44,7 @@ decisions don't get relitigated by forgetting.
 - [ ] **B1. WASM-tier e2e** — vendor in the e2e job (reuse the cache) + one
       smoke spec per runtime. The most-debugged subsystem currently has zero
       regression coverage. *High.*
-- [ ] **B2. Asset-generation stamping** (`app.js?v=STAMP`) — ends SW
+- [x] **B2. Asset-generation stamping** (`app.js?v=STAMP`) — ends SW
       HTML/CSS/JS generation skew (burned us twice). *Medium.*
 - [ ] **B3. Docs batch** — architectural invariants section (incl. "blind
       practice is a UX convention, not a security boundary"), two mermaid
