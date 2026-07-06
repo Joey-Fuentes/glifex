@@ -64,3 +64,17 @@ solution files free of I/O and test boilerplate.
 PRs must pass: lint, the corpus-staleness check (`node web/build.mjs` output
 committed), the polyglot matrix, and security scans. The AI reviewer (if
 installed) is advisory — human maintainers merge. Squash-merge keeps history linear.
+
+## Contributing a problem — the checklist
+
+1. `python3 glifex.py new NNN-name`, delete language dirs you won't support.
+2. Implement the **floor**: Python, JavaScript, C, C++ — `clean` + `optimized`
+   passing, `practice` left as the blank stub. More languages welcome.
+3. Write `manifest.toml` (copy 002's as a template): declare every language
+   and variant, give every absent language an `[exclusions]` reason
+   (`help-wanted` vs `not-applicable`), fill `[complexity]` (worst-case
+   time+space, whitelist notation).
+4. `python3 glifex.py verify NNN` — the exact gate CI runs. Fix until green.
+5. `node web/build.mjs` and commit the regenerated corpus.
+6. PR. CI re-verifies with all 18 toolchains; reviewers check complexity
+   claims and blank stubs. Full policy: docs/contribution-policy.md.

@@ -380,6 +380,15 @@ an agreed memory address. Lightweight CPU cores exist in both Python and JS, so
 it could eventually run in the playground too. Deliberately deferred until the
 emulator-harness pattern is designed properly — tracked as a future feature.
 
+## Contributing problems
+
+New algorithm problems require the **floor**: Python, JavaScript, C, and C++
+with passing references and blank practice stubs, plus a `manifest.toml`
+declaring languages, exclusions (with reasons), and worst-case complexity.
+`glifex verify <problem>` runs the exact gate CI enforces. Everything above
+the floor — more languages, more variants — is a welcome incremental PR.
+Full policy: [docs/contribution-policy.md](docs/contribution-policy.md).
+
 ## CI & quality gates
 
 Every push runs: lint (Ruff/Biome) → corpus-staleness check → the **polyglot

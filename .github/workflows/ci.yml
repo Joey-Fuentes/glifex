@@ -90,6 +90,13 @@ jobs:
           for p in problems/*/; do
             $PY glifex.py test "$(basename "$p")"
           done
+      - name: Verify manifests + reference variants (glifex verify)
+        shell: bash
+        run: |
+          PY=python3; command -v python3 >/dev/null || PY=python
+          for p in problems/*/; do
+            $PY glifex.py verify "$(basename "$p")"
+          done
       - name: Database track (SQLite engine)
         shell: bash
         run: |
