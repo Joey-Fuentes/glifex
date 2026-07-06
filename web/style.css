@@ -160,7 +160,10 @@ button.ghost.active { color: var(--accent); border-color: var(--accent); }
 .diff-hard { color: var(--fail); border-color: rgba(255,123,114,.4); }
 .tag { font-family: var(--mono); font-size: .62rem; color: var(--muted); background: var(--panel-2); border-radius: 4px; padding: .05rem .35rem; }
 .problems li .diff { margin-left: .4rem; }
-.run-kbd { font-family: var(--mono); font-size: .68rem; color: var(--muted); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: .05rem .3rem; }
+.run-hint { display: none; position: absolute; bottom: 0; right: 0; z-index: 7; pointer-events: none;
+  font-family: var(--mono); font-size: .68rem; color: var(--muted); padding: .3rem .6rem; background: var(--panel);
+  border-top-left-radius: 8px; border-left: 1px solid var(--line); border-top: 1px solid var(--line); }
+@media (hover: hover) and (pointer: fine) { .run-hint { display: block; } }  /* keyboard devices only */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .hero { display: flex; align-items: center; gap: 1rem; padding: .6rem 1.2rem; background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .88rem; color: var(--muted); }
 .hero b { color: var(--fg); font-weight: 600; }
