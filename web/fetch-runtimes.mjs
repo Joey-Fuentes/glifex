@@ -82,6 +82,18 @@ const RUNTIMES = {
       { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/LICENSE`, save: "LICENSE" },
     ],
   },
+  wat: {
+    version: "1.0.37", license: "Apache-2.0",
+    files: [
+      // wabt.js (AssemblyScript port): a single self-contained UMD with the wasm
+      // embedded, so one file is the whole assembler. Version candidates + latest.
+      { url: `${CDN}/npm/wabt@1.0.37/index.js`, save: "index.js", group: "watjs" },
+      { url: `${CDN}/npm/wabt@1.0.36/index.js`, save: "index.js", group: "watjs" },
+      { url: `${CDN}/npm/wabt/index.js`, save: "index.js", group: "watjs" },
+      { url: `${CDN}/npm/wabt@1.0.37/LICENSE`, save: "LICENSE", group: "watlic" },
+      { url: `${CDN}/npm/wabt/LICENSE`, save: "LICENSE", group: "watlic" },
+    ],
+  },
 };
 
 async function fetchTo(url, destDir, saveAs) {

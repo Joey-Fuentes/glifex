@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-06T22:03:58.788Z",
+  "generatedAt": "2026-07-07T04:02:20.152Z",
   "problems": [
     {
       "id": "001-anagram-detection",
@@ -235,6 +235,99 @@
           "practice": "export function solve(c: any): number[] | null {\n  const seen: Record<number, number> = {};\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (need in seen) return [seen[need], i];\n    seen[c.nums[i]] = i;\n  }\n  return null;\n}\n",
           "clean": "export function solve(c: { nums: number[]; target: number }): number[] {\n  const seen = new Map<number, number>();\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (seen.has(need)) return [seen.get(need)!, i];\n    seen.set(c.nums[i], i);\n  }\n  return [];\n}\n",
           "optimized": "export function solve(c: { nums: number[]; target: number }): number[] {\n  const seen = new Map<number, number>();\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (seen.has(need)) return [seen.get(need)!, i];\n    seen.set(c.nums[i], i);\n  }\n  return [];\n}\n"
+        },
+        "wat": {
+          "practice": ";; two-sum in WebAssembly Text. Contract (host marshals JSON):\n;;   solve(ptr: i32, len: i32, target: f64) -> i64   ;; (i << 32) | j, or -1\n(module\n  (memory (export \"memory\") 1)\n  (func (export \"solve\") (param $ptr i32) (param $len i32) (param $target f64) (result i64)\n    (local $i i32) (local $j i32) (local $a i32) (local $b i32)\n    (block $done\n      (loop $outer\n        (br_if $done (i32.ge_s (local.get $i) (local.get $len)))\n        (local.set $a (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $i) (i32.const 2)))))\n        (local.set $j (i32.add (local.get $i) (i32.const 1)))\n        (loop $inner\n          (if (i32.lt_s (local.get $j) (local.get $len))\n            (then\n              (local.set $b (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $j) (i32.const 2)))))\n              (if (f64.eq (f64.add (f64.convert_i32_s (local.get $a)) (f64.convert_i32_s (local.get $b))) (local.get $target))\n                (then\n                  (return (i64.or\n                    (i64.shl (i64.extend_i32_u (local.get $i)) (i64.const 32))\n                    (i64.extend_i32_u (local.get $j))))))\n              (local.set $j (i32.add (local.get $j) (i32.const 1)))\n              (br $inner))))\n        (local.set $i (i32.add (local.get $i) (i32.const 1)))\n        (br $outer)))\n    (i64.const -1)))\n",
+          "clean": ";; two-sum in WebAssembly Text. Contract (host marshals JSON):\n;;   solve(ptr: i32, len: i32, target: f64) -> i64   ;; (i << 32) | j, or -1\n(module\n  (memory (export \"memory\") 1)\n  (func (export \"solve\") (param $ptr i32) (param $len i32) (param $target f64) (result i64)\n    (local $i i32) (local $j i32) (local $a i32) (local $b i32)\n    (block $done\n      (loop $outer\n        (br_if $done (i32.ge_s (local.get $i) (local.get $len)))\n        (local.set $a (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $i) (i32.const 2)))))\n        (local.set $j (i32.add (local.get $i) (i32.const 1)))\n        (loop $inner\n          (if (i32.lt_s (local.get $j) (local.get $len))\n            (then\n              (local.set $b (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $j) (i32.const 2)))))\n              (if (f64.eq (f64.add (f64.convert_i32_s (local.get $a)) (f64.convert_i32_s (local.get $b))) (local.get $target))\n                (then\n                  (return (i64.or\n                    (i64.shl (i64.extend_i32_u (local.get $i)) (i64.const 32))\n                    (i64.extend_i32_u (local.get $j))))))\n              (local.set $j (i32.add (local.get $j) (i32.const 1)))\n              (br $inner))))\n        (local.set $i (i32.add (local.get $i) (i32.const 1)))\n        (br $outer)))\n    (i64.const -1)))\n",
+          "optimized": ";; two-sum in WebAssembly Text. Contract (host marshals JSON):\n;;   solve(ptr: i32, len: i32, target: f64) -> i64   ;; (i << 32) | j, or -1\n(module\n  (memory (export \"memory\") 1)\n  (func (export \"solve\") (param $ptr i32) (param $len i32) (param $target f64) (result i64)\n    (local $i i32) (local $j i32) (local $a i32) (local $b i32)\n    (block $done\n      (loop $outer\n        (br_if $done (i32.ge_s (local.get $i) (local.get $len)))\n        (local.set $a (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $i) (i32.const 2)))))\n        (local.set $j (i32.add (local.get $i) (i32.const 1)))\n        (loop $inner\n          (if (i32.lt_s (local.get $j) (local.get $len))\n            (then\n              (local.set $b (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $j) (i32.const 2)))))\n              (if (f64.eq (f64.add (f64.convert_i32_s (local.get $a)) (f64.convert_i32_s (local.get $b))) (local.get $target))\n                (then\n                  (return (i64.or\n                    (i64.shl (i64.extend_i32_u (local.get $i)) (i64.const 32))\n                    (i64.extend_i32_u (local.get $j))))))\n              (local.set $j (i32.add (local.get $j) (i32.const 1)))\n              (br $inner))))\n        (local.set $i (i32.add (local.get $i) (i32.const 1)))\n        (br $outer)))\n    (i64.const -1)))\n"
+        }
+      }
+    },
+    {
+      "id": "003-nth-fibonacci",
+      "track": "algorithm",
+      "difficulty": "easy",
+      "tags": [
+        "math",
+        "dynamic-programming"
+      ],
+      "title": "003 · Nth Fibonacci",
+      "statement": "# 003 · Nth Fibonacci\n\nReturn the **nth Fibonacci number**.\n\n`solve(n)` takes a non-negative integer `n` and returns `fib(n)`, where\n`fib(0) = 0`, `fib(1) = 1`, and `fib(k) = fib(k-1) + fib(k-2)` for `k ≥ 2`.\n\nThe sequence begins `0, 1, 1, 2, 3, 5, 8, 13, 21, …`.\n\nThis is a **numeric** problem — integers in, an integer out — which is why it's\nthe home for the WebAssembly Text (WAT) runtime, whose contract is numeric-only.\n",
+      "cases": [
+        {
+          "input": {
+            "n": 0
+          },
+          "expected": 0
+        },
+        {
+          "input": {
+            "n": 1
+          },
+          "expected": 1
+        },
+        {
+          "input": {
+            "n": 2
+          },
+          "expected": 1
+        },
+        {
+          "input": {
+            "n": 3
+          },
+          "expected": 2
+        },
+        {
+          "input": {
+            "n": 5
+          },
+          "expected": 5
+        },
+        {
+          "input": {
+            "n": 7
+          },
+          "expected": 13
+        },
+        {
+          "input": {
+            "n": 10
+          },
+          "expected": 55
+        },
+        {
+          "input": {
+            "n": 20
+          },
+          "expected": 6765
+        }
+      ],
+      "languages": {
+        "javascript": {
+          "practice": "module.exports = function solve(c) {\n  const n = c.n;\n  // Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n  return 0;\n};\n",
+          "clean": null,
+          "optimized": null
+        },
+        "python": {
+          "practice": "def solve(case):\n    n = case[\"n\"]\n    # Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n    return 0\n",
+          "clean": null,
+          "optimized": null
+        },
+        "ruby": {
+          "practice": "def solve(input)\n  n = input[\"n\"]\n  # Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n  0\nend\n",
+          "clean": null,
+          "optimized": null
+        },
+        "typescript": {
+          "practice": "export function solve(c: { n: number }): number {\n  const n = c.n;\n  // Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n  return 0;\n}\n",
+          "clean": null,
+          "optimized": null
+        },
+        "wat": {
+          "practice": "(module\n  ;; Export `solve(n)` returning the nth Fibonacci number (i32).\n  ;; fib(0)=0, fib(1)=1, fib(2)=1, fib(3)=2, ...   WAT is numeric-only.\n  (func (export \"solve\") (param $n i32) (result i32)\n    ;; your code here\n    (i32.const 0)))\n",
+          "clean": "(module\n  ;; nth Fibonacci, iterative.  solve(n) -> fib(n).  fib(0)=0, fib(1)=1, fib(2)=1, ...\n  (func (export \"solve\") (param $n i32) (result i32)\n    (local $a i32) (local $b i32) (local $t i32)\n    (local.set $a (i32.const 0))\n    (local.set $b (i32.const 1))\n    (block $done\n      (loop $loop\n        (br_if $done (i32.eqz (local.get $n)))\n        (local.set $t (i32.add (local.get $a) (local.get $b)))\n        (local.set $a (local.get $b))\n        (local.set $b (local.get $t))\n        (local.set $n (i32.sub (local.get $n) (i32.const 1)))\n        (br $loop)))\n    (local.get $a)))\n",
+          "optimized": "(module\n  ;; nth Fibonacci, iterative.  solve(n) -> fib(n).  fib(0)=0, fib(1)=1, fib(2)=1, ...\n  (func (export \"solve\") (param $n i32) (result i32)\n    (local $a i32) (local $b i32) (local $t i32)\n    (local.set $a (i32.const 0))\n    (local.set $b (i32.const 1))\n    (block $done\n      (loop $loop\n        (br_if $done (i32.eqz (local.get $n)))\n        (local.set $t (i32.add (local.get $a) (local.get $b)))\n        (local.set $a (local.get $b))\n        (local.set $b (local.get $t))\n        (local.set $n (i32.sub (local.get $n) (i32.const 1)))\n        (br $loop)))\n    (local.get $a)))\n"
         }
       }
     },

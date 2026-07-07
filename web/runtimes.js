@@ -140,7 +140,38 @@ const Runtimes = (() => {
     };
   }
 
-  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres };
+  // ── WAT: WebAssembly Text — vendored wabt assembles it, then it runs ──
+  async function loadWat() {
+    if (!(await vendored("wat"))) return null;
+    await script("vendor/wat/index.js");               // exposes window.WabtModule
+    const wabt = await window.WabtModule();
+    return {
+      run(source, cases) {
+        let binary;
+        try {
+          const mod = wabt.parseWat("solve.wat", source);
+          mod.resolveNames();
+          mod.validate();
+          binary = mod.toBinary({}).buffer;            // Uint8Array of wasm bytes
+          mod.destroy();
+        } catch (e) {
+          return { error: "WAT assembly error: " + String(e.message || e) };
+        }
+        let solve;
+        try {
+          const instance = new WebAssembly.Instance(new WebAssembly.Module(binary), {});
+          solve = instance.exports.solve;
+        } catch (e) {
+          return { error: "WASM instantiate error: " + String(e.message || e) };
+        }
+        if (typeof solve !== "function") return { error: 'no "solve" export (numbers in, number out)' };
+        // WAT is numeric-only: pass the input object's values positionally.
+        return caseLoop((input) => solve(...Object.values(input)), cases);
+      },
+    };
+  }
+
+  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed

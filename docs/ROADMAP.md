@@ -58,7 +58,15 @@ decisions don't get relitigated by forgetting.
 
 Live edit-compile-run for every remaining corpus language, in the browser — lazy-loaded, one runtime at a time, honest download UI + CLI-divergence disclosure. Full design: [`browser-runtimes.md`](browser-runtimes.md). Prereq: **B1**.
 
-- [ ] **Bx-1. WAT** — native wasm; establishes the assembly-shaped harness
+- [x] **Bx-1. WAT** — native wasm; establishes the assembly-shaped harness — shipped with the 003 nth-Fibonacci problem.
+
+  > **Relaxed for the compiler build-out (re-tighten later):** while we add browser
+
+  > runtimes, *non-worked* problems relax three gates — the bulk `glifex test` practice
+
+  > run is skipped (blank stubs), and floor-of-four + min-6-cases in `glifex verify` warn
+
+  > instead of erroring. Worked examples (001/002) stay strict.
 - [ ] **Bx-2. PHP** — php-wasm interpreter (drop-in like Python/Ruby)
 - [ ] **Bx-3. C / C++** — clang-in-wasm; proves heavy-toolchain vendoring + progress UI
 - [ ] **Bx-4. C#** — Roslyn on .NET-wasm
