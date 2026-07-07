@@ -147,11 +147,6 @@ jobs:
           npm init -y >/dev/null
           npm install -D @playwright/test
           npx playwright install --with-deps chromium firefox
-      - name: Cache vendored WASM runtimes (~90MB; shared with the Pages build)
-        uses: actions/cache@v4
-        with:
-          path: web/vendor
-          key: wasm-vendor-${{ hashFiles('web/fetch-runtimes.mjs') }}
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
         run: |
           node web/fetch-runtimes.mjs
