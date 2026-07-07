@@ -271,10 +271,11 @@ const Runtimes = (() => {
           await dir.writeFile("/c/solution.h", sup["solution.h"] || "");
 
           const t0 = performance.now();
+          const MP = "/project";   // named mount (root-mount is not honored)
           const comp = await clang.entrypoint.run({
-            args: ["-O2", "-std=c11", "/c/practice.c", "/c/clean.c", "/c/optimized.c",
-                   "/c/harness.c", "-o", "/c/out.wasm"],
-            mount: { "/": dir },
+            args: ["-O2", "-std=c11", MP + "/c/practice.c", MP + "/c/clean.c", MP + "/c/optimized.c",
+                   MP + "/c/harness.c", "-o", MP + "/c/out.wasm"],
+            mount: { [MP]: dir },
           });
           const cres = await comp.wait();
           if (!cres.ok) return { error: "compile error:\n" + String(cres.stderr || "").trim().slice(0, 800) };
@@ -282,7 +283,7 @@ const Runtimes = (() => {
           const wasm = await dir.readFile("/c/out.wasm");
           const prog = await Wasmer.fromFile(wasm);
           const rres = await (await prog.entrypoint.run({
-            args: ["practice"], mount: { "/": dir }, cwd: "/c",
+            args: ["practice"], mount: { [MP]: dir }, cwd: MP + "/c",
           })).wait();
           const dt = performance.now() - t0;
 
