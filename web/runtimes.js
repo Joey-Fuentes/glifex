@@ -253,9 +253,10 @@ const Runtimes = (() => {
     const webc = new Uint8Array(await (await fetch("vendor/c/clang.webc")).arrayBuffer());
     const clang = await Wasmer.fromFile(webc);   // ~100MB, loaded once per session
     return {
-      async run(source, cases, lang) {
+      async run(source, cases, lang, variant) {
         const L = lang || {};
         const sup = L.support || {};
+        const V = variant || "practice";
         try {
           // One Directory mounted at "/": test_cases.json at the root and sources
           // under /c, run with cwd /c so the harness's "../test_cases.json"
@@ -283,7 +284,7 @@ const Runtimes = (() => {
           const wasm = await dir.readFile("/c/out.wasm");
           const prog = await Wasmer.fromFile(wasm);
           const rres = await (await prog.entrypoint.run({
-            args: ["practice"], mount: { [MP]: dir }, cwd: MP + "/c",
+            args: [V], mount: { [MP]: dir }, cwd: MP + "/c",
           })).wait();
           const dt = performance.now() - t0;
 
@@ -310,7 +311,73 @@ const Runtimes = (() => {
     };
   }
 
-  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC };
+  // -- C++: the same clang/WASIX container as C, driven with clang++ (-std=c++20).
+  // Reuses the vendored C toolchain (vendor/c). Exceptions compile against libc++;
+  // the worked solutions don't throw, so WASI/WASIX unwinding limits don't bite.
+  async function loadCpp() {
+    if (!(await vendored("c"))) return null;   // C++ reuses the vendored C toolchain
+    const { init, Wasmer, Directory } = await import("./vendor/c/index.mjs");
+    await init();
+    const webc = new Uint8Array(await (await fetch("vendor/c/clang.webc")).arrayBuffer());
+    const clang = await Wasmer.fromFile(webc);
+    const cxx = (clang.commands && clang.commands["clang++"]) || clang.entrypoint;
+    return {
+      async run(source, cases, lang, variant) {
+        const L = lang || {};
+        const sup = L.support || {};
+        const V = variant || "practice";
+        try {
+          const dir = new Directory();
+          await dir.createDir("/cpp");
+          await dir.writeFile("/test_cases.json", JSON.stringify(cases));
+          await dir.writeFile("/cpp/practice.cpp", source);
+          await dir.writeFile("/cpp/clean.cpp", L.clean || "");
+          await dir.writeFile("/cpp/optimized.cpp", L.optimized || "");
+          await dir.writeFile("/cpp/harness.cpp", sup["harness.cpp"] || "");
+          await dir.writeFile("/cpp/json.hpp", sup["json.hpp"] || "");
+          await dir.writeFile("/cpp/solution.hpp", sup["solution.hpp"] || "");
+
+          const MP = "/project";
+          const t0 = performance.now();
+          const comp = await cxx.run({
+            args: ["-O2", "-std=c++20", MP + "/cpp/practice.cpp", MP + "/cpp/clean.cpp",
+                   MP + "/cpp/optimized.cpp", MP + "/cpp/harness.cpp", "-o", MP + "/cpp/out.wasm"],
+            mount: { [MP]: dir },
+          });
+          const cres = await comp.wait();
+          if (!cres.ok) return { error: "compile error:\n" + String(cres.stderr || "").trim().slice(0, 800) };
+
+          const wasm = await dir.readFile("/cpp/out.wasm");
+          const prog = await Wasmer.fromFile(wasm);
+          const rres = await (await prog.entrypoint.run({
+            args: [V], mount: { [MP]: dir }, cwd: MP + "/cpp",
+          })).wait();
+          const dt = performance.now() - t0;
+
+          const out = String(rres.stdout || "");
+          const byI = new Map();
+          for (const line of out.split("\n")) {
+            const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
+            if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
+          }
+          if (byI.size === 0) return { error: "no case results from harness:\n" + out.trim().slice(0, 600) };
+
+          const results = cases.map((c, i) => {
+            const r = byI.get(i);
+            if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
+            if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected };
+            return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected };
+          });
+          const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
+          return { results, nsPerCase };
+        } catch (e) {
+          return { error: "C++ runtime error: " + String((e && e.message) || e) };
+        }
+      },
+    };
+  }
+
+  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed

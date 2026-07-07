@@ -30,7 +30,7 @@ function algoProblems() {
     const languages = {};
     for (const lang of readdirSync(dir)) {
       const ld = join(dir, lang);
-      const ext = { python: "py", javascript: "js", typescript: "ts", go: "go", java: "java", ruby: "rb", csharp: "cs", wat: "wat", php: "php", c: "c" }[lang];
+      const ext = { python: "py", javascript: "js", typescript: "ts", go: "go", java: "java", ruby: "rb", csharp: "cs", wat: "wat", php: "php", c: "c", cpp: "cpp" }[lang];
       if (!ext) continue;
       const cap = lang === "java" || lang === "csharp";
       const f = (v) => read(join(ld, (cap ? v[0].toUpperCase() + v.slice(1) : v) + "." + ext));
@@ -41,6 +41,11 @@ function algoProblems() {
         "harness.c": read(join(ld, "harness.c")),
         "json.h": read(join(ld, "json.h")),
         "solution.h": read(join(ld, "solution.h")),
+      };
+      if (lang === "cpp") languages[lang].support = {
+        "harness.cpp": read(join(ld, "harness.cpp")),
+        "json.hpp": read(join(ld, "json.hpp")),
+        "solution.hpp": read(join(ld, "solution.hpp")),
       };
     }
     return { id, track: "algorithm", ...manifestMeta(dir), title: title(md), statement: md,

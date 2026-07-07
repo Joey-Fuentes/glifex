@@ -163,8 +163,16 @@ async function compareOptimized(userOut, res) {
   else {
     const runner = await window.Runtimes.get(state.lang);
     if (!runner || runner === "native") return;
-    refOut = await runner.run(src, p.cases);
+    if (state.lang === "c" || state.lang === "cpp") {
+      // Compiled langs already carry the optimized variant in the corpus; time
+      // it by running the "optimized" entry rather than recompiling src.
+      const cur = window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value;
+      refOut = await runner.run(cur, p.cases, p.languages[state.lang], "optimized");
+    } else {
+      refOut = await runner.run(src, p.cases);
+    }
   }
+  if (!refOut || refOut.nsPerCase == null) return;
   renderResults(userOut, res, { compared: refOut.nsPerCase });
 }
 
@@ -243,7 +251,7 @@ async function run() {
   // The C toolchain (Wasmer/WASIX) needs SharedArrayBuffer, which requires the
   // page to be cross-origin isolated. The SW (PR-1) stamps the headers, but the
   // current document may predate SW control -- reload once to pick them up.
-  if (state.lang === "c" && !self.crossOriginIsolated) {
+  if ((state.lang === "c" || state.lang === "cpp") && !self.crossOriginIsolated) {
     if (!sessionStorage.getItem("coiReloaded")) {
       sessionStorage.setItem("coiReloaded", "1");
       showRunning(res, "Enabling the C toolchain (one-time reload)…");
@@ -253,7 +261,7 @@ async function run() {
     res.innerHTML = `<div class="summary bad">C needs cross-origin isolation (SharedArrayBuffer), which is not active. Try reloading the page.</div>`;
     return;
   }
-  showRunning(res, state.lang === "c" ? "Downloading the C toolchain (~100MB, one-time)…" : `Preparing ${state.lang} runtime…`);
+  showRunning(res, (state.lang === "c" || state.lang === "cpp") ? "Downloading the C/C++ toolchain (~100MB, one-time)…" : `Preparing ${state.lang} runtime…`);
   const runner = await window.Runtimes.get(state.lang);
   if (!runner || runner === "native") {
     const err = window.Runtimes.error(state.lang);
