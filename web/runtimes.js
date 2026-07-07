@@ -319,8 +319,11 @@ const Runtimes = (() => {
     const { init, Wasmer, Directory } = await import("./vendor/c/index.mjs");
     await init();
     const webc = new Uint8Array(await (await fetch("vendor/c/clang.webc")).arrayBuffer());
+    const _tF = performance.now();
     const clang = await Wasmer.fromFile(webc);
+    console.log("[glifex] fromFile(clang.webc): " + ((performance.now()-_tF)/1000).toFixed(1) + "s");
     const cxx = (clang.commands && clang.commands["clang++"]) || clang.entrypoint;
+    console.log("[glifex] clang++ command present: " + !!(clang.commands && clang.commands["clang++"]));
     return {
       async run(source, cases, lang, variant) {
         const L = lang || {};
@@ -340,12 +343,16 @@ const Runtimes = (() => {
           await dir.writeFile("/cpp/all.cpp", all);
 
           const MP = "/project";
+          const _tW = performance.now();
+          try { await (await cxx.run({ args: ["--version"], mount: { [MP]: dir } })).wait(); } catch (e) {}
+          console.log("[glifex] clang++ instantiate(--version): " + ((performance.now()-_tW)/1000).toFixed(1) + "s");
           const t0 = performance.now();
           const comp = await cxx.run({
             args: ["-O0", "-std=c++20", MP + "/cpp/all.cpp", "-o", MP + "/cpp/out.wasm"],
             mount: { [MP]: dir },
           });
           const cres = await comp.wait();
+          console.log("[glifex] C++ compile: " + ((performance.now()-t0)/1000).toFixed(1) + "s ok=" + cres.ok + " code=" + cres.code);
           if (!cres.ok) return { error: "compile error:\n" + String(cres.stderr || "").trim().slice(0, 800) };
 
           const wasm = await dir.readFile("/cpp/out.wasm");

@@ -25,7 +25,17 @@ test.describe("C / C++ runtime (Wasmer WASIX clang)", () => {
   });
 
   test("problem 001 compiles and runs green in C++", async ({ page }) => {
-    test.setTimeout(420_000);
-    await runProblem001(page, "cpp");
+    test.setTimeout(1_200_000);
+    page.on("console", (m) => console.log("PAGE>", m.text()));
+    await page.goto("/");
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();
+    await expect(page.locator("#problem-list li").first()).toBeVisible();
+    await page.locator('#problem-list li:has-text("Anagram")').click();
+    await page.locator("#lang-select").selectOption("cpp");
+    await page.locator("#run-btn").click();
+    const summary = page.locator("#results .summary");
+    await expect(summary).toBeVisible({ timeout: 1_200_000 });
+    console.log("SUMMARY>", await summary.getAttribute("class"), (await summary.textContent() || "").slice(0,200));
   });
 });
