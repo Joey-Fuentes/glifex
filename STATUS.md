@@ -118,6 +118,28 @@ records the shipped set. First-contact lessons encoded:
   Prebuilds remain worthwhile (first build is slow). Setup: docs/codespaces.md.
 - **pre-commit hooks** — configured, not yet installed/run locally.
 
+## ✅ C++ runtime (Bx-3b) — verified in production, in-browser
+
+- **In-browser compile + link + run** via Binji's wasm-clang (Apache-2.0): single-process
+  clang-8 `-cc1` + `wasm-ld`, no `posix_spawn`. Committed fork `web/cpp-shared.js` (one fix:
+  `Memory.check()` refreshes on buffer-identity change, i.e. wasm memory growth). Driver
+  `web/cpp-worker.js`; vendored `clang/lld/memfs/sysroot.tar` under `web/vendor/cpp`.
+- **Single-threaded** (`--no-threads`) → no SharedArrayBuffer, so no cross-origin-isolation
+  reload gate (unlike the C/Wasmer runtime).
+- **json.hpp/solution.hpp** use a non-atomic `Rc<>` refcount (clang-8 can't codegen atomic
+  `shared_ptr`) + `strtod`; compiled `-std=c++17 -O2` with the compiler-rt builtins archive
+  linked (fixes `__lttf2`).
+- **Cases via stdin** (`MemFS.setStdinStr`), not a memfs file — sidesteps Binji's memfs
+  file-backing bug; harness reads `std::cin`, native CLI pipes the file in.
+- **E2E**: problem 001 compiles+runs 7/7 in-browser (driver + through the UI, chromium);
+  native g++ across ubuntu/macos/windows.
+
+### Follow-up — Bx-3b-2: modern-LLVM toolchain rebuild (tracked, not started)
+Rebuild clang/lld to wasm on LLVM 19/20 to drop the `Rc` shim and the `-std=c++17`
+constraint, gaining C++20 + exceptions + atomic `shared_ptr` (and possibly retiring Binji's
+custom memfs for a standard WASI FS). Runtime is manifest-driven (`web/vendor/cpp/manifest.json`),
+so this is a toolchain swap, not a rewrite.
+
 ## Verify everything
 
 ```bash
