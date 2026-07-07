@@ -153,7 +153,12 @@ jobs:
           path: web/vendor
           key: wasm-vendor-${{ hashFiles('web/fetch-runtimes.mjs') }}
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
-        run: node web/fetch-runtimes.mjs
+        run: |
+          node web/fetch-runtimes.mjs
+          # e2e drives the plain #editor textarea directly; keep CodeMirror OUT so it
+          # doesn't wrap (and hide) the textarea. CM is a production-only UI enhancement
+          # exercised manually — the runtimes are what e2e must regression-cover.
+          rm -rf web/vendor/codemirror
       - name: Build corpus & run E2E (incl. offline-mode test)
         run: |
           node web/build.mjs
