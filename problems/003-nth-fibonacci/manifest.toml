@@ -1,0 +1,26 @@
+[problem]
+title = "Nth Fibonacci"
+difficulty = "easy"
+tags = ["math", "dynamic-programming"]
+worked_example = false   # new problem: practice ships BLANK stubs (fillable starters)
+
+# WAT is the star here (numeric problem).
+[languages]
+wat         = { variants = ["practice", "clean", "optimized"] }
+asm-6502    = { variants = ["practice", "clean", "optimized"] }   # 6502 assembly (browser: customasm + first-party core)
+sm83        = { variants = ["practice", "clean", "optimized"] }   # Game Boy assembly (browser: customasm + first-party core)
+i8080       = { variants = ["practice", "clean", "optimized"] }   # Intel 8080 assembly (browser: customasm + first-party CYCLE-EXACT core; T-states @ 2 MHz + space metrics)
+javascript  = { variants = ["practice", "clean", "optimized"] }   # L1-fib-manifest: JS clean/optimized added -- unblocks the Complexity Lab (oracle is always JS clean) on every language for this problem
+typescript  = { variants = ["practice", "clean", "optimized"] }
+python      = { variants = ["practice", "clean", "optimized"] }
+ruby        = { variants = ["practice", "clean", "optimized"] }
+
+[complexity.default.practice]
+time = "O(n)"
+space = "O(1)"
+[complexity.default.clean]
+time = "O(n)"
+space = "O(1)"
+[complexity.default.optimized]
+time = "O(n)"
+space = "O(1)"

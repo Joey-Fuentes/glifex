@@ -1,0 +1,10 @@
+name = "wat"
+extension = "wat"
+practice_file = "practice.wat"
+family = "assembly"
+scaffold = false           # numeric-only contract: added per-problem by hand
+detect = "wat2wasm --version"
+install_hint = "apt install wabt | brew install wabt | github.com/WebAssembly/wabt"
+test_cmd = "wat2wasm {variant}.wat -o .glifex.wasm && node harness.mjs"
+run_cmd = "wat2wasm {variant}.wat -o .glifex.wasm && node harness.mjs"
+tool_version = "wabt 1.0"
