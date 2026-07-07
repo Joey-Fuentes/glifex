@@ -24,8 +24,7 @@ test.describe("C toolchain (Wasmer WASIX clang)", () => {
 
     const out = await page.evaluate(async () => {
       const { init, Wasmer, Directory } = await import("/vendor/c/index.mjs");
-      const inlined = (await import("/vendor/c/wasm-inlined.mjs")).default;
-      await init({ module: inlined });   // base64-embedded SDK core -- no network
+      await init();   // index.mjs loads its sibling wasmer_js_bg.wasm (vendored) -- same-origin, offline
 
       const webc = new Uint8Array(await (await fetch("/vendor/c/clang.webc")).arrayBuffer());
       const clang = await Wasmer.fromFile(webc);
