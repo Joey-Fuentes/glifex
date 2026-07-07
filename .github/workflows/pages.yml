@@ -31,6 +31,7 @@ jobs:
           curl https://get.wasmer.io -sSfL | sh
           export PATH="$HOME/.wasmer/bin:$PATH"
           wasmer package download clang/clang -o web/vendor/c/clang.webc
+          echo '{"runtime":"c","via":"wasmer"}' > web/vendor/c/manifest.json
           ls -la web/vendor/c
       - run: node web/build.mjs
       - name: Stamp document version (badge reports the page it lives in)

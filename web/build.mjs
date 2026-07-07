@@ -30,11 +30,18 @@ function algoProblems() {
     const languages = {};
     for (const lang of readdirSync(dir)) {
       const ld = join(dir, lang);
-      const ext = { python: "py", javascript: "js", typescript: "ts", go: "go", java: "java", ruby: "rb", csharp: "cs", wat: "wat", php: "php" }[lang];
+      const ext = { python: "py", javascript: "js", typescript: "ts", go: "go", java: "java", ruby: "rb", csharp: "cs", wat: "wat", php: "php", c: "c" }[lang];
       if (!ext) continue;
       const cap = lang === "java" || lang === "csharp";
       const f = (v) => read(join(ld, (cap ? v[0].toUpperCase() + v.slice(1) : v) + "." + ext));
       languages[lang] = { practice: f("practice"), clean: f("clean"), optimized: f("optimized") };
+      // Compiled langs build the real CLI harness in-browser, so bake its
+      // invariant support files (identical across problems) alongside.
+      if (lang === "c") languages[lang].support = {
+        "harness.c": read(join(ld, "harness.c")),
+        "json.h": read(join(ld, "json.h")),
+        "solution.h": read(join(ld, "solution.h")),
+      };
     }
     return { id, track: "algorithm", ...manifestMeta(dir), title: title(md), statement: md,
              cases: JSON.parse(read(join(dir, "test_cases.json"))), languages };

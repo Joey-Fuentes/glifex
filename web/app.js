@@ -240,7 +240,20 @@ async function run() {
     renderResults(GlifexJsRuntime.runJavaScript((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases), res);
     return;
   }
-  showRunning(res, `Preparing ${state.lang} runtime…`);
+  // The C toolchain (Wasmer/WASIX) needs SharedArrayBuffer, which requires the
+  // page to be cross-origin isolated. The SW (PR-1) stamps the headers, but the
+  // current document may predate SW control -- reload once to pick them up.
+  if (state.lang === "c" && !self.crossOriginIsolated) {
+    if (!sessionStorage.getItem("coiReloaded")) {
+      sessionStorage.setItem("coiReloaded", "1");
+      showRunning(res, "Enabling the C toolchain (one-time reload)…");
+      location.reload();
+      return;
+    }
+    res.innerHTML = `<div class="summary bad">C needs cross-origin isolation (SharedArrayBuffer), which is not active. Try reloading the page.</div>`;
+    return;
+  }
+  showRunning(res, state.lang === "c" ? "Downloading the C toolchain (~100MB, one-time)…" : `Preparing ${state.lang} runtime…`);
   const runner = await window.Runtimes.get(state.lang);
   if (!runner || runner === "native") {
     const err = window.Runtimes.error(state.lang);
@@ -257,7 +270,7 @@ async function run() {
   }
   showRunning(res, `Running ${state.lang}…`);
   try {
-    renderResults(await runner.run((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases), res);
+    renderResults(await runner.run((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases, p.languages[state.lang]), res);
   } catch (e) {
     res.innerHTML = `<div class="summary bad">runtime error: ${e.message}</div>`;
     recordOutcome(false);

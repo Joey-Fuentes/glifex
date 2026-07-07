@@ -165,6 +165,7 @@ jobs:
           curl https://get.wasmer.io -sSfL | sh
           export PATH="$HOME/.wasmer/bin:$PATH"
           wasmer package download clang/clang -o web/vendor/c/clang.webc
+          echo '{"runtime":"c","via":"wasmer"}' > web/vendor/c/manifest.json
           ls -la web/vendor/c
       - name: Build corpus & run E2E (incl. offline-mode test)
         run: |

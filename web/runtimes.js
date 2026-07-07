@@ -239,7 +239,77 @@ const Runtimes = (() => {
     };
   }
 
-  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp };
+  // -- C: clang compiled to WASIX (Wasmer), running fully in-browser ----
+  // Needs SharedArrayBuffer, so the page must be cross-origin isolated (app.js
+  // ensures this before dispatching here). We compile the user's practice.c + the
+  // worked clean.c/optimized.c + the baked harness.c/json.h/solution.h into one
+  // wasm, then run it: the harness reads ../test_cases.json and prints PASS/FAIL
+  // per case, which we parse into the usual {results, nsPerCase} shape. Same
+  // artifact as the CLI harness.
+  async function loadC() {
+    if (!(await vendored("c"))) return null;
+    const { init, Wasmer, Directory } = await import("./vendor/c/index.mjs");
+    await init();   // loads the sibling wasmer_js_bg.wasm (vendored) -- offline
+    const webc = new Uint8Array(await (await fetch("vendor/c/clang.webc")).arrayBuffer());
+    const clang = await Wasmer.fromFile(webc);   // ~100MB, loaded once per session
+    return {
+      async run(source, cases, lang) {
+        const L = lang || {};
+        const sup = L.support || {};
+        try {
+          // One Directory mounted at "/": test_cases.json at the root and sources
+          // under /c, run with cwd /c so the harness's "../test_cases.json"
+          // resolves to /test_cases.json whether or not cwd is honored.
+          const dir = new Directory();
+          await dir.createDir("/c");
+          await dir.writeFile("/test_cases.json", JSON.stringify(cases));
+          await dir.writeFile("/c/practice.c", source);
+          await dir.writeFile("/c/clean.c", L.clean || "");
+          await dir.writeFile("/c/optimized.c", L.optimized || "");
+          await dir.writeFile("/c/harness.c", sup["harness.c"] || "");
+          await dir.writeFile("/c/json.h", sup["json.h"] || "");
+          await dir.writeFile("/c/solution.h", sup["solution.h"] || "");
+
+          const t0 = performance.now();
+          const comp = await clang.entrypoint.run({
+            args: ["-O2", "-std=c11", "/c/practice.c", "/c/clean.c", "/c/optimized.c",
+                   "/c/harness.c", "-o", "/c/out.wasm"],
+            mount: { "/": dir },
+          });
+          const cres = await comp.wait();
+          if (!cres.ok) return { error: "compile error:\n" + String(cres.stderr || "").trim().slice(0, 800) };
+
+          const wasm = await dir.readFile("/c/out.wasm");
+          const prog = await Wasmer.fromFile(wasm);
+          const rres = await (await prog.entrypoint.run({
+            args: ["practice"], mount: { "/": dir }, cwd: "/c",
+          })).wait();
+          const dt = performance.now() - t0;
+
+          const out = String(rres.stdout || "");
+          const byI = new Map();
+          for (const line of out.split("\n")) {
+            const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
+            if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
+          }
+          if (byI.size === 0) return { error: "no case results from harness:\n" + out.trim().slice(0, 600) };
+
+          const results = cases.map((c, i) => {
+            const r = byI.get(i);
+            if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
+            if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected };
+            return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected };
+          });
+          const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
+          return { results, nsPerCase };
+        } catch (e) {
+          return { error: "C runtime error: " + String((e && e.message) || e) };
+        }
+      },
+    };
+  }
+
+  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed
