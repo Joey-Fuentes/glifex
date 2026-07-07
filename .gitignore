@@ -84,3 +84,4 @@ bin/
 obj/
 # .NET file-based-app run cache — contains absolute Codespace paths
 dotnet/runfile-discovery/
+*Zone.Identifier

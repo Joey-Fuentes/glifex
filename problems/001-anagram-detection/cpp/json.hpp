@@ -5,12 +5,22 @@
 #include <cctype>
 #include <map>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 struct JValue;
-using JPtr = std::shared_ptr<JValue>;
+template<class T> struct Rc {   // shared_ptr semantics, NON-atomic refcount (single-threaded)
+  T* p_=nullptr; int* c_=nullptr;
+  Rc()=default; explicit Rc(T* q):p_(q),c_(new int(1)){}
+  Rc(const Rc& o):p_(o.p_),c_(o.c_){ if(c_) ++*c_; }
+  Rc(Rc&& o)noexcept:p_(o.p_),c_(o.c_){ o.p_=nullptr; o.c_=nullptr; }
+  Rc& operator=(Rc o)noexcept{ std::swap(p_,o.p_); std::swap(c_,o.c_); return *this; }
+  ~Rc(){ if(c_ && --*c_==0){ delete p_; delete c_; } }
+  T* operator->()const{return p_;} T& operator*()const{return *p_;}
+  explicit operator bool()const{return p_!=nullptr;}
+};
+template<class T,class...A> Rc<T> make_rc(A&&...a){ return Rc<T>(new T(static_cast<A&&>(a)...)); }
+using JPtr = Rc<JValue>;
 struct JValue {
     enum Type { NUL, BOOL, NUM, STR, ARR, OBJ } type = NUL;
     bool b = false; double num = 0; std::string str;
@@ -33,7 +43,7 @@ class Json {
     explicit Json(const std::string& src) : s(src) {}
     void ws() { while (i < s.size() && isspace((unsigned char)s[i])) i++; }
     JPtr value() {
-        ws(); char c = s[i]; auto v = std::make_shared<JValue>();
+        ws(); char c = s[i]; auto v = make_rc<JValue>();
         if (c == '{') { v->type = JValue::OBJ; i++; ws();
             if (s[i] == '}') { i++; return v; }
             while (true) { ws(); std::string k = str_(); ws(); i++; v->obj[k] = value(); ws();
@@ -48,7 +58,7 @@ class Json {
         if (c == 'n') { i += 4; return v; }
         v->type = JValue::NUM; size_t st = i;
         while (i < s.size() && (isdigit((unsigned char)s[i]) || strchr("-+.eE", s[i]))) i++;
-        v->num = std::stod(s.substr(st, i - st)); return v;
+        v->num = strtod(s.substr(st, i - st).c_str(), nullptr); return v;
     }
     std::string str_() {
         std::string out; i++;

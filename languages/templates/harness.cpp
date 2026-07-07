@@ -1,7 +1,6 @@
-// Generated harness — do not edit. Reads ../test_cases.json, dispatches on variant.
+// Generated harness — do not edit. Reads test cases from stdin, dispatches on variant.
 #include "solution.hpp"
 #include <chrono>
-#include <fstream>
 #include <iostream>
 #include <sstream>
 
@@ -12,8 +11,7 @@ Value optimized(const Input&);
 int main(int argc, char** argv) {
     std::string variant = argc > 1 ? argv[1] : "practice";
     bool bench = argc > 2 && std::string(argv[2]) == "--bench";
-    std::ifstream f("../test_cases.json");
-    std::stringstream buf; buf << f.rdbuf();
+    std::stringstream buf; buf << std::cin.rdbuf();
     auto cases = Json::parse(buf.str());
     auto dispatch = [&](const Input& c) {
         if (variant == "practice") return practice(c);
