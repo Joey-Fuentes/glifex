@@ -68,7 +68,7 @@ async function boot() {
   $("#hero-dismiss")?.addEventListener("click", () => { if (hero) hero.hidden = true; try { localStorage.setItem("glifex-hero-dismissed", "1"); } catch {} });
 
   try {
-    state.corpus = await (await fetch("problems.generated.json", { cache: "force-cache" })).json();
+    state.corpus = await (await fetch("problems.generated.json", { cache: "no-cache" })).json();
   } catch {
     $("#problem-title").textContent = "Run `node web/build.mjs` first";
     return;

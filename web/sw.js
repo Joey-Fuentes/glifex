@@ -13,11 +13,29 @@ self.addEventListener("install", (e) => {
   self.skipWaiting();
 });
 self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))));
+  e.waitUntil(
+    caches.keys()
+      .then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
 });
 self.addEventListener("fetch", (e) => {
   // version.json must never be cached — it IS the freshness signal.
   if (e.request.url.endsWith("version.json")) return;
+  // The corpus changes every deploy — network-first with a cache-bypassing fetch
+  // so a returning visitor never renders the previous deploy's problem list. The
+  // SW cache is the offline fallback (offline still gets the last-seen corpus).
+  if (e.request.url.endsWith("problems.generated.json")) {
+    e.respondWith(
+      fetch(e.request.url, { cache: "no-cache" })
+        .then((res) => {
+          if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
+          return res;
+        })
+        .catch(() => caches.match(e.request))
+    );
+    return;
+  }
   // Navigations are network-first: online visitors always get the newest
   // page (so the version badge can never be one deploy behind); the cache
   // answers only when the network can't — where showing the older version,
