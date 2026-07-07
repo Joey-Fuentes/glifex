@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-07T04:02:20.152Z",
+  "generatedAt": "2026-07-07T04:13:44.864Z",
   "problems": [
     {
       "id": "001-anagram-detection",
@@ -10,6 +10,7 @@
         "hash-map",
         "sorting"
       ],
+      "worked": true,
       "title": "001 · Anagram Detection",
       "statement": "# 001 · Anagram Detection\n\n## Task\nGiven two strings `s` and `t`, return `true` if `t` is an anagram of `s`\n(same characters, same counts), else `false`.\n\n## Signature\n`solve(input) -> bool`  where `input = { \"s\": string, \"t\": string }`\n\n## Notes\nThis is a *worked example*: `practice.*` ships with a correct naive solution so\n`glifex test 001 <lang>` is green on a fresh clone. Compare it against the hidden\nreferences with `glifex reveal 001 <lang> optimized`. New problems created with\n`glifex new` start from blank stubs instead.\n",
       "cases": [
@@ -109,6 +110,7 @@
         "arrays",
         "hash-map"
       ],
+      "worked": true,
       "title": "002 · Two Sum",
       "statement": "# 002 · Two Sum\n\n## Task\nGiven `nums` and a `target`, return the indices `[i, j]` (i < j) of the two\nnumbers adding to `target`. Exactly one solution exists.\n\n## Signature\n`solve(input) -> [int, int]`  where `input = { \"nums\": int[], \"target\": int }`\n",
       "cases": [
@@ -251,6 +253,7 @@
         "math",
         "dynamic-programming"
       ],
+      "worked": false,
       "title": "003 · Nth Fibonacci",
       "statement": "# 003 · Nth Fibonacci\n\nReturn the **nth Fibonacci number**.\n\n`solve(n)` takes a non-negative integer `n` and returns `fib(n)`, where\n`fib(0) = 0`, `fib(1) = 1`, and `fib(k) = fib(k-1) + fib(k-2)` for `k ≥ 2`.\n\nThe sequence begins `0, 1, 1, 2, 3, 5, 8, 13, 21, …`.\n\nThis is a **numeric** problem — integers in, an integer out — which is why it's\nthe home for the WebAssembly Text (WAT) runtime, whose contract is numeric-only.\n",
       "cases": [

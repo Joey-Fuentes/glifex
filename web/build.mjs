@@ -18,7 +18,8 @@ const manifestMeta = (dir) => {
   const difficulty = t.match(/^\s*difficulty\s*=\s*"([^"]+)"/m)?.[1] ?? null;
   const raw = t.match(/^\s*tags\s*=\s*\[([^\]]*)\]/m)?.[1] ?? "";
   const tags = raw.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
-  return { difficulty, tags };
+  const worked = /^\s*worked_example\s*=\s*true/m.test(t);
+  return { difficulty, tags, worked };
 };
 
 function algoProblems() {

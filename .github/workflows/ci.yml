@@ -126,7 +126,7 @@ jobs:
             const { runJavaScript } = require("./web/js-runtime.js");
             const c = require("./web/problems.generated.json");
             let ok = true;
-            for (const p of c.problems.filter(x => x.track === "algorithm")) {
+            for (const p of c.problems.filter(x => x.track === "algorithm" && x.worked)) {
               const o = runJavaScript(p.languages.javascript.practice, p.cases);
               const pass = !o.error && o.results.every(r => r.ok);
               console.log((pass ? "GREEN " : "RED   ") + p.id);

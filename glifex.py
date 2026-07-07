@@ -188,6 +188,7 @@ def _run_variant(prob: Path, name: str, spec: dict, variant: str, mode: str) -> 
 
 def _worked_example(prob: Path) -> bool:
     import tomllib
+
     m = prob / "manifest.toml"
     if not m.exists():
         return False
@@ -207,7 +208,11 @@ def cmd_test(args):
     # (references are still checked by `glifex verify`). An explicit language/variant
     # (e.g. verify's reference runs) still executes. Re-tighten when stubs get filled.
     if not args.language and variant == "practice" and not _worked_example(prob):
-        print(dim(f"\n{prob.name}: non-worked problem — blank practice stubs; skipping bulk practice test (references checked by `glifex verify`)\n"))
+        print(
+            dim(
+                f"\n{prob.name}: non-worked problem — blank practice stubs; skipping bulk practice test (references checked by `glifex verify`)\n"
+            )
+        )
         return
     print(bold(f"\n{prob.name}  ·  variant={variant}\n"))
     results = {}
