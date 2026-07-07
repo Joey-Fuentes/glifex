@@ -54,6 +54,25 @@ decisions don't get relitigated by forgetting.
 - [ ] **B4. Visibility batch** — OG/meta tags, README badges + screenshot,
       announcement post. A portfolio piece nobody sees is a diary. *Medium.*
 
+### Bx — Compiled & assembly languages in the browser (before corpus growth)
+
+Live edit-compile-run for every remaining corpus language, in the browser — lazy-loaded, one runtime at a time, honest download UI + CLI-divergence disclosure. Full design: [`browser-runtimes.md`](browser-runtimes.md). Prereq: **B1**.
+
+- [ ] **Bx-1. WAT** — native wasm; establishes the assembly-shaped harness
+- [ ] **Bx-2. PHP** — php-wasm interpreter (drop-in like Python/Ruby)
+- [ ] **Bx-3. C / C++** — clang-in-wasm; proves heavy-toolchain vendoring + progress UI
+- [ ] **Bx-4. C#** — Roslyn on .NET-wasm
+- [ ] **Bx-5. Zig** — self-hosted zig-compiler-in-wasm
+- [ ] **Bx-6. Retro trio (6502 / Z80 / SM83)** — OSS cores + GoodASM + cycle-accurate test-suite proof; CPU-core-only
+- [ ] **Bx-7. Dart** — client-side dart2wasm (WasmGC-only)
+- [ ] **Bx-8. x86-64** — clang cross-assemble + Blink-in-wasm; ELF+syscall harness
+- [ ] **Bx-9. arm64** — Unicorn/qemu (GPL); heaviest emulation
+- [ ] **Bx-10. Go** — gc-in-wasm (faithful, heavy)
+- [ ] **Bx-11. Java** — GraalVM-wasm (javac+Espresso) when browser-ready; CLI-only until then
+- [ ] **Bx-12. Kotlin** — gated with Java (JVM-in-browser); CLI-only until then
+- [ ] Swift — deferred; no in-browser swiftc yet (CLI-only, disclosed)
+- [ ] Rust — deferred; no in-browser rustc yet (CLI-only, disclosed)
+
 ### C — Corpus era (the forever-work; policy is law as of 002)
 - [ ] **C1. Problems 003+** — floor-of-four, manifest-first, blank stubs,
       original statements. Portfolio strategy: range over count (one great
@@ -90,7 +109,7 @@ decisions don't get relitigated by forgetting.
 - requirements.md — trigger: second regular maintainer.
 - Codespaces prebuilds, hosted-Postgres CI path, Go real bench, Dev
   Container confirmation — as needed.
-- Retro track (Z80/6502/SM83, CPU-core emulator harness) and Lean proofs
+- Retro track (Z80/6502/SM83) — **pulled into Bx** (see browser-runtimes.md); Lean proofs still parked
   track — future design sessions; documented in README.
 - Theme switcher, focus mode, personal notes, related problems — backlog;
   harvest on demand.

@@ -1,0 +1,112 @@
+# Browser Runtimes — Live Compile-and-Run for Every Language
+
+**Status:** design (pre-implementation). **Phase:** current B-phase workstream, before corpus growth (Phase C).
+**Goal:** every language and assembly target in the corpus can be *edited and run by the user in real time in the browser* — not precompiled references, not CLI-only. Where the best production-grade in-browser toolchain diverges from the CLI, disclose it clearly in the UI (at the point of run) and in the docs.
+
+This is the completion of the platform's core promise: the browser runs the same corpus as the CLI. For interpreted languages (Python/Ruby/JS/TS) and SQL that promise already holds. This workstream extends it — honestly — to the compiled and assembly families.
+
+## Hard requirements
+
+1. **Live edit-compile-run.** The user's own edited source compiles and runs in the browser. Precompiled-reference-only is off the table for every target.
+2. **CLI-fidelity or disclosure.** Ship the best production-grade in-browser toolchain per language. Where it diverges from the CLI's real toolchain, surface that divergence inline at run time AND document it. Never fake parity.
+3. **Snappy.** Nothing loads at page open. Each runtime lazy-loads on first Run in that language, is cached, and **exactly one runtime is live at a time.** Memory stays bounded to one runtime. This extends the existing `Runtimes.get(lang)` gate.
+
+## Shared architecture
+
+All targets plug into the existing pattern in `web/runtimes.js` and `web/fetch-runtimes.mjs`:
+
+- **Vendored, never CDN at runtime.** Each toolchain's files are fetched once by `fetch-runtimes.mjs` into `web/vendor/<lang>/` (gitignored), with LICENSE + `THIRD_PARTY_NOTICES.md` entry + `manifest.json`. This preserves THE OFFLINE RULE.
+- **Lazy + cached + one-at-a-time.** A `loadX()` loader per language returns a runner `{ run(source, cases) }`. `Runtimes.get(lang)` caches the instance and is the single gate; switching languages idles the previous runtime.
+- **Honest download UI + docs, not a metadata schema.** Runtimes aren't tagged with structured `fidelity`/`size` fields. Instead: (a) the docs state each language's approach and any CLI divergence, and (b) the UI shows a real download indicator at fetch time — e.g. "Downloading C toolchain — ~100MB, one-time…" via the run spinner — so users always know when a heavy runtime is loading and why. Where a toolchain genuinely diverges from the CLI (none of the Tier-1/2 targets do materially), a short inline note by the results says so. This keeps the loader contract simple: a loader + an optional divergence note, nothing more.
+- **Harness reuse.** The CLI already defines the per-language harness contract (`languages/templates/Harness.*`). The browser compiles the *same* user-solve-plus-harness with the in-browser toolchain — a strong fidelity anchor. No `app.js` run() changes needed; the compiled/asm langs route through the existing non-JS path.
+
+## The targets
+
+Tiered by feasibility × fidelity × effort.
+
+### Tier 1 — native / trivial
+
+**WAT (WebAssembly Text)** — WAT *is* WASM. Assemble with a small `wat2wasm` (wabt, compiled to WASM) or an inline assembler, instantiate, run. **Fidelity: highest** — the browser runs the same WASM the CLI's wabt produces; zero cross-compiler divergence. Tiny. **Sequence first.**
+
+### Tier 2 — clean, high-fidelity, OSS
+
+**C / C++** — `clang` + `wasi-libc` compiled to WASM (wasi-sdk / Wasmer WASIX; proven in Chrome/Safari/Firefox). User source → clang compiles in-browser → run. **Fidelity: high** (genuine clang + wasi-libc); C++ caveat: exception handling support is limited; WASI has no sockets (irrelevant for algorithm problems). **Size: heavy (~40–100MB toolchain), one-time cached.** License: LLVM/Apache (OSS). **Proves the heavy-toolchain vendor + progress architecture — do first among compiled.**
+
+**C#** — Roslyn (the real Microsoft C# compiler) on the .NET/Mono WASM runtime: `CSharpCompilation.Create` → `Emit` → execute the assembly. **Fidelity: high** (Roslyn is the CLI's compiler). **Size ~10–30MB** (trimmable). Work: wire `Console` I/O to the harness. License: MIT/.NET (OSS).
+
+**PHP** — the official PHP interpreter compiled to WASM (php-wasm; PHP 8.x, production-proven by WordPress Playground). PHP is interpreted, so this is the *easy* shape — run user source directly, exactly like the existing Python/Ruby runtimes; no compiler-in-browser problem. **Fidelity: high** (official interpreter + stdlib). Size ~10–20MB, one-time cached. License: OSS (PHP License / Apache-class wrapper).
+
+**Zig** — the **self-hosted Zig compiler** runs as WASM (the bootstrap ships a `zig1.wasm`; zigwasm.org does interactive in-browser compilation of the compiler + stdlib). User source → zig-in-wasm compiles → run. **Fidelity: high** (the real compiler). Moderate size. License: MIT. Caveat: Zig is pre-1.0 and ships breaking changes — pin a version.
+
+**Dart** — `dart2wasm` (the real Dart front-end) now runs **client-side** in the browser (2026): source → wasm on the page, no compiler server. **Fidelity: high** (real dart2wasm). BSD. Caveat: Dart-to-wasm requires **WasmGC** (Chromium/V8 119+), so modern-browsers-only; in-browser compilation is a recent capability — verify maturity when we build it.
+
+**Retro trio — 6502, Z80, SM83 (CPU-core-only)** — small OSS CPU cores (JS or WASM) + an OSS assembler (GoodASM covers all three, stable; or per-arch JS assemblers) + a new per-chip register/memory harness. **Fidelity: high and PROVABLE** — SingleStepTests/jsmoo give cycle-by-cycle reference suites (1000 tests/opcode w/ bus activity) we can run in CI to prove the core matches silicon. **Size: smallest of everything.** License: cores/assembler MIT/BSD-class. Scope: pure CPU (registers + RAM in, result out) — **no Game Boy hardware/PPU/MMIO** (separate future track).
+
+### Tier 3 — hard / gated
+
+**x86-64** — assemble the user's AT&T/SysV asm with clang cross-targeting `x86_64-linux` (reuses the C/C++ toolchain) → ELF → execute on **Blink** compiled to WASM (ISC, ~177kb, runs real x86-64-Linux ELF, WASM-proven by `x86-64-playground`). **Fidelity: high** (real machine code on a faithful emulator; Linux syscalls back the stdio harness). Lighter than expected, but the assemble→ELF→emulate→syscall/ABI harness pipeline is more involved. Bonus: emulated x86-64 runs uniformly regardless of the user's real CPU — an ARM-laptop user can finally run x86-64 asm they can't test natively.
+
+**arm64** — assemble with clang cross-targeting `aarch64-linux` → execute on an arm64 emulator (**Unicorn Engine**, QEMU-based, multi-arch — **GPLv2, license note**) or qemu-aarch64-in-wasm. **Fidelity: high.** Heavier than x86-64; GPL tooling.
+
+**Go** — **gc-in-wasm** (decision: faithful over light). The real `gc` toolchain compiled to WASM, running in-browser with a virtual FS to compile user source → run. **Fidelity: high** (the real compiler). **Size: heavy** (toolchain + stdlib). Rejected alt: `yaegi` interpreter (lighter but interpreter-divergent — undercuts CLI-parity).
+
+**Java** — **GraalVM-wasm (javac + Espresso)**. GraalVM is building a WASM backend; a functional `javac`-in-browser demo exists, and Espresso is an OSS, TCK-passing JVM. Run javac on Espresso-in-wasm → bytecode → execute on Espresso-in-wasm. **Fidelity: high** (real OpenJDK-class, TCK). License: GraalVM CE (OpenJDK-style, OSS). **Status: 2026-immature** (no networking yet, "lots of work"). **Decision: track GraalVM-wasm; keep Java CLI-only (disclosed) until browser-ready.** Not CheerpJ — its free Community License forbids self-hosting (violates the offline rule); self-hosting needs a paid or branded-dedicated license.
+
+**Kotlin** — `kotlinc` is JVM-based, so live in-browser Kotlin needs a **JVM-in-browser** to run the compiler — the same dependency as Java. **Gated with Java: CLI-only until GraalVM-wasm (Espresso) can host kotlinc.** Kotlin/Wasm and Kotlin/Native exist but their compilers still run on the JVM at build time.
+
+**Swift** — SwiftWasm cross-compiles Swift→wasm and offers a browser "Pad," but an **in-browser `swiftc` is unproven** (swiftc is large/LLVM-based; the Pad likely compiles server-side), and SwiftWasm is community-maintained / not fully upstreamed. **Decision: CLI-only + disclosed, revisit** — more hopeful than Rust given active SwiftWasm, but not production-grade in-browser today.
+
+**Rust** — **no production in-browser `rustc`** as of 2026 (self-host request rust-lang/rust#62202 open since 2019; all Rust→wasm is cross-compile-on-dev-machine). **Decision: Rust stays CLI-only with a clear in-UI "no browser runtime yet" note; revisit as tooling matures.**
+
+## Harness contracts
+
+- **Compiled langs (C/C++/C#/Go/Java):** reuse the CLI harness — compile user-solve + `Harness.*`, run, JSON stdin/stdout marshalled by the harness. Same artifact as the CLI.
+- **WAT:** export a `solve`; JS marshals inputs/outputs like the TS/JS path.
+- **Retro CPU-core (6502/Z80/SM83):** NEW contract, per chip. A bare CPU has no OS/stdio. Define: entry address; where inputs are placed (registers / fixed RAM addresses); where the result is read (register / RAM location); halt/RET convention. This is the substantive new design work for the retro track (the cores/assemblers are off-the-shelf).
+- **x86-64/arm64:** assemble+link to a static ELF; execute under the emulator with a minimal Linux syscall shim (read/write/exit) backing the same stdio harness as the compiled langs.
+
+## Fidelity verification
+
+- **Retro:** run SingleStepTests/jsmoo per-opcode suites against the chosen core in CI — cycle-accurate proof.
+- **Compiled/asm:** differential testing — the same problem's reference solution run through both the CLI and the browser toolchain must agree on all cases (ties into the Phase C differential-testing work).
+- Each runtime's optional inline divergence note states residual CLI mismatches plainly.
+
+## Proposed sequencing
+
+Prereq: **B1** (regression-test the 5 existing browser runtimes) lands first — don't build on an untested foundation.
+
+1. **WAT** — trivial, native; establishes the "assembly-shaped" harness.
+2. **PHP** — interpreter-in-wasm; drop-in like Python/Ruby, a fast early win.
+3. **C / C++** — clang-in-wasm; proves heavy-toolchain vendoring + progress UI + the assemble pipeline reused later.
+4. **C#** — Roslyn; moderate size.
+5. **Zig** — self-hosted compiler-in-wasm.
+6. **Retro trio (6502 / Z80 / SM83)** — small, provable, distinctive; establishes the CPU-core harness. (Could move earlier — small and high-value.)
+7. **Dart** — dart2wasm client-side (WasmGC caveat).
+8. **x86-64** — Blink + clang-cross-assemble; introduces the ELF+syscall harness.
+9. **arm64** — Unicorn/qemu (GPL note); heaviest emulation.
+10. **Go** — gc-in-wasm (heavy).
+11. **Java** — when GraalVM-wasm is browser-ready; CLI-only until then.
+12. **Kotlin** — with Java (shares the JVM-in-browser dependency); CLI-only until then.
+13. **Swift** — deferred; CLI-only + disclosed until in-browser swiftc is real.
+14. **Rust** — deferred; CLI-only + disclosed until an in-browser rustc exists.
+
+Feasible now (Tiers 1–2): WAT, PHP, C, C++, C#, Zig, Dart, 6502, Z80, SM83. Gated/deferred (Tier 3): x86-64, arm64, Go (heavy but doable), Java, Kotlin, Swift, Rust.
+
+Each target ships as its own PR (a `fetch-runtimes.mjs` entry + a `runtimes.js` loader + UI fidelity note + tests), verified before the next — same discipline as the rest of the platform.
+
+## Decisions locked
+
+- Live edit-compile-run required for all; disclose CLI divergence in UI + docs. *(product)*
+- Retro trio: CPU-core-only; no Game Boy hardware. *(J. Fuentes)*
+- Go: gc-in-wasm (faithful over light). *(J. Fuentes)*
+- Rust: CLI-only until in-browser rustc exists. *(research-confirmed)*
+- Java: pursue GraalVM-wasm OSS path; CLI-only until browser-ready; not CheerpJ (license). *(research-confirmed)*
+- Kotlin: gated with Java (JVM-based compiler); CLI-only until GraalVM-wasm hosts kotlinc. *(research-confirmed)*
+- Swift: CLI-only until an in-browser swiftc is real (SwiftWasm is cross-compile today). *(research-confirmed)*
+- PHP / Zig / Dart: feasible now — php-wasm interpreter, self-hosted zig-in-wasm, client-side dart2wasm (WasmGC-only). *(research-confirmed)*
+
+## Full corpus coverage
+
+Already in-browser: JavaScript, TypeScript, Python, Ruby, SQL (PGlite), frontend (HTML/CSS/JS).
+Feasible to add now: WAT, PHP, C, C++, C#, Zig, Dart, 6502, Z80, SM83.
+Gated/deferred: x86-64, arm64, Go, Java, Kotlin, Swift, Rust — each with the reason and revisit-trigger above. Every corpus language is accounted for: none is silently dropped; the gated ones stay CLI-only with in-UI disclosure until their path matures.
