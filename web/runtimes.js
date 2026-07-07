@@ -210,7 +210,7 @@ const Runtimes = (() => {
           "  try { $__o[] = ['i' => $__i, 'got' => solve($__c['input'])]; }\n" +
           "  catch (\\Throwable $__e) { $__o[] = ['i' => $__i, 'err' => $__e->getMessage()]; }\n" +
           "}\n" +
-          'fwrite(STDOUT, "\n' + BEGIN + '" . json_encode($__o) . "' + END + '\n");' + "\n";
+          'echo "\n' + BEGIN + '" . json_encode($__o) . "' + END + '\n";' + "\n";
         const t0 = performance.now();
         try {
           await php.run(script);
