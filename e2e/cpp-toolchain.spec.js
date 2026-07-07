@@ -55,4 +55,13 @@ test.describe("C++ runtime (Binji wasm-clang)", () => {
     expect(res.output).toContain("7/7 passed");
     expect(res.output).not.toContain("[FAIL]");
   });
+
+  test("runs problem 001 green through the C++ UI", async ({ page }) => {
+    test.setTimeout(300_000);
+    await page.goto("/");
+    await page.locator("#problem-list li").first().click();
+    await page.locator("#lang-select").selectOption("cpp");
+    await page.locator("#run-btn").click();
+    await expect(page.locator(".summary")).toHaveClass(/ok/, { timeout: 290_000 });
+  });
 });

@@ -310,7 +310,46 @@ const Runtimes = (() => {
     };
   }
 
-  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC };
+  // ── C++: vendored Binji wasm-clang (single-process clang-8 + wasm-ld) ──
+  async function loadCpp() {
+    if (!(await vendored("cpp"))) return null;
+    const worker = new Worker("cpp-worker.js");   // drives the committed cpp-shared.js fork
+    return {
+      async run(source, cases, lang) {
+        const L = lang || {};
+        const sup = L.support || {};
+        // one translation unit: harness + the user's practice (source) + baked clean/optimized
+        const src = [sup["harness.cpp"] || "", source || "", L.clean || "", L.optimized || ""].join("\n");
+        const headers = { "solution.hpp": sup["solution.hpp"] || "", "json.hpp": sup["json.hpp"] || "" };
+        const t0 = performance.now();
+        const res = await new Promise((resolve) => {
+          const onmsg = (e) => { worker.removeEventListener("message", onmsg); resolve(e.data || {}); };
+          worker.addEventListener("message", onmsg);
+          worker.postMessage({ id: "run", source: src, headers, cases, variant: "practice" });
+        });
+        const dt = performance.now() - t0;
+        if (res.id === "error")
+          return { error: "C++ compile/runtime error:\n" + String(res.error || "").slice(0, 400) + "\n" + String(res.output || "").trim().slice(0, 600) };
+        const out = String(res.output || "");
+        const byI = new Map();
+        for (const line of out.split("\n")) {
+          const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
+          if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
+        }
+        if (byI.size === 0) return { error: "no case results from harness:\n" + out.trim().slice(0, 600) };
+        const results = cases.map((c, i) => {
+          const r = byI.get(i);
+          if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
+          if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected };
+          return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected };
+        });
+        const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
+        return { results, nsPerCase };
+      },
+    };
+  }
+
+  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed

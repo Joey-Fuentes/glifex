@@ -33,6 +33,18 @@ jobs:
           wasmer package download clang/clang -o web/vendor/c/clang.webc
           echo '{"runtime":"c","via":"wasmer"}' > web/vendor/c/manifest.json
           ls -la web/vendor/c
+      - name: Vendor C++ toolchain (Binji wasm-clang)
+        run: |
+          mkdir -p web/vendor/cpp
+          BASE=https://raw.githubusercontent.com/binji/wasm-clang/master
+          for f in clang lld memfs sysroot.tar shared.js worker.js; do
+            curl -fsSL "$BASE/$f" -o "web/vendor/cpp/$f"
+          done
+          sed -i 's/if (this.buffer.byteLength === 0) {/if (this.buffer !== this.memory.buffer || this.buffer.byteLength === 0) {/' web/vendor/cpp/shared.js
+          grep -q 'this.buffer !== this.memory.buffer' web/vendor/cpp/shared.js || { echo 'shared.js check() patch failed'; exit 1; }
+          echo '{"runtime":"cpp","via":"binji-wasm-clang","clang":"8.0.1","std":"c++17"}' > web/vendor/cpp/manifest.json
+          ls -la web/vendor/cpp
+          test "$(stat -c%s web/vendor/cpp/clang)" -gt 1000000 || { echo "clang too small (LFS pointer?)"; exit 1; }
       - run: node web/build.mjs
       - name: Stamp document version (badge reports the page it lives in)
         run: |

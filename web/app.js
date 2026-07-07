@@ -163,7 +163,7 @@ async function compareOptimized(userOut, res) {
   else {
     const runner = await window.Runtimes.get(state.lang);
     if (!runner || runner === "native") return;
-    refOut = await runner.run(src, p.cases);
+    refOut = await runner.run(src, p.cases, p.languages[state.lang]);
   }
   renderResults(userOut, res, { compared: refOut.nsPerCase });
 }
@@ -253,7 +253,7 @@ async function run() {
     res.innerHTML = `<div class="summary bad">C needs cross-origin isolation (SharedArrayBuffer), which is not active. Try reloading the page.</div>`;
     return;
   }
-  showRunning(res, state.lang === "c" ? "Downloading the C toolchain (~100MB, one-time)…" : `Preparing ${state.lang} runtime…`);
+  showRunning(res, state.lang === "c" ? "Downloading the C toolchain (~100MB, one-time)…" : state.lang === "cpp" ? "Compiling C++ (first run fetches the toolchain)…" : `Preparing ${state.lang} runtime…`);
   const runner = await window.Runtimes.get(state.lang);
   if (!runner || runner === "native") {
     const err = window.Runtimes.error(state.lang);
