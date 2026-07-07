@@ -330,18 +330,19 @@ const Runtimes = (() => {
           const dir = new Directory();
           await dir.createDir("/cpp");
           await dir.writeFile("/test_cases.json", JSON.stringify(cases));
-          await dir.writeFile("/cpp/practice.cpp", source);
-          await dir.writeFile("/cpp/clean.cpp", L.clean || "");
-          await dir.writeFile("/cpp/optimized.cpp", L.optimized || "");
-          await dir.writeFile("/cpp/harness.cpp", sup["harness.cpp"] || "");
           await dir.writeFile("/cpp/json.hpp", sup["json.hpp"] || "");
           await dir.writeFile("/cpp/solution.hpp", sup["solution.hpp"] || "");
+          // Single translation unit: libc++ headers are huge, and parsing them once
+          // per file makes a 4-file build unusably slow in wasm-clang. Concatenate
+          // harness + the variants -- each #includes solution.hpp under #pragma once,
+          // so libc++ is parsed once instead of four times.
+          const all = [sup["harness.cpp"] || "", source, L.clean || "", L.optimized || ""].join("\n");
+          await dir.writeFile("/cpp/all.cpp", all);
 
           const MP = "/project";
           const t0 = performance.now();
           const comp = await cxx.run({
-            args: ["-O2", "-std=c++20", MP + "/cpp/practice.cpp", MP + "/cpp/clean.cpp",
-                   MP + "/cpp/optimized.cpp", MP + "/cpp/harness.cpp", "-o", MP + "/cpp/out.wasm"],
+            args: ["-O0", "-std=c++20", MP + "/cpp/all.cpp", "-o", MP + "/cpp/out.wasm"],
             mount: { [MP]: dir },
           });
           const cres = await comp.wait();

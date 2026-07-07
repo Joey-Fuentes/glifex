@@ -15,7 +15,7 @@ test.describe("C / C++ runtime (Wasmer WASIX clang)", () => {
     await page.locator("#lang-select").selectOption(lang);
     await page.locator("#run-btn").click();
     const summary = page.locator("#results .summary");
-    await expect(summary).toBeVisible({ timeout: 240_000 });   // compiled + ran the harness
+    await expect(summary).toBeVisible({ timeout: 360_000 });   // compiled + ran the harness
     await expect(summary).toHaveClass(/ok/);                   // ...and every case passed
   }
 
@@ -25,7 +25,7 @@ test.describe("C / C++ runtime (Wasmer WASIX clang)", () => {
   });
 
   test("problem 001 compiles and runs green in C++", async ({ page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(420_000);
     await runProblem001(page, "cpp");
   });
 });
