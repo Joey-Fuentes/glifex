@@ -20,6 +20,18 @@ jobs:
         with: { node-version: "24" }
       - name: Vendor WASM runtimes
         run: node web/fetch-runtimes.mjs
+      - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
+        run: |
+          mkdir -p web/vendor/c
+          VER=0.8.0-beta.1
+          npm pack @wasmer/sdk@${VER}
+          tar xzf wasmer-sdk-*.tgz
+          cp -r package/dist/. web/vendor/c/
+          rm -rf package wasmer-sdk-*.tgz
+          curl https://get.wasmer.io -sSfL | sh
+          export PATH="$HOME/.wasmer/bin:$PATH"
+          wasmer package download clang/clang -o web/vendor/c/clang.webc
+          ls -la web/vendor/c
       - run: node web/build.mjs
       - name: Stamp document version (badge reports the page it lives in)
         run: |
