@@ -181,7 +181,7 @@ const Runtimes = (() => {
   // loop and is a single WASM invocation.
   async function loadPhp() {
     if (!(await vendored("php"))) return null;
-    const { PhpWeb } = await import("./vendor/php/PhpWeb.mjs");
+    const { PhpWeb } = await import("./vendor/php/es.js");
     const BEGIN = "@@GLIFEX_BEGIN@@", END = "@@GLIFEX_END@@";
     const b64 = (s) => {
       const bytes = new TextEncoder().encode(s);
@@ -195,16 +195,13 @@ const Runtimes = (() => {
         // hit "Cannot redeclare solve()" on the second run, since php-wasm keeps
         // memory across run() calls. locateFile pins every .wasm/.data asset to
         // the vendored dir — nothing touches a CDN at run time (THE OFFLINE RULE).
-        const php = new PhpWeb({ locateFile: (f) => "vendor/php/" + (f.endsWith(".wasm") ? "php.wasm" : f) });
         let out = "";
-        php.addEventListener("output", (e) => {
-          const d = e.detail;
-          out += typeof d === "string" ? d : new TextDecoder().decode(d);
+        const php = new PhpWeb({
+          print: (s) => { out += s; },
+          printErr: () => {},
+          locateFile: () => "vendor/php/php-web.wasm",
         });
-        await new Promise((res) => {
-          if (php.ready) return res();
-          php.addEventListener("ready", res, { once: true });
-        });
+        await new Promise((res) => php.addEventListener("ready", res, { once: true }));
         const stripped = source.replace(/\?>\s*$/, "");   // tolerate a trailing close tag
         const script = stripped + "\n" +
           "$__g = json_decode(base64_decode('" + b64(JSON.stringify(cases)) + "'), true);\n" +

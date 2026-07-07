@@ -14,7 +14,7 @@ enabled via `node web/fetch-runtimes.mjs`.
 | TypeScript (compiler) | 6.0.3 | In-browser TS → JS compilation | Apache-2.0 |
 | ruby.wasm | 3.4 | Ruby in the browser (CRuby on WASM) | Ruby License / BSD-2-Clause |
 | PGlite (ElectricSQL) | 0.5.4 | PostgreSQL in the browser (WASM) | Apache-2.0 |
-| php-wasm (seanmorris) | 0.1.0 | PHP in the browser (official interpreter on WASM) | Apache-2.0 |
+| php-wasm (via @webreflection/php) | latest | PHP in the browser (official interpreter on WASM) | Apache-2.0 |
 | CodeMirror | 5.65.18 | In-browser code editor | MIT |
 
 Each project's full license text ships alongside its vendored files under

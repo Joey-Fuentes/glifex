@@ -18,7 +18,7 @@ const VENDOR = join(dirname(fileURLToPath(import.meta.url)), "vendor");
 const CDN = "https://cdn.jsdelivr.net";
 
 // php-wasm jsDelivr bases — the "@" is concatenated (not a literal token).
-const PHP_NPM = `${CDN}/npm/php-wasm` + "@0.1.0";
+const PHP_NPM = `${CDN}/npm/@webreflection/php`;
 const PHP_GH = `${CDN}/gh/seanmorris/php-wasm` + "@master";
 const RUNTIMES = {
   codemirror: {
@@ -87,22 +87,14 @@ const RUNTIMES = {
     ],
   },
   php: {
-    version: "0.1.0", license: "Apache-2.0",
+    version: "webreflection", license: "Apache-2.0 (php-wasm) + ISC (wrapper)",
     files: [
-      // Browser ESM entry — imported directly by runtimes.js (loadPhp).
-      { url: `${PHP_NPM}/PhpWeb.mjs`, save: "PhpWeb.mjs", required: true },
-      // Emscripten glue. PhpWeb.mjs imports it by its REAL name (relative), so it
-      // must be saved verbatim. Default build is PHP 8.4; the unversioned spelling
-      // is the fallback for asset-name drift across releases.
-      { url: `${PHP_NPM}/php8.4-web.mjs`, save: "php8.4-web.mjs", group: "phpglue" },
-      { url: `${PHP_NPM}/php-web.mjs`, save: "php-web.mjs", group: "phpglue" },
-      // WASM binary. locateFile() redirects every .wasm request to a fixed
-      // vendored name (php.wasm), so we save whichever candidate exists under
-      // that name and never depend on the glue's internal binary filename.
-      { url: `${PHP_NPM}/php8.4-web.wasm`, save: "php.wasm", group: "phpwasm" },
-      { url: `${PHP_NPM}/php-web.wasm`, save: "php.wasm", group: "phpwasm" },
-      { url: `${PHP_NPM}/php8.4-web.mjs.wasm`, save: "php.wasm", group: "phpwasm" },
-      { url: `${PHP_NPM}/php-web.mjs.wasm`, save: "php.wasm", group: "phpwasm" },
+      // @webreflection/php: one self-contained ESM bundle plus one wasm. No import
+      // graph and no baked-in wasm name to chase (runtimes.js locateFile points
+      // straight at php-web.wasm).
+      { url: `${PHP_NPM}/es.js`, save: "es.js", required: true },
+      { url: `${PHP_NPM}/php-web.wasm`, save: "php-web.wasm", required: true },
+      // Wrapper ships no LICENSE of its own; fall back to upstream php-wasm's.
       { url: `${PHP_NPM}/LICENSE`, save: "LICENSE", group: "phplic" },
       { url: `${PHP_GH}/LICENSE`, save: "LICENSE", group: "phplic" },
     ],
