@@ -5,6 +5,9 @@ module.exports = defineConfig({
   testDir: ".",
   timeout: 30_000,
   retries: process.env.CI ? 1 : 0,
+  // "list" prints a labeled line per test (pass OR fail); CI otherwise defaults
+  // to "dot", which collapses to dots + a count and hides individual titles.
+  reporter: [["list"]],
   use: {
     baseURL: "http://localhost:8080",
     trace: "retain-on-failure",
