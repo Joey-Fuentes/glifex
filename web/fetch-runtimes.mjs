@@ -17,6 +17,9 @@ import { fileURLToPath } from "node:url";
 const VENDOR = join(dirname(fileURLToPath(import.meta.url)), "vendor");
 const CDN = "https://cdn.jsdelivr.net";
 
+// php-wasm jsDelivr bases — the "@" is concatenated (not a literal token).
+const PHP_NPM = `${CDN}/npm/@webreflection/php`;
+const PHP_GH = `${CDN}/gh/seanmorris/php-wasm` + "@master";
 const RUNTIMES = {
   codemirror: {
     version: "5.65.18", license: "MIT",
@@ -32,6 +35,7 @@ const RUNTIMES = {
       { url: `${CDN}/npm/codemirror@5.65.18/mode/htmlmixed/htmlmixed.js`, save: "htmlmixed.js", required: true },
       { url: `${CDN}/npm/codemirror@5.65.18/mode/clike/clike.js`, save: "clike.js", required: true },
       { url: `${CDN}/npm/codemirror@5.65.18/mode/go/go.js`, save: "go.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/php/php.js`, save: "php.js", required: true },
       { url: `${CDN}/npm/codemirror@5.65.18/LICENSE`, save: "LICENSE", required: true },
     ],
   },
@@ -80,6 +84,19 @@ const RUNTIMES = {
       { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/dist/pglite.data`, group: "pgdata" },
       { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/dist/postgres.data`, group: "pgdata" },
       { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/LICENSE`, save: "LICENSE" },
+    ],
+  },
+  php: {
+    version: "webreflection", license: "Apache-2.0 (php-wasm) + ISC (wrapper)",
+    files: [
+      // @webreflection/php: one self-contained ESM bundle plus one wasm. No import
+      // graph and no baked-in wasm name to chase (runtimes.js locateFile points
+      // straight at php-web.wasm).
+      { url: `${PHP_NPM}/es.js`, save: "es.js", required: true },
+      { url: `${PHP_NPM}/php-web.wasm`, save: "php-web.wasm", required: true },
+      // Wrapper ships no LICENSE of its own; fall back to upstream php-wasm's.
+      { url: `${PHP_NPM}/LICENSE`, save: "LICENSE", group: "phplic" },
+      { url: `${PHP_GH}/LICENSE`, save: "LICENSE", group: "phplic" },
     ],
   },
   wat: {

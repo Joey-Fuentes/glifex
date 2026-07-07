@@ -24,7 +24,7 @@ const GlifexEditor = (() => {
     });
   }
 
-  const MODES = ["javascript", "python", "ruby", "sql", "xml", "css", "htmlmixed", "clike", "go"];
+  const MODES = ["javascript", "python", "ruby", "sql", "xml", "css", "htmlmixed", "clike", "go", "php"];
 
   async function init() {
     try {

@@ -48,7 +48,7 @@ test.describe("WASM runtimes smoke", () => {
   test.afterAll(async () => { await page.close(); });
 
   // Algorithm track: picking the language auto-loads its practice solution.
-  for (const lang of ["typescript", "python", "ruby"]) {
+  for (const lang of ["typescript", "python", "ruby", "php"]) {
     test(`${lang} compiles-and-runs green`, async () => {
       test.setTimeout(120_000);   // first-load download+init is slow in CI
       await page.locator("#lang-select").selectOption(lang);

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-07T04:13:44.864Z",
+  "generatedAt": "2026-07-07T05:36:46.951Z",
   "problems": [
     {
       "id": "001-anagram-detection",
@@ -84,6 +84,11 @@
           "practice": "module.exports = function solve(c) {\n  return [...c.s].sort().join(\"\") === [...c.t].sort().join(\"\");\n};\n",
           "clean": "module.exports = function solve(c) {\n  return [...c.s].sort().join(\"\") === [...c.t].sort().join(\"\");\n};\n",
           "optimized": "module.exports = function solve(c) {\n  if (c.s.length !== c.t.length) return false;\n  const count = {};\n  for (const ch of c.s) count[ch] = (count[ch] || 0) + 1;\n  for (const ch of c.t) { if (!count[ch]) return false; count[ch]--; }\n  return true;\n};\n"
+        },
+        "php": {
+          "practice": "<?php\nfunction solve(array $c): bool {\n    $s = str_split($c['s']); $t = str_split($c['t']);\n    sort($s); sort($t);\n    return $s === $t;\n}\n",
+          "clean": "<?php\nfunction solve(array $c): bool {\n    $s = str_split($c['s']); $t = str_split($c['t']);\n    sort($s); sort($t);\n    return $s === $t;\n}\n",
+          "optimized": "<?php\nfunction solve(array $c): bool {\n    if (strlen($c['s']) !== strlen($c['t'])) return false;\n    return count_chars($c['s'], 1) === count_chars($c['t'], 1);\n}\n"
         },
         "python": {
           "practice": "def solve(case):\n    return sorted(case[\"s\"]) == sorted(case[\"t\"])\n",
@@ -222,6 +227,11 @@
           "practice": "module.exports = function solve(c) {\n  const seen = {};\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (need in seen) return [seen[need], i];\n    seen[c.nums[i]] = i;\n  }\n  return null;\n};\n",
           "clean": "module.exports = function solve(c) {\n  const seen = new Map();\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (seen.has(need)) return [seen.get(need), i];\n    seen.set(c.nums[i], i);\n  }\n  return [];\n};\n",
           "optimized": "module.exports = function solve(c) {\n  const seen = new Map();\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (seen.has(need)) return [seen.get(need), i];\n    seen.set(c.nums[i], i);\n  }\n  return [];\n};\n"
+        },
+        "php": {
+          "practice": "<?php\nfunction solve(array $c): array {\n    $seen = [];\n    foreach ($c['nums'] as $i => $n) {\n        $need = $c['target'] - $n;\n        if (isset($seen[$need])) return [$seen[$need], $i];\n        $seen[$n] = $i;\n    }\n    return [];\n}\n",
+          "clean": "<?php\nfunction solve(array $c): array {\n    $seen = [];\n    foreach ($c['nums'] as $i => $n) {\n        $need = $c['target'] - $n;\n        if (isset($seen[$need])) return [$seen[$need], $i];\n        $seen[$n] = $i;\n    }\n    return [];\n}\n",
+          "optimized": "<?php\nfunction solve(array $c): array {\n    $seen = [];\n    foreach ($c['nums'] as $i => $n) {\n        $need = $c['target'] - $n;\n        if (isset($seen[$need])) return [$seen[$need], $i];\n        $seen[$n] = $i;\n    }\n    return [];\n}\n"
         },
         "python": {
           "practice": "def solve(case):\n    seen = {}\n    for i, n in enumerate(case[\"nums\"]):\n        if case[\"target\"] - n in seen:\n            return [seen[case[\"target\"] - n], i]\n        seen[n] = i\n    return None\n",
