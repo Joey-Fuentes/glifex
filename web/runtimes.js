@@ -171,7 +171,78 @@ const Runtimes = (() => {
     };
   }
 
-  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat };
+  // ── PHP: php-wasm (the official interpreter compiled to WASM) ────────
+  // php-wasm's run() is async — stdout arrives via the "output" event — so the
+  // synchronous shared caseLoop can't drive it. Instead we run ONE batched
+  // script: the user source plus an injected loop over the cases (base64-embedded
+  // to dodge every quoting hazard) that json_encodes each solve() result between
+  // sentinels. We then parse + deep-equal in JS and return caseLoop's exact
+  // {results, nsPerCase} shape. This mirrors php/harness.php's own in-process
+  // loop and is a single WASM invocation.
+  async function loadPhp() {
+    if (!(await vendored("php"))) return null;
+    const { PhpWeb } = await import("./vendor/php/PhpWeb.mjs");
+    const BEGIN = "@@GLIFEX_BEGIN@@", END = "@@GLIFEX_END@@";
+    const b64 = (s) => {
+      const bytes = new TextEncoder().encode(s);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin);
+    };
+    return {
+      async run(source, cases) {
+        // A fresh throwaway interpreter per Run (like PGlite): reusing one would
+        // hit "Cannot redeclare solve()" on the second run, since php-wasm keeps
+        // memory across run() calls. locateFile pins every .wasm/.data asset to
+        // the vendored dir — nothing touches a CDN at run time (THE OFFLINE RULE).
+        const php = new PhpWeb({ locateFile: (f) => "vendor/php/" + f });
+        let out = "";
+        php.addEventListener("output", (e) => {
+          const d = e.detail;
+          out += typeof d === "string" ? d : new TextDecoder().decode(d);
+        });
+        await new Promise((res) => {
+          if (php.ready) return res();
+          php.addEventListener("ready", res, { once: true });
+        });
+        const stripped = source.replace(/\?>\s*$/, "");   // tolerate a trailing close tag
+        const script = stripped + "\n" +
+          "$__g = json_decode(base64_decode('" + b64(JSON.stringify(cases)) + "'), true);\n" +
+          "$__o = [];\n" +
+          "foreach ($__g as $__i => $__c) {\n" +
+          "  try { $__o[] = ['i' => $__i, 'got' => solve($__c['input'])]; }\n" +
+          "  catch (\\Throwable $__e) { $__o[] = ['i' => $__i, 'err' => $__e->getMessage()]; }\n" +
+          "}\n" +
+          'fwrite(STDOUT, "\n' + BEGIN + '" . json_encode($__o) . "' + END + '\n");' + "\n";
+        const t0 = performance.now();
+        try {
+          await php.run(script);
+        } catch (e) {
+          return { error: "PHP runtime error: " + String(e.message || e) };
+        }
+        const dt = performance.now() - t0;
+        const a = out.indexOf(BEGIN), z = out.indexOf(END);
+        if (a === -1 || z === -1) return { error: "PHP produced no result (a fatal error?): " + out.trim().slice(0, 300) };
+        let rows;
+        try {
+          rows = JSON.parse(out.slice(a + BEGIN.length, z));
+        } catch (err) {
+          return { error: "could not parse PHP output: " + String(err.message || err) };
+        }
+        const byI = new Map(rows.map((r) => [r.i, r]));
+        const results = cases.map((c, i) => {
+          const r = byI.get(i);
+          if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
+          if ("err" in r) return { i, ok: false, error: String(r.err), expected: c.expected };
+          return { i, ok: eq(r.got, c.expected), got: r.got, expected: c.expected };
+        });
+        const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
+        return { results, nsPerCase };
+      },
+    };
+  }
+
+  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed

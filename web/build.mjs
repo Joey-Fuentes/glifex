@@ -30,7 +30,7 @@ function algoProblems() {
     const languages = {};
     for (const lang of readdirSync(dir)) {
       const ld = join(dir, lang);
-      const ext = { python: "py", javascript: "js", typescript: "ts", go: "go", java: "java", ruby: "rb", csharp: "cs", wat: "wat" }[lang];
+      const ext = { python: "py", javascript: "js", typescript: "ts", go: "go", java: "java", ruby: "rb", csharp: "cs", wat: "wat", php: "php" }[lang];
       if (!ext) continue;
       const cap = lang === "java" || lang === "csharp";
       const f = (v) => read(join(ld, (cap ? v[0].toUpperCase() + v.slice(1) : v) + "." + ext));

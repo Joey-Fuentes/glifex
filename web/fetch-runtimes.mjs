@@ -17,6 +17,9 @@ import { fileURLToPath } from "node:url";
 const VENDOR = join(dirname(fileURLToPath(import.meta.url)), "vendor");
 const CDN = "https://cdn.jsdelivr.net";
 
+// php-wasm jsDelivr bases — the "@" is concatenated (not a literal token).
+const PHP_NPM = `${CDN}/npm/php-wasm` + "@0.1.0";
+const PHP_GH = `${CDN}/gh/seanmorris/php-wasm` + "@master";
 const RUNTIMES = {
   codemirror: {
     version: "5.65.18", license: "MIT",
@@ -32,6 +35,7 @@ const RUNTIMES = {
       { url: `${CDN}/npm/codemirror@5.65.18/mode/htmlmixed/htmlmixed.js`, save: "htmlmixed.js", required: true },
       { url: `${CDN}/npm/codemirror@5.65.18/mode/clike/clike.js`, save: "clike.js", required: true },
       { url: `${CDN}/npm/codemirror@5.65.18/mode/go/go.js`, save: "go.js", required: true },
+      { url: `${CDN}/npm/codemirror@5.65.18/mode/php/php.js`, save: "php.js", required: true },
       { url: `${CDN}/npm/codemirror@5.65.18/LICENSE`, save: "LICENSE", required: true },
     ],
   },
@@ -80,6 +84,24 @@ const RUNTIMES = {
       { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/dist/pglite.data`, group: "pgdata" },
       { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/dist/postgres.data`, group: "pgdata" },
       { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/LICENSE`, save: "LICENSE" },
+    ],
+  },
+  php: {
+    version: "0.1.0", license: "Apache-2.0",
+    files: [
+      // Browser ESM entry — imported directly by runtimes.js (loadPhp).
+      { url: `${PHP_NPM}/PhpWeb.mjs`, save: "PhpWeb.mjs", required: true },
+      // Emscripten glue. PhpWeb.mjs imports it by its REAL name (relative), so it
+      // must be saved verbatim. Default build is PHP 8.4; the unversioned spelling
+      // is the fallback for asset-name drift across releases.
+      { url: `${PHP_NPM}/php8.4-web.mjs`, save: "php8.4-web.mjs", group: "phpglue" },
+      { url: `${PHP_NPM}/php-web.mjs`, save: "php-web.mjs", group: "phpglue" },
+      // WASM binary. Loaded via locateFile(f -> vendor/php/f), so it must keep the
+      // exact name the glue requests — save each candidate under its own name.
+      { url: `${PHP_NPM}/php8.4-web.mjs.wasm`, save: "php8.4-web.mjs.wasm", group: "phpwasm" },
+      { url: `${PHP_NPM}/php-web.mjs.wasm`, save: "php-web.mjs.wasm", group: "phpwasm" },
+      { url: `${PHP_NPM}/LICENSE`, save: "LICENSE", group: "phplic" },
+      { url: `${PHP_GH}/LICENSE`, save: "LICENSE", group: "phplic" },
     ],
   },
   wat: {

@@ -72,6 +72,7 @@ function modeFor() {
   if (p.track === "frontend") return "htmlmixed";
   return { javascript: "javascript", typescript: "javascript", python: "python",
            ruby: "ruby", go: "go", java: "text/x-java", csharp: "text/x-csharp",
+           php: "text/x-php",
          }[state.lang] || "javascript";
 }
 
