@@ -96,10 +96,13 @@ const RUNTIMES = {
       // is the fallback for asset-name drift across releases.
       { url: `${PHP_NPM}/php8.4-web.mjs`, save: "php8.4-web.mjs", group: "phpglue" },
       { url: `${PHP_NPM}/php-web.mjs`, save: "php-web.mjs", group: "phpglue" },
-      // WASM binary. Loaded via locateFile(f -> vendor/php/f), so it must keep the
-      // exact name the glue requests — save each candidate under its own name.
-      { url: `${PHP_NPM}/php8.4-web.mjs.wasm`, save: "php8.4-web.mjs.wasm", group: "phpwasm" },
-      { url: `${PHP_NPM}/php-web.mjs.wasm`, save: "php-web.mjs.wasm", group: "phpwasm" },
+      // WASM binary. locateFile() redirects every .wasm request to a fixed
+      // vendored name (php.wasm), so we save whichever candidate exists under
+      // that name and never depend on the glue's internal binary filename.
+      { url: `${PHP_NPM}/php8.4-web.wasm`, save: "php.wasm", group: "phpwasm" },
+      { url: `${PHP_NPM}/php-web.wasm`, save: "php.wasm", group: "phpwasm" },
+      { url: `${PHP_NPM}/php8.4-web.mjs.wasm`, save: "php.wasm", group: "phpwasm" },
+      { url: `${PHP_NPM}/php-web.mjs.wasm`, save: "php.wasm", group: "phpwasm" },
       { url: `${PHP_NPM}/LICENSE`, save: "LICENSE", group: "phplic" },
       { url: `${PHP_GH}/LICENSE`, save: "LICENSE", group: "phplic" },
     ],

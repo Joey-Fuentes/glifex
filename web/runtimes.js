@@ -195,7 +195,7 @@ const Runtimes = (() => {
         // hit "Cannot redeclare solve()" on the second run, since php-wasm keeps
         // memory across run() calls. locateFile pins every .wasm/.data asset to
         // the vendored dir — nothing touches a CDN at run time (THE OFFLINE RULE).
-        const php = new PhpWeb({ locateFile: (f) => "vendor/php/" + f });
+        const php = new PhpWeb({ locateFile: (f) => "vendor/php/" + (f.endsWith(".wasm") ? "php.wasm" : f) });
         let out = "";
         php.addEventListener("output", (e) => {
           const d = e.detail;
