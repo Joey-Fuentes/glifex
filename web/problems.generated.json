@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-08T07:19:53.388Z",
+  "generatedAt": "2026-07-08T09:47:04.781Z",
   "problems": [
     {
       "id": "001-anagram-detection",
@@ -358,7 +358,7 @@
       ],
       "languages": {
         "asm-6502": {
-          "practice": "; nth Fibonacci -- 6502 assembly (CPU-core contract)\n;   input:  n at $10        result: byte at $12        halt: BRK\n;   entry $0600; flat 64KB RAM; assembled by customasm.\n;\n; Define the opcodes you use with a #ruledef (or #include <std/6502.asm> if the\n; in-browser assembler ships the standard 6502 set), then write your solution.\n;\n; your code here\n",
+          "practice": "; nth Fibonacci -- 6502 assembly (customasm syntax)\n;\n; Contract:\n;   * runs at $0600 on a flat 64KB RAM\n;   * input  n            is at $10\n;   * output fib(n) low byte -> write it to $12\n;   * end the program with BRK\n;   * documented opcodes only; decimal mode (SED) is not supported yet\n;   * zero page $00..$0F is free scratch space\n;\n; Write plain 6502 -- the standard instruction set is already available,\n; so you do NOT need a #ruledef or #include.\n\n        ldx $10          ; X = n\n        ; TODO: compute fib(n) and store its low byte at $12\n        lda #0\n        sta $12\n        brk\n",
           "clean": null,
           "optimized": null
         },
