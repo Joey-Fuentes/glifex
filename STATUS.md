@@ -2,6 +2,13 @@
 
 > Planned work is tracked in [docs/ROADMAP.md](docs/ROADMAP.md) — this file records only what has shipped and been verified.
 
+> **Evidence convention.** Every claim in this file is either (a) reproducible by
+> the commands in [Verify everything](#verify-everything), or (b) anchored to the
+> thing that proves it -- a CI job in `.github/workflows/`, an E2E spec in `e2e/`,
+> or a specific commit. "Verified" means executed, not intended. Anything written
+> but unrun lives under its own "Still written but NOT executed" section below,
+> never mixed in with the proven work.
+
 **All 18 registered languages are execution-verified.** Full CI matrix green
 on Linux, macOS (Apple Silicon), and Windows; E2E green in real browsers
 including the offline-mode test; site live at https://glifex.dev with honest
@@ -91,6 +98,13 @@ records the shipped set. First-contact lessons encoded:
   real Chromium + Firefox via E2E (computed styles, live preview).
 - **E2E suite** — 18 passed (9 specs × 2 browsers), including the
   offline-mode test: "offline === hosted" is a machine-checked regression test.
+- **WASM-tier E2E coverage (B1)** -- every runtime in the `web/runtimes.js`
+  `LOADERS` registry now has a smoke spec that asserts a *green* run, so a
+  regression in a loader fails CI instead of shipping silently: TypeScript,
+  Python, Ruby, PHP, WAT, and PostgreSQL in `e2e/runtimes.spec.js`; C in
+  `e2e/c-smoke.spec.js`; C++ in `e2e/cpp-toolchain.spec.js`; JavaScript runs
+  inline. The `e2e` job in `.github/workflows/ci.yml` vendors each runtime
+  before the run.
 - **CI pipeline** — ruff (pinned), corpus-staleness gate, harness drift gate, 3-OS polyglot matrix
   with honest ran/failed/skipped summaries, playground engine check,
   Playwright E2E, Trivy, CodeQL: all green. Dependabot loop proven.

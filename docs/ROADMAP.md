@@ -41,17 +41,20 @@ decisions don't get relitigated by forgetting.
       no resizable panes). *Medium.*
 
 ### B — Coverage + infrastructure (after A, interleaved with early corpus)
-- [ ] **B1. WASM-tier e2e** — vendor in the e2e job (reuse the cache) + one
-      smoke spec per runtime. The most-debugged subsystem currently has zero
-      regression coverage. *High.*
-- [x] **B2. Asset-generation stamping** (`app.js?v=STAMP`) — ends SW
+- [x] **B1. WASM-tier e2e** -- vendor in the e2e job + one smoke spec per
+      runtime (all 8 `LOADERS`: TS/Python/Ruby/PHP/WAT/Postgres in
+      `runtimes.spec.js`, C in `c-smoke.spec.js`, C++ in `cpp-toolchain.spec.js`;
+      JS inline). Each asserts a *green* run; the `e2e` job vendors every
+      runtime. The most-debugged subsystem now has regression coverage. *High.*
+      (Cache-reuse of the vendor step across the `e2e`/`pages` jobs is a
+      separate CI optimization, not required for coverage.)- [x] **B2. Asset-generation stamping** (`app.js?v=STAMP`) — ends SW
       HTML/CSS/JS generation skew (burned us twice). *Medium.*
-- [ ] **B3. Docs batch** — architectural invariants section (incl. "blind
-      practice is a UX convention, not a security boundary"), two mermaid
-      diagrams, README plugin-effort caveat (CLI plugin ≠ playground tier),
-      browser-support paragraph, STATUS evidence-anchoring convention
-      (claims cite commit/CI run). *Medium, one sitting.*
-- [ ] **B4. Visibility batch** — OG/meta tags, README badges + screenshot,
+- [x] **B3. Docs batch** -- architectural invariants section (incl. "blind
+      practice is a UX convention, not a security boundary") + two mermaid
+      diagrams in `docs/architecture.md`; README plugin-effort caveat (CLI
+      plugin != playground tier) + browser-support paragraph; STATUS
+      evidence-anchoring convention (claims cite commit/CI run). *Medium, one
+      sitting.*- [ ] **B4. Visibility batch** — OG/meta tags, README badges + screenshot,
       announcement post. A portfolio piece nobody sees is a diary. *Medium.*
 
 ### Bx — Compiled & assembly languages in the browser (before corpus growth)

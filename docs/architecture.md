@@ -80,3 +80,78 @@ default token — a known GitHub trap), and AI review (CodeRabbit) is advisory,
 never a required check: merge ability must not depend on third-party SaaS uptime.
 Secrets are caught pre-commit (gitleaks) and by GitHub push protection — CI
 scanning is the backstop; on a public repo, a secret reaching CI is already burned.
+
+## Invariants
+
+Decisions above are choices; these are the load-bearing rules a change must not
+quietly break. If a diff violates one of these, it is wrong even if CI is green.
+
+1. **Blind practice is a UX convention, not a security boundary.** Reference
+   solutions (`clean.*` / `optimized.*`) ship inside the corpus and the served
+   page; the reveal panel and `files.exclude` only *hide* them. Anyone can read
+   them via view-source or devtools. Never treat "hidden" as "secret," and never
+   add a feature that depends on the answer being unreachable.
+2. **One source of truth for harnesses.** Per-problem harness/support files are
+   generated from `languages/templates/` by `glifex sync-harnesses`. A CI drift
+   gate fails if any copy differs from its template. Edit the template, sync,
+   then commit -- never hand-edit a per-problem copy.
+3. **The corpus cannot drift from the source.** `web/problems.generated.json` is
+   baked from `problems/**` by `web/build.mjs`; CI diffs it against the committed
+   file. The playground and the CLI therefore run the same problems by
+   construction.
+4. **Offline === hosted.** No server compute and no runtime fetched at run time.
+   JavaScript runs natively; every other in-browser language uses a WASM runtime
+   vendored once at build time. If a change needs the network at run time, it
+   breaks the core promise.
+5. **Languages are config, not code.** Adding or removing a language is a
+   `languages/<name>.toml` plus a harness template -- never an edit to
+   `glifex.py`'s dispatch.
+6. **CLI tier and playground tier are independent capabilities.** A language can
+   be CLI-verified without an in-browser runtime; the playground tier requires a
+   separately vendored WASM runtime. A new plugin is CLI-only in the browser
+   until such a runtime exists.
+7. **Cross-origin isolation is scoped to the C runtime.** Only the C (Wasmer)
+   runtime needs `SharedArrayBuffer`; its one-time COI reload gate is C-only. The
+   C++ runtime (Binji, single-threaded) must not depend on isolation.
+8. **Deploys stamp assets to prevent skew.** Deploy rewrites asset URLs to
+   `?v=<sha>` and self-versions the service-worker cache, because the SW serves
+   each asset one generation stale and independently. Do not reintroduce
+   unversioned asset URLs.
+
+## Diagrams
+
+**Single-sourcing and the two drift gates** -- how templates and problems become
+the one corpus both tiers run:
+
+```mermaid
+flowchart LR
+  T["languages/templates/*"] -->|sync-harnesses| P["problems/NNN-slug/lang/*"]
+  TOML["languages/*.toml"] --> P
+  P -->|"node web/build.mjs"| C["web/problems.generated.json"]
+  C --> CLI["glifex test (native CLI)"]
+  C --> PG["web playground"]
+  P --> G1{{"CI drift gate: copy == template"}}
+  C --> G2{{"CI staleness gate: corpus fresh"}}
+```
+
+**Playground run path** -- one contract, many runtimes, one result shape
+(`.summary.ok` / `.summary.bad`):
+
+```mermaid
+flowchart TD
+  U["user code + Run"] --> APP["web/app.js run path"]
+  APP -->|javascript| JS["js-runtime.js (inline, native)"]
+  APP -->|other langs| R["runtimes.js LOADERS"]
+  R --> TS["typescript"]
+  R --> PY["python (Pyodide)"]
+  R --> RB["ruby.wasm"]
+  R --> PHP["php-wasm"]
+  R --> WAT["wat (wabt)"]
+  R --> PGL["postgres (PGlite)"]
+  R --> CPP["cpp (Binji wasm-clang, single-thread)"]
+  R --> CC["c (Wasmer WASIX clang)"]
+  CC -->|needs SharedArrayBuffer| COI["COI reload gate (C only)"]
+  JS --> RES[".summary .ok / .bad"]
+  R --> RES
+```
+

@@ -298,6 +298,8 @@ tool_version   = "rust 1.85"              # feeds .tool-versions
 
 Drop in the `.toml` and its harness template, and everything else picks it up automatically. **C++, Kotlin, and Swift** are planned on exactly this mechanism (C++ exercises the optional `compile` stage; Swift is first-class on Linux/macOS/WSL and second-class on native Windows). See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full harness contract.
 
+> **A plugin gets you the CLI tier, not the playground tier.** A `languages/*.toml` makes a language run *natively* under `glifex test` on whatever machine has its toolchain. Running that language **in the browser** is a separate, heavier piece of work: a WASM runtime must be built or vendored and wired into `web/runtimes.js` (see [`docs/browser-runtimes.md`](docs/browser-runtimes.md)). Until that exists, a newly added language is fully supported in the CLI and simply **CLI-only in the playground** -- disclosed honestly in the UI, never faked.
+
 ---
 
 ## Benchmarking
@@ -341,6 +343,17 @@ It reads the same `problems/` corpus as the CLI, so it can't drift.
 node web/build.mjs
 python3 -m http.server -d web 8080   # → http://localhost:8080
 ```
+
+**Browser support.** Any current evergreen browser works: Chrome/Edge, Firefox,
+and Safari, on desktop and on Android (verified on Android Chrome). The baseline
+requirement is WebAssembly -- JavaScript problems run with zero downloads, and the
+other in-browser runtimes (Python, Ruby, TypeScript, PHP, WAT, PostgreSQL, C, C++)
+lazy-load a vendored WASM runtime on first use. One runtime, the **C** toolchain,
+additionally needs `SharedArrayBuffer` and therefore cross-origin isolation; the
+page enables it via a service worker and does a one-time reload the first time you
+pick C (C++ needs neither). After a runtime's first use it is cached, so the
+playground keeps working **offline** -- offline behaves identically to hosted, and
+that equivalence is a machine-checked E2E test.
 
 See [`STATUS.md`](STATUS.md) for exactly what's verified vs written-pending-local-check,
 and [`docs/LAUNCH.md`](docs/LAUNCH.md) for the full step-by-step launch & verification walkthrough.
