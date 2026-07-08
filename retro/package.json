@@ -1,0 +1,9 @@
+{
+  "name": "glifex-retro",
+  "private": true,
+  "type": "module",
+  "description": "6502 retro-tier toolchain smoke (customasm CLI + cpu6502). Not shipped to the browser.",
+  "dependencies": {
+    "@whscullin/cpu6502": "*"
+  }
+}

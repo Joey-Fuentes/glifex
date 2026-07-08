@@ -26,7 +26,7 @@
 
   // TypeScript rides on Node. Once the runner lands (Phase 1), doctor runs
   // here automatically; the guard keeps a Phase 0-only clone from erroring.
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y g++ && npm install -g typescript && ([ -f glifex.py ] && python3 glifex.py doctor || echo 'Run: python3 glifex.py doctor (after the runner lands)')",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y g++ && npm install -g typescript && cargo install customasm --locked && ( cd retro && npm install ) && ([ -f glifex.py ] && python3 glifex.py doctor || echo 'Run: python3 glifex.py doctor (after the runner lands)')",
 
   "customizations": {
     "vscode": {
