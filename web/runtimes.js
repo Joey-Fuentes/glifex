@@ -360,7 +360,9 @@ const Runtimes = (() => {
       await (await fetch("vendor/asm-6502/customasm.wasm")).arrayBuffer()
     )).instance.exports;
     const { Cpu6502 } = await import("./retro/cpu6502.mjs");   // first-party, tested core
-    const RULEDEF = await (await fetch("retro/6502.ruledef.asm")).text();
+    const rres = await fetch("retro/6502.ruledef.asm");
+    const RULEDEF = rres.ok ? await rres.text() : "";
+    const RULEDEF_OK = RULEDEF.includes("#ruledef cpu6502");
     // Prepend the 6502 instruction set + origin so users write PLAIN 6502 (no
     // #ruledef/#addr). #bankdef puts labels at $0600 with output starting at byte 0.
     const PREAMBLE = RULEDEF + "\n#bankdef prog { #addr 0x0600, #outp 0 }\n#bank prog\n";
@@ -371,16 +373,26 @@ const Runtimes = (() => {
       const fp = mkStr("hexstr"), ap = mkStr(PREAMBLE + source), op = casm.wasm_assemble(fp, ap);
       const text = rdStr(op);
       casm.wasm_string_drop(fp); casm.wasm_string_drop(ap); casm.wasm_string_drop(op);
-      const hex = text.replace(/[^0-9a-fA-F]/g, "");
-      if (!hex || hex.length % 2) return { error: text.replace(/\x1b\[[0-9;]*m/g, "").trim() };
+      // STRICT parse: the hexstr payload is line(s) of pure hex. Extract hex
+      // ONLY from lines that are entirely hex -- never strip letters out of
+      // diagnostics (words like "resolved"/"error" contain a-f and corrupt).
+      const clean = text.replace(/\x1b\[[0-9;]*m/g, "");
+      const hex = clean.split("\n").map((l) => l.trim()).filter((l) => l && /^[0-9a-fA-F]+$/.test(l)).join("");
+      if (!hex || hex.length % 2) {
+        // ALWAYS a non-empty, verbose error: include the raw assembler output
+        // so failures diagnose themselves in the UI instead of crashing.
+        const raw = clean.trim();
+        return { error: raw ? raw.slice(0, 800) : "assembler produced no output (raw was empty; ruledef loaded: " + RULEDEF_OK + ")" };
+      }
       const bytes = new Uint8Array(hex.length / 2);
       for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
       return { bytes };
     }
     return {
       run(source, cases) {
+        if (!RULEDEF_OK) return { error: "6502 ruledef failed to load (retro/6502.ruledef.asm missing or invalid) -- try a hard refresh; if it persists, the deploy is incomplete." };
         const asm = assemble(source);
-        if (asm.error) return { error: "6502 assembly error: " + asm.error };
+        if (!asm.bytes) return { error: "6502 assembly error: " + (asm.error || "unknown (no bytes, no message)") };
         let totalInsns = 0;
         const results = cases.map((c, i) => {
           const ram = new Uint8Array(0x10000);
