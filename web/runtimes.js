@@ -349,7 +349,70 @@ const Runtimes = (() => {
     };
   }
 
-  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp };
+  // -- 6502 assembly: customasm.wasm assembles, 6502.ts (cycle-exact) runs ------
+  // Assemble ABI (raw wasm string-passing) proven from customasm web/main.js;
+  // execute path proven via the retro-smoke CI. Cycles -> deterministic time
+  // (6502 @ 1.0 MHz reference); flows through the standard {results, nsPerCase}.
+  const NS_PER_CYCLE_6502 = 1000, ENTRY_6502 = 0x0600;
+  async function load6502() {
+    if (!(await vendored("asm-6502"))) return null;
+    const casm = (await WebAssembly.instantiate(
+      await (await fetch("vendor/asm-6502/customasm.wasm")).arrayBuffer()
+    )).instance.exports;
+    const mod = await import("./vendor/asm-6502/6502.js");
+    const Cpu = mod.StateMachineCpu || mod.CpuInterface || mod.Cpu || mod.CPU || mod.default;
+    const enc = new TextEncoder(), dec = new TextDecoder();
+    const mkStr = (str) => { const b = enc.encode(str); const q = casm.wasm_string_new(b.length); for (let i = 0; i < b.length; i++) casm.wasm_string_set_byte(q, i, b[i]); return q; };
+    const rdStr = (q) => { const n = casm.wasm_string_get_len(q); const o = new Uint8Array(n); for (let i = 0; i < n; i++) o[i] = casm.wasm_string_get_byte(q, i); return dec.decode(o); };
+    function assemble(source) {
+      const fp = mkStr("hexstr"), ap = mkStr(source), op = casm.wasm_assemble(fp, ap);
+      const text = rdStr(op);
+      casm.wasm_string_drop(fp); casm.wasm_string_drop(ap); casm.wasm_string_drop(op);
+      const hex = text.replace(/[^0-9a-fA-F]/g, "");
+      if (!hex || hex.length % 2) return { error: text.replace(/\x1b\[[0-9;]*m/g, "").trim() };
+      const bytes = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+      return { bytes };
+    }
+    return {
+      run(source, cases) {
+        const asm = assemble(source);
+        if (asm.error) return { error: "6502 assembly error: " + asm.error };
+        let totalCycles = 0;
+        const results = cases.map((c, i) => {
+          const ram = new Uint8Array(0x10000);
+          asm.bytes.forEach((b, k) => (ram[(ENTRY_6502 + k) & 0xffff] = b));
+          const vals = Array.isArray(c.input) ? c.input : Object.values(c.input);
+          vals.forEach((v, k) => (ram[0x10 + k] = v & 0xff));   // inputs -> $10..
+          const bus = { read: (a) => ram[a & 0xffff], write: (a, v) => { ram[a & 0xffff] = v & 0xff; }, readWord: (a) => ram[a & 0xffff] | (ram[(a + 1) & 0xffff] << 8) };
+          let got, cyc = 0;
+          try {
+            const cpu = new Cpu(bus);
+            if (cpu.reset) cpu.reset();
+            if (cpu.state && "p" in cpu.state) cpu.state.p = ENTRY_6502; else if ("p" in cpu) cpu.p = ENTRY_6502;
+            const stepFn = cpu.cycle || cpu.step || cpu.executeInstruction || cpu.tick;
+            let steps = 0;
+            for (;;) {
+              if (steps++ > 200000) throw new Error("runaway (no BRK)");
+              const op = ram[((cpu.state && cpu.state.p != null ? cpu.state.p : cpu.p)) & 0xffff];
+              stepFn.call(cpu);
+              cyc = (cpu.state && cpu.state.cycles != null) ? cpu.state.cycles : (cpu.cycles != null ? cpu.cycles : cyc + 1);
+              if (op === 0x00) break;   // BRK halt
+            }
+            got = ram[0x12];            // result <- $12
+          } catch (e) {
+            return { i, ok: false, error: String((e && e.message) || e), expected: c.expected };
+          }
+          totalCycles += cyc;
+          return { i, ok: eq(got, c.expected), got, expected: c.expected };
+        });
+        const cyclesPerCase = cases.length ? totalCycles / cases.length : 0;
+        return { results, nsPerCase: cyclesPerCase * NS_PER_CYCLE_6502, cycles: Math.round(cyclesPerCase) };
+      },
+    };
+  }
+
+  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, "asm-6502": load6502 };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed
