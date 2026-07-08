@@ -20,14 +20,6 @@ jobs:
         with: { node-version: "24" }
       - name: Vendor WASM runtimes
         run: node web/fetch-runtimes.mjs
-      - name: Vendor 6502.ts core (esbuild self-bundle)
-        run: |
-          mkdir -p web/vendor/asm-6502
-          npm install 6502.ts esbuild
-          printf 'export * from "6502.ts";\n' > core6502-entry.mjs
-          npx esbuild core6502-entry.mjs --bundle --format=esm --platform=browser --outfile=web/vendor/asm-6502/6502.js
-          rm -f core6502-entry.mjs
-          ls -la web/vendor/asm-6502
       - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
         run: |
           mkdir -p web/vendor/c
