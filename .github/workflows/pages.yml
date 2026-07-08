@@ -24,8 +24,7 @@ jobs:
         run: |
           mkdir -p web/vendor/asm-6502
           npm install 6502.ts esbuild
-          printf 'export * from "6502.ts";\n' > /tmp/core6502-entry.mjs
-          npx esbuild /tmp/core6502-entry.mjs --bundle --format=esm --platform=browser --outfile=web/vendor/asm-6502/6502.js
+          echo 'export * from "6502.ts";' | npx esbuild --bundle --format=esm --platform=browser --outfile=web/vendor/asm-6502/6502.js --resolve-dir=.
           ls -la web/vendor/asm-6502
       - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
         run: |
