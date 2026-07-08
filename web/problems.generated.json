@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-08T00:40:10.547Z",
+  "generatedAt": "2026-07-08T07:19:53.388Z",
   "problems": [
     {
       "id": "001-anagram-detection",
@@ -357,6 +357,11 @@
         }
       ],
       "languages": {
+        "asm-6502": {
+          "practice": "; nth Fibonacci -- 6502 assembly (CPU-core contract)\n;   input:  n at $10        result: byte at $12        halt: BRK\n;   entry $0600; flat 64KB RAM; assembled by customasm.\n;\n; Define the opcodes you use with a #ruledef (or #include <std/6502.asm> if the\n; in-browser assembler ships the standard 6502 set), then write your solution.\n;\n; your code here\n",
+          "clean": null,
+          "optimized": null
+        },
         "javascript": {
           "practice": "module.exports = function solve(c) {\n  const n = c.n;\n  // Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n  return 0;\n};\n",
           "clean": null,
