@@ -67,19 +67,41 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
   > run is skipped (blank stubs), and floor-of-four + min-6-cases in `glifex verify` warn
 
   > instead of erroring. Worked examples (001/002) stay strict.
-- [ ] **Bx-2. PHP** — php-wasm interpreter (drop-in like Python/Ruby)
-- [ ] **Bx-3. C / C++** — clang-in-wasm; proves heavy-toolchain vendoring + progress UI
-- [ ] **Bx-4. C#** — Roslyn on .NET-wasm
-- [ ] **Bx-5. Zig** — self-hosted zig-compiler-in-wasm
-- [ ] **Bx-6. Retro trio (6502 / Z80 / SM83)** — OSS cores + GoodASM + cycle-accurate test-suite proof; CPU-core-only
-- [ ] **Bx-7. Dart** — client-side dart2wasm (WasmGC-only)
-- [ ] **Bx-8. x86-64** — clang cross-assemble + Blink-in-wasm; ELF+syscall harness
-- [ ] **Bx-9. arm64** — Unicorn/qemu (GPL); heaviest emulation
-- [ ] **Bx-10. Go** — gc-in-wasm (faithful, heavy)
-- [ ] **Bx-11. Java** — GraalVM-wasm (javac+Espresso) when browser-ready; CLI-only until then
-- [ ] **Bx-12. Kotlin** — gated with Java (JVM-in-browser); CLI-only until then
-- [ ] Swift — deferred; no in-browser swiftc yet (CLI-only, disclosed)
-- [ ] Rust — deferred; no in-browser rustc yet (CLI-only, disclosed)
+- [x] **Bx-2. PHP** -- shipped. php-wasm interpreter (drop-in like Python/Ruby);
+      in the `LOADERS` registry, green e2e in `runtimes.spec.js`, verified in STATUS.
+- [x] **Bx-3. C / C++** -- shipped (caveats tracked). C via clang/WASIX (Wasmer),
+      C++ via Binji wasm-clang; green e2e in `c-smoke.spec.js` / `cpp-toolchain.spec.js`.
+      See STATUS "C++ runtime (Bx-3b)". *Follow-up: modern-LLVM clang rebuild (Bx-3b-2).*
+- [ ] **Bx-4. Retro trio (6502 / Z80 / SM83)** -- CPU-core-only; OSS cores + GoodASM +
+      SingleStepTests vectors run in CI = deterministic, silicon-accurate proof. Smallest,
+      most-verifiable, no GC/threads/COI. Front of the line. *High.*
+- [ ] **Bx-5. C#** -- Roslyn on .NET-wasm; the mature "real compiler, client-side" story
+      (Blazor-class). Work: wire `Console` I/O to the harness. *High.*
+- [ ] **Bx-6. Rust** -- rubri: Miri (MIR interpreter) in wasm, *not* `rustc` -- sidesteps the
+      in-browser linker problem. MIT, offline after first load. Kata-only scope: pinned ~1.78,
+      no crates, no multi-file, limited I/O, slow output. *Medium.*
+- [ ] **Bx-7. x86-64** -- Blink emulator (ISC) on real ELF; assemble user asm -> ELF ->
+      Linux-syscall harness. More pipeline than size. *Medium.*
+- [ ] **Bx-8. Java** -- TeaVM + DoppioJVM. DoppioJVM (a JVM written in JS) runs the compiler
+      (javac/ECJ) and the user's freshly-compiled bytecode in-browser; TeaVM can AOT the fixed
+      ECJ frontend to JS to speed the compile step (TeaVM can't execute dynamic user bytecode).
+      Sets up the JVM-in-browser base. *Medium; DoppioJVM looks largely unmaintained -- verify.*
+- [ ] **Bx-9. Kotlin** -- same TeaVM + DoppioJVM base as Bx-8: run `kotlin-compiler-embeddable.jar`
+      on DoppioJVM for source->bytecode, then execute. Gated on Bx-8. *Medium; kotlinc is huge +
+      reflection-heavy, so it likely rides Doppio (TeaVM can't AOT it) and runs slow -- the risk.*
+- [ ] **Bx-10. arm64** -- all-permissive path (retires the Unicorn/Keystone GPL route): assemble with
+      clang cross-target `aarch64-linux` (Apache) -> ELF, execute on **arm-sandbox** (MIT aarch64 emulator)
+      built to wasm via Emscripten. *Spike first: arm-sandbox is v0.1 + "incomplete A64" + solo -- Emscripten
+      the core, run ~3 clang-assembled katas, measure missing instrs. Confirm the vendored clang has AArch64.*
+- [ ] **Bx-11. Zig** -- self-hosted zig-compiler-in-wasm. *Spike first:* a turnkey offline
+      client-side compile artifact is unproven; feasibility spike before it earns a slot.
+- [ ] **Bx-12. Go** -- gc toolchain in wasm (faithful over light). *Spike first:* heavy +
+      unpackaged for offline client-side; prove the path before committing.
+- [ ] **Bx-13. Dart** -- dart2wasm. *Spike first:* dart2wasm is a host build-time compiler; a
+      client-side (in-browser) compile path is unproven. WasmGC-only if/when it exists.
+- [ ] **Bx-14. Swift** -- Emscripten + MiniSwift: MiniSwift built to wasm via Emscripten, run
+      in-browser -- sidesteps the missing in-browser `swiftc` (like rubri does for Rust).
+      *Subset, not real swiftc -> CLI-divergence to disclose; MiniSwift scope unverified -- confirm.*
 
 ### C — Corpus era (the forever-work; policy is law as of 002)
 - [ ] **C1. Problems 003+** — floor-of-four, manifest-first, blank stubs,

@@ -1,6 +1,21 @@
 # Browser Runtimes — Live Compile-and-Run for Every Language
 
 **Status:** design (pre-implementation). **Phase:** current B-phase workstream, before corpus growth (Phase C).
+
+> **Sequencing + some toolchain picks superseded (2026-07) -- see `ROADMAP.md` section Bx for the current order.**
+> A feasibility / verification-story review reprioritized the sequence: retro CPU-cores first (deterministic
+> SingleStepTests CI proof), C# early, Rust via **rubri** (Miri/MIR-interpreter in wasm, not `rustc`),
+> Java/Kotlin via **TeaVM + DoppioJVM** (Doppio runs the compiler + user bytecode; TeaVM speeds the fixed
+> compile step). Swift's candidate path is **Emscripten + MiniSwift** (subset, unverified). arm64 now has an
+> all-permissive path -- clang cross-assemble (Apache) + **arm-sandbox** (MIT aarch64 emulator) via Emscripten,
+> retiring the Unicorn/Keystone GPL route -- but stays spike-gated on arm-sandbox maturity (v0.1, incomplete
+> A64). Blink stays x86-64-guest-only; it never solved arm64. Zig/Go/Dart and Swift remain feasibility
+> *spikes*. Also: PHP and C/C++ browser runtimes already shipped (Bx-2/Bx-3, verified in STATUS) -- the old
+> "feasible to add now" wording below predates that. These toolchain calls are under active re-research
+> (J. Fuentes, in parallel); the per-target notes and "Decisions locked" below will be reconciled once it
+> lands. Old rationale is retained, not deleted (roadmap rule: settled decisions aren't relitigated by
+> forgetting).
+
 **Goal:** every language and assembly target in the corpus can be *edited and run by the user in real time in the browser* — not precompiled references, not CLI-only. Where the best production-grade in-browser toolchain diverges from the CLI, disclose it clearly in the UI (at the point of run) and in the docs.
 
 This is the completion of the platform's core promise: the browser runs the same corpus as the CLI. For interpreted languages (Python/Ruby/JS/TS) and SQL that promise already holds. This workstream extends it — honestly — to the compiled and assembly families.
