@@ -22,15 +22,25 @@ const PHP_NPM = `${CDN}/npm/@webreflection/php`;
 const PHP_GH = `${CDN}/gh/seanmorris/php-wasm` + "@master";
 const RUNTIMES = {
   // 6502 assembly: customasm (Apache-2.0) as raw wasm + 6502.ts core (MIT).
-  // The GPL test-suite in 6502.ts's aux/ is NOT vendored -- only the +esm core.
+  // The GPL test-suite in 6502.ts's aux/ is NOT vendored -- only the browser core.
   "asm-6502": {
     version: "latest", license: "Apache-2.0 (customasm) + MIT (6502.ts)",
     files: [
-      { url: `${CDN}/gh/hlorenzi/customasm/web/customasm.wasm`, save: "customasm.wasm", group: "casmwasm" },
+      // customasm.wasm is a build artifact (not committed), so pull it from the
+      // live playground deployment, which serves exactly this file.
+      { url: "https://hlorenzi.github.io/customasm/web/customasm.wasm", save: "customasm.wasm", group: "casmwasm" },
       { url: `${CDN}/gh/hlorenzi/customasm@main/web/customasm.wasm`, save: "customasm.wasm", group: "casmwasm" },
-      { url: `${CDN}/gh/hlorenzi/customasm/LICENSE`, save: "LICENSE-customasm", group: "casmlic" },
-      { url: `${CDN}/npm/6502.ts/+esm`, save: "6502.js", required: true },
-      { url: `${CDN}/gh/6502ts/6502.ts/LICENSE`, save: "LICENSE-6502ts", group: "tslic" },
+      // 6502.ts core as a self-contained browser ESM bundle. jsDelivr +esm failed
+      // to build it, so esm.sh (?bundle inlines deps -> offline-safe) is primary.
+      { url: "https://esm.sh/6502.ts?bundle", save: "6502.js", group: "core6502" },
+      { url: `${CDN}/npm/6502.ts/+esm`, save: "6502.js", group: "core6502" },
+      // LICENSEs -- jsDelivr gh needs a @ref; filename varies.
+      { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE`, save: "LICENSE-customasm", group: "casmlic" },
+      { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE.txt`, save: "LICENSE-customasm", group: "casmlic" },
+      { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE.md`, save: "LICENSE-customasm", group: "casmlic" },
+      { url: `${CDN}/gh/6502ts/6502.ts@master/LICENSE`, save: "LICENSE-6502ts", group: "tslic" },
+      { url: `${CDN}/gh/6502ts/6502.ts@master/LICENSE.txt`, save: "LICENSE-6502ts", group: "tslic" },
+      { url: `${CDN}/npm/6502.ts/LICENSE`, save: "LICENSE-6502ts", group: "tslic" },
     ],
   },
   codemirror: {
