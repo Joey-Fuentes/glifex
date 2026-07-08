@@ -105,7 +105,8 @@ export class Cpu6502 {
       // flags
       case 0x18: this.C=0; this.cycles+=2; break; case 0x38: this.C=1; this.cycles+=2; break;
       case 0x58: this.I=0; this.cycles+=2; break; case 0x78: this.I=1; this.cycles+=2; break;
-      case 0xB8: this.V=0; this.cycles+=2; break; case 0xD8: this.D=0; this.cycles+=2; break; case 0xF8: this.D=1; this.cycles+=2; break;
+      case 0xB8: this.V=0; this.cycles+=2; break; case 0xD8: this.D=0; this.cycles+=2; break;
+      case 0xF8: throw new Error("decimal mode (SED) not supported yet");  // fail loud, not silently-wrong
       // BIT
       case 0x24: { const m=this.rd(this.zp()); this.Z=(this.a&m)===0?1:0; this.N=(m>>7)&1; this.V=(m>>6)&1; this.cycles+=3; break; }
       case 0x2C: { const m=this.rd(this.abs()); this.Z=(this.a&m)===0?1:0; this.N=(m>>7)&1; this.V=(m>>6)&1; this.cycles+=4; break; }
