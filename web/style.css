@@ -91,7 +91,7 @@ button.ghost.active { color: var(--accent); border-color: var(--accent); }
 .reference-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
 .ref-tabs { display: flex; gap: .4rem; align-items: center; padding: .4rem .6rem; border-bottom: 1px solid var(--line); }
 .ref-tabs .editor-label { position: static; border: 0; background: none; padding: 0 .4rem 0 0; }
-#reference-code { margin: 0; padding: .9rem 1rem; font-family: var(--mono); font-size: .84rem; line-height: 1.6; overflow: auto; max-height: 320px; }
+#reference-code { margin: 0; padding: .9rem 1rem; font-family: var(--mono); font-size: .84rem; line-height: 1.6; overflow: auto; max-height: 320px; display: block; width: 100%; box-sizing: border-box; border: 0; resize: none; background: transparent; color: inherit; white-space: pre; outline: none; }
 .CodeMirror { height: auto; min-height: 260px; background: var(--panel-2); color: var(--fg); font-family: var(--mono); font-size: .86rem; }
 .CodeMirror-gutters { background: var(--panel); border-right: 1px solid var(--line); }
 .CodeMirror-linenumber { color: var(--muted); }

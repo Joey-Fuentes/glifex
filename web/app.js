@@ -114,7 +114,7 @@ function syncReference() {
 function showReference(variant) {
   state.refVariant = variant;
   const src = currentSource(variant) || "(no reference for this variant)";
-  $("#reference-code").textContent = src;
+  $("#reference-code").value = src;
   $("#ref-clean").classList.toggle("active", variant === "clean");
   $("#ref-optimized").classList.toggle("active", variant === "optimized");
 }
@@ -302,41 +302,17 @@ module.exports = function solve(input) {
     <p>Full docs, the CLI, and the plugin system live in the repository README.</p>`;
 }
 
-// Reference panel: one-tap copy + contained select-all.
-// The pre is a plain element, so a document-level Ctrl/Cmd+A would select the
-// whole page; when focus is inside the panel we select just the code instead.
+// Reference panel: one-tap copy. The panel is a readonly TEXTAREA (a form
+// element), so native select-all -- Ctrl/Cmd+A on desktop AND Android's
+// long-press "Select all" -- is contained to the code by the browser itself.
 (function () {
-  const pre = document.getElementById("reference-code");
+  const ta = document.getElementById("reference-code");
   const btn = document.getElementById("ref-copy");
   if (btn) btn.onclick = async () => {
-    const text = pre ? pre.textContent : "";
+    const text = ta ? ta.value : "";
     try { await navigator.clipboard.writeText(text); }
-    catch (e) { // clipboard API can be denied; fall back to selecting for manual copy
-      selectPre(); return;
-    }
+    catch (e) { if (ta) { ta.focus(); ta.select(); } return; }  // fallback: select for manual copy
     const was = btn.textContent; btn.textContent = "copied!";
     setTimeout(() => { btn.textContent = was; }, 1200);
   };
-  function selectPre() {
-    if (!pre) return;
-    const r = document.createRange(); r.selectNodeContents(pre);
-    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
-  }
-  // Click/tap focuses the pre -- browsers don't reliably focus tabindexed
-  // non-interactive elements on click, which left activeElement on <body>
-  // and the intercept below never fired.
-  if (pre) pre.addEventListener("mousedown", () => pre.focus());
-  document.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
-      const panel = document.getElementById("reference-panel");
-      if (!panel || panel.hidden) return;
-      // Fire if focus is in the panel OR the user's selection anchor is --
-      // covers browsers that never move focus on click.
-      const sel = window.getSelection();
-      const selIn = sel && sel.anchorNode && panel.contains(sel.anchorNode);
-      if (panel.contains(document.activeElement) || selIn) {
-        e.preventDefault(); selectPre();
-      }
-    }
-  });
 })();

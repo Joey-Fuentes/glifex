@@ -11,7 +11,9 @@ test("frontend problem: clean solution passes all assertions", async ({ page }) 
   // (which also exercises the panel + tab switching end-to-end).
   await page.locator("#reveal-btn").click();
   await page.locator("#ref-clean").click();
-  const reference = await page.locator("#reference-code").textContent();
+  // #reference-code is a readonly TEXTAREA (native select-all containment),
+  // so its content is a form value, not DOM text -- read it with inputValue().
+  const reference = await page.locator("#reference-code").inputValue();
   await page.locator("#editor").fill(reference);
   await page.locator("#run-btn").click();
   await expect(page.locator(".summary")).toHaveClass(/ok/);
