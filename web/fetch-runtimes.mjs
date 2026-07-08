@@ -21,6 +21,18 @@ const CDN = "https://cdn.jsdelivr.net";
 const PHP_NPM = `${CDN}/npm/@webreflection/php`;
 const PHP_GH = `${CDN}/gh/seanmorris/php-wasm` + "@master";
 const RUNTIMES = {
+  // 6502 assembly: customasm (Apache-2.0) as raw wasm. The 6502 CPU core is a
+  // first-party, tested module committed at web/retro/cpu6502.mjs (not vendored).
+  "asm-6502": {
+    version: "latest", license: "Apache-2.0 (customasm)",
+    files: [
+      { url: "https://hlorenzi.github.io/customasm/web/customasm.wasm", save: "customasm.wasm", group: "casmwasm" },
+      { url: `${CDN}/gh/hlorenzi/customasm@main/web/customasm.wasm`, save: "customasm.wasm", group: "casmwasm" },
+      { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE`, save: "LICENSE-customasm", group: "casmlic" },
+      { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE.txt`, save: "LICENSE-customasm", group: "casmlic" },
+      { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE.md`, save: "LICENSE-customasm", group: "casmlic" },
+    ],
+  },
   codemirror: {
     version: "5.65.18", license: "MIT",
     files: [

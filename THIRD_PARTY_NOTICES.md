@@ -16,6 +16,7 @@ enabled via `node web/fetch-runtimes.mjs`.
 | PGlite (ElectricSQL) | 0.5.4 | PostgreSQL in the browser (WASM) | Apache-2.0 |
 | php-wasm (via @webreflection/php) | latest | PHP in the browser (official interpreter on WASM) | Apache-2.0 |
 | CodeMirror | 5.65.18 | In-browser code editor | MIT |
+| customasm | latest | 6502 assembler compiled to WASM (in-browser assembly) | Apache-2.0 |
 
 Each project's full license text ships alongside its vendored files under
 `web/vendor/<name>/` once distributed. Nothing else on glifex.dev embeds

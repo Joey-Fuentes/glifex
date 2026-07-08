@@ -1,0 +1,12 @@
+name = "asm-6502"
+extension = "s"
+practice_file = "practice.s"
+family = "assembly"
+arch = "6502"
+scaffold = false           # numeric-only, CPU-core contract; added per-problem
+detect = "customasm --version"
+install_hint = "cargo install customasm  (Rust); browser tier vendors customasm.wasm + 6502.ts"
+# CLI path: assemble with customasm, run with a small 6502.ts harness (node).
+test_cmd = "customasm {variant}.s -f binary -o .glifex.bin && node harness.mjs {variant}"
+run_cmd = "customasm {variant}.s -f binary -o .glifex.bin && node harness.mjs {variant}"
+tool_version = "customasm 0.13"
