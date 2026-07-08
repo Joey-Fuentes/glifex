@@ -322,10 +322,19 @@ module.exports = function solve(input) {
     const r = document.createRange(); r.selectNodeContents(pre);
     const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
   }
+  // Click/tap focuses the pre -- browsers don't reliably focus tabindexed
+  // non-interactive elements on click, which left activeElement on <body>
+  // and the intercept below never fired.
+  if (pre) pre.addEventListener("mousedown", () => pre.focus());
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
       const panel = document.getElementById("reference-panel");
-      if (panel && !panel.hidden && panel.contains(document.activeElement)) {
+      if (!panel || panel.hidden) return;
+      // Fire if focus is in the panel OR the user's selection anchor is --
+      // covers browsers that never move focus on click.
+      const sel = window.getSelection();
+      const selIn = sel && sel.anchorNode && panel.contains(sel.anchorNode);
+      if (panel.contains(document.activeElement) || selIn) {
         e.preventDefault(); selectPre();
       }
     }
