@@ -1,6 +1,12 @@
 # Glifex
 
+[![CI](https://github.com/Joey-Fuentes/glifex/actions/workflows/ci.yml/badge.svg)](https://github.com/Joey-Fuentes/glifex/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Live: glifex.dev](https://img.shields.io/badge/live-glifex.dev-3fb950.svg)](https://glifex.dev)
+
 Practice coding problems **blind**, in **many languages**, against **one shared set of test cases** — then benchmark your solutions with each language's real profiling tools. There's also a **database track** for inherently-SQL problems, tested against a throwaway Postgres instance. One command runs everything, on Linux, macOS, and Windows, straight from VS Code.
+
+[![Glifex playground screenshot](docs/screenshot.png)](https://glifex.dev)
 
 > **Ships with:** Python · JavaScript · TypeScript · Go · Java · Ruby · C# · C++ · C · Rust · PHP · Dart · Zig
 > **Assembly family:** x86-64 · ARM64 · WebAssembly Text (numeric problems, added per-problem)

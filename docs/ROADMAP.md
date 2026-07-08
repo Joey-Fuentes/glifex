@@ -54,7 +54,7 @@ decisions don't get relitigated by forgetting.
       diagrams in `docs/architecture.md`; README plugin-effort caveat (CLI
       plugin != playground tier) + browser-support paragraph; STATUS
       evidence-anchoring convention (claims cite commit/CI run). *Medium, one
-      sitting.*- [ ] **B4. Visibility batch** — OG/meta tags, README badges + screenshot,
+      sitting.*- [x] **B4. Visibility batch** — OG/meta tags, README badges + screenshot,
       announcement post. A portfolio piece nobody sees is a diary. *Medium.*
 
 ### Bx — Compiled & assembly languages in the browser (before corpus growth)
