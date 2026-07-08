@@ -154,6 +154,13 @@ jobs:
           # doesn't wrap (and hide) the textarea. CM is a production-only UI enhancement
           # exercised manually — the runtimes are what e2e must regression-cover.
           rm -rf web/vendor/codemirror
+      - name: Vendor 6502.ts core (esbuild self-bundle)
+        run: |
+          mkdir -p web/vendor/asm-6502
+          npm install 6502.ts esbuild
+          printf 'export * from "6502.ts";\n' > /tmp/core6502-entry.mjs
+          npx esbuild /tmp/core6502-entry.mjs --bundle --format=esm --platform=browser --outfile=web/vendor/asm-6502/6502.js
+          ls -la web/vendor/asm-6502
       - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
         run: |
           mkdir -p web/vendor/c

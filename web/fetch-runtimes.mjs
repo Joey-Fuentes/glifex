@@ -30,10 +30,8 @@ const RUNTIMES = {
       // live playground deployment, which serves exactly this file.
       { url: "https://hlorenzi.github.io/customasm/web/customasm.wasm", save: "customasm.wasm", group: "casmwasm" },
       { url: `${CDN}/gh/hlorenzi/customasm@main/web/customasm.wasm`, save: "customasm.wasm", group: "casmwasm" },
-      // 6502.ts core as a self-contained browser ESM bundle. jsDelivr +esm failed
-      // to build it, so esm.sh (?bundle inlines deps -> offline-safe) is primary.
-      { url: "https://esm.sh/6502.ts?bundle", save: "6502.js", group: "core6502" },
-      { url: `${CDN}/npm/6502.ts/+esm`, save: "6502.js", group: "core6502" },
+      // 6502.ts core is NOT fetchable (no CDN-servable browser build); a CI/build
+      // step self-bundles it with esbuild into web/vendor/asm-6502/6502.js.
       // LICENSEs -- jsDelivr gh needs a @ref; filename varies.
       { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE`, save: "LICENSE-customasm", group: "casmlic" },
       { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE.txt`, save: "LICENSE-customasm", group: "casmlic" },
