@@ -382,7 +382,8 @@ const Runtimes = (() => {
         // ALWAYS a non-empty, verbose error: include the raw assembler output
         // so failures diagnose themselves in the UI instead of crashing.
         const raw = clean.trim();
-        return { error: raw ? raw.slice(0, 800) : "assembler produced no output (raw was empty; ruledef loaded: " + RULEDEF_OK + ")" };
+        if (!raw) return { error: "program assembled to 0 bytes -- did you write any instructions? (comments alone produce no code)" };
+        return { error: raw.slice(0, 800) };
       }
       const bytes = new Uint8Array(hex.length / 2);
       for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
@@ -410,7 +411,7 @@ const Runtimes = (() => {
               cpu.step();
             }
             insns = steps;              // instructions executed (coarse metric)
-            got = ram[0x12];            // result <- $12
+            got = ram[0x12] | (ram[0x13] << 8);   // result <- $12/$13 (u16 LE)
           } catch (e) {
             return { i, ok: false, error: String((e && e.message) || e), expected: c.expected };
           }
