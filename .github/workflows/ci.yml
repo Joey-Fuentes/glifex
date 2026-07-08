@@ -46,6 +46,8 @@ jobs:
           node web/build.mjs
           git diff --exit-code -I '"generatedAt"' web/problems.generated.json \
             || (echo "::error::web/problems.generated.json is stale — run 'node web/build.mjs' and commit" && exit 1)
+      - name: Corpus integrity (declared+runnable languages are baked)
+        run: node web/corpus-integrity.test.mjs
 
   # ── Stage 2: the core promise — every problem, every language, 3 OSes ──
   matrix:
