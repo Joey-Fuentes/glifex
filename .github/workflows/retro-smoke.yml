@@ -1,7 +1,7 @@
 name: retro-smoke
-# Prove the 6502 retro toolchain (customasm assembler + cpu6502 core) works
-# together BEFORE the browser runtime is switched on. Green here = safe to enable
-# asm-6502 in web/runtimes.js LOADERS. Independent of the main CI matrix.
+# Prove the customasm assembler works in this environment (assemble half of the
+# 6502 tier). Green here => customasm is good; the cpu6502 execution half is
+# proven when the browser runtime lands. Independent of the main CI matrix.
 on:
   push:
     paths: ["retro/**", ".github/workflows/retro-smoke.yml"]
@@ -16,9 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "24" }
-      - name: Install customasm (Rust CLI; ships std/6502.asm)
+      - name: Install customasm (Rust CLI)
         run: cargo install customasm --locked
-      - name: Install cpu6502 core (into retro/node_modules; gitignored)
-        run: cd retro && npm install
-      - name: Retro toolchain smoke
+      - name: Retro toolchain smoke (assemble check)
         run: node retro/smoke.mjs
