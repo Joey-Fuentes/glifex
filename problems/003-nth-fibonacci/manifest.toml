@@ -9,7 +9,7 @@ worked_example = false   # new problem: practice ships BLANK stubs (fillable sta
 # solutions yet (we're building out compilers; see ROADMAP Bx note).
 [languages]
 wat         = { variants = ["practice", "clean", "optimized"] }
-asm-6502    = { variants = ["practice"] }   # 6502 assembly (browser: customasm + 6502.ts)
+asm-6502    = { variants = ["practice", "clean", "optimized"] }   # 6502 assembly (browser: customasm + first-party core)
 javascript  = { variants = ["practice"] }
 typescript  = { variants = ["practice"] }
 python      = { variants = ["practice"] }
