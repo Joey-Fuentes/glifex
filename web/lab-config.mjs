@@ -93,6 +93,27 @@ export const PROBLEMS = {
       // this happens under real conditions, pending a decision on the
       // long-term fix.
       wall: [16, 18, 20, 22, 25, 27, 29, 31, 33, 35, 37, 40, 42, 44, 46, 48, 50, 52, 54, 57, 59, 61, 63, 65, 67, 69, 72, 74, 76, 78],
+      // Per-language wall-tier overrides: 003's declared O(n) upper bound
+      // is only meaningful if EVERY language's result fits its own numeric
+      // contract at every tested n -- otherwise a genuinely correct
+      // solution silently overflows and the Lab reports a false
+      // correctness failure (confirmed: SM83 at n=25, WAT at n=48, both
+      // real reports against the 30-point diagnostic ladder above; neither
+      // is an actual bug in the solution being tested). SM83 has no cycle
+      // counter yet ("6502/SM83 coarse until Harte parity" -- see
+      // ROADMAP), so it falls through to the wall tier like any
+      // non-cycle-exact language, but its retro-contract u16 result
+      // register is the SAME one the det ladder is already capped at 24
+      // to respect -- reusing that exact, already-proven-safe ladder here
+      // rather than inventing a new one. WAT's clean.wat uses i32 (not
+      // i64): fib(47) = 2971215073 overflows a signed 32-bit int (max
+      // 2147483647); fib(46) = 1836311903 is the last safe value, so its
+      // ladder stays comfortably under that. asm-6502 has cycle tracking
+      // (should stay det-tier classified) -- included here too as a
+      // defensive fallback in case that ever fails to report for some
+      // case and it falls through to wall-tier, same as SM83 currently
+      // does.
+      wallByLang: { sm83: [3, 6, 12, 24], "asm-6502": [3, 6, 12, 24], wat: [12, 24, 36, 46] },
     },
     // Retro ladder tops out at 24: fib(25) = 75025 overflows the tracks'
     // u16 result contract. Wall ladder tops at 78: fib(78) is the last
@@ -130,7 +151,12 @@ function plant(n, r, i, j) {
 // deterministically so a provenance line fully reproduces the inputs.
 export function buildPlan(cfg, tierId, lang, seedBase) {
   const ov = LANG_OVERRIDES[lang] || {};
-  const sizes = (cfg.sizes[tierId] || cfg.sizes.wall).slice(0, ov.maxSizes || 99);
+  // A problem may need a NARROWER wall ladder for specific languages whose
+  // result-encoding can't safely represent every value the shared ladder
+  // would test (see 003-nth-fibonacci's wallByLang for why this exists).
+  const wallOverride = tierId === "wall" && cfg.sizes.wallByLang && cfg.sizes.wallByLang[lang];
+  const baseSizes = wallOverride || cfg.sizes[tierId] || cfg.sizes.wall;
+  const sizes = baseSizes.slice(0, ov.maxSizes || 99);
   const plan = [];
   for (const mode of cfg.modes) {
     for (const n of sizes) {

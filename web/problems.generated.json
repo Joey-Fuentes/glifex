@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-09T19:25:51.054Z",
+  "generatedAt": "2026-07-09T19:52:24.632Z",
   "displayNames": {
     "asm-6502": "6502 assembly",
     "i8080": "Intel 8080 assembly",
@@ -379,13 +379,13 @@
         },
         "python": {
           "practice": "def solve(case):\n    n = case[\"n\"]\n    # Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n    return 0\n",
-          "clean": null,
-          "optimized": null
+          "clean": "def solve(c):\n    n = c[\"n\"]\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n",
+          "optimized": "# Same O(n) window-slide as clean.py; unrolled 2x so the loop body advances\n# two Fibonacci steps per iteration-counter check -- mirrors the 8080\n# optimized.s's peel-odd-n + unrolled-pair trick (see that file's comments\n# for the full derivation), a genuine constant-factor win that stays in\n# the manifest's declared O(n) class.\ndef solve(c):\n    n = c[\"n\"]\n    a, b = 0, 1\n    if n & 1:\n        a, b = b, a + b\n        n -= 1\n    while n > 0:\n        t = a + b\n        b = t + b\n        a = t\n        n -= 2\n    return a\n"
         },
         "ruby": {
           "practice": "def solve(input)\n  n = input[\"n\"]\n  # Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n  0\nend\n",
-          "clean": null,
-          "optimized": null
+          "clean": "def solve(c)\n  n = c[\"n\"]\n  a, b = 0, 1\n  n.times { a, b = b, a + b }\n  a\nend\n",
+          "optimized": "# Same O(n) window-slide as clean.rb; unrolled 2x so the loop body advances\n# two Fibonacci steps per iteration-counter check -- mirrors the 8080\n# optimized.s's peel-odd-n + unrolled-pair trick (see that file's comments\n# for the full derivation), a genuine constant-factor win that stays in\n# the manifest's declared O(n) class.\ndef solve(c)\n  n = c[\"n\"]\n  a, b = 0, 1\n  if n.odd?\n    a, b = b, a + b\n    n -= 1\n  end\n  while n > 0\n    t = a + b\n    b = t + b\n    a = t\n    n -= 2\n  end\n  a\nend\n"
         },
         "sm83": {
           "practice": "; nth Fibonacci -- Game Boy assembly (SM83, customasm syntax)\n;\n; Contract:\n;   * runs at $0100 (the Game Boy cartridge entry) on flat 64KB RAM\n;     (no Game Boy hardware -- no PPU/timers/interrupts; just the CPU)\n;   * input  n is a byte at $C000\n;   * output fib(n) is 16-BIT: low byte -> $C010, high byte -> $C011\n;   * end the program with HALT\n;\n; Hint: unlike the 6502, the SM83 has native 16-bit adds -- keep fib's pair\n; in HL and DE and use ADD HL,DE. Uppercase mnemonics (LD, ADD, JR ...).\n\n    LD A,[$C000]      ; A = n\n    ; TODO: compute fib(n); store low byte -> $C010, high byte -> $C011\n    LD A,0\n    LD [$C010],A\n    LD [$C011],A\n    HALT\n",
@@ -394,8 +394,8 @@
         },
         "typescript": {
           "practice": "export function solve(c: { n: number }): number {\n  const n = c.n;\n  // Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n  return 0;\n}\n",
-          "clean": null,
-          "optimized": null
+          "clean": "export function solve(c: { n: number }): number {\n  let a = 0, b = 1;\n  for (let i = 0; i < c.n; i++) { const t = a + b; a = b; b = t; }\n  return a;\n}\n",
+          "optimized": "// Same O(n) window-slide as clean.ts; unrolled 2x so the loop body advances\n// two Fibonacci steps per iteration-counter check -- mirrors the 8080\n// optimized.s's peel-odd-n + unrolled-pair trick (see that file's comments\n// for the full derivation), a genuine constant-factor win that stays in\n// the manifest's declared O(n) class.\nexport function solve(c: { n: number }): number {\n  let a = 0, b = 1, n = c.n;\n  if (n & 1) { const t = a + b; a = b; b = t; n--; }\n  for (; n > 0; n -= 2) {\n    const t = a + b;\n    b = t + b;\n    a = t;\n  }\n  return a;\n}\n"
         },
         "wat": {
           "practice": "(module\n  ;; Export `solve(n)` returning the nth Fibonacci number (i32).\n  ;; fib(0)=0, fib(1)=1, fib(2)=1, fib(3)=2, ...   WAT is numeric-only.\n  (func (export \"solve\") (param $n i32) (result i32)\n    ;; your code here\n    (i32.const 0)))\n",
