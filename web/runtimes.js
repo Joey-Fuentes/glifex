@@ -26,28 +26,41 @@ const Runtimes = (() => {
   async function vendored(lang) {
     try {
       // no-cache (not force-cache): a fossilized 404 from before vendoring must
-      // never win. Offline still works — the SW's SWR path serves its cached copy.
+      // never win. Offline still works -- the SW's SWR path serves its cached copy.
       const r = await fetch(`vendor/${lang}/manifest.json`, { cache: "no-cache" });
       return r.ok;
     } catch { return false; }
   }
 
-  function caseLoop(callSolve, cases) {
+  // opts.skipAggregate: the Lab already has its own per-case tNs data and
+  // never reads nsPerCase, so it skips the (potentially expensive -- up to
+  // 4096 * cases.length additional calls) aggregate fallback below.
+  function caseLoop(callSolve, cases, opts) {
+    const skipAggregate = !!(opts && opts.skipAggregate);
     const results = [];
     const t0 = performance.now();
     for (let i = 0; i < cases.length; i++) {
       try {
         const c0 = performance.now();
-        const got = callSolve(cases[i].input);
+        let sink = callSolve(cases[i].input);
+        const got = sink;
         let cdt = performance.now() - c0;
         // L1-caseloop: per-case wall sample for the Complexity Lab; adaptive
         // repeat past the clock grain (solve is pure by the corpus contract).
+        // Keeping `sink` (not just `got`) means every call's return value is
+        // actually used afterward -- discarding it entirely let the engine
+        // dead-code-eliminate most of the repeated calls on cheap,
+        // side-effect-free functions. caseLoop itself (a stable function
+        // reference, never a legitimate solve() output) is the anti-DCE
+        // sentinel: the comparison can never be true, but the engine can't
+        // prove that statically, so it can't optimize the store away.
         let tNs;
         if (cdt < 2) {
           let k = 1;
-          while (cdt < 2 && k < 1048576) { k *= 2; const s0 = performance.now(); for (let q = 0; q < k; q++) callSolve(cases[i].input); cdt = performance.now() - s0; }
+          while (cdt < 2 && k < 1048576) { k *= 2; const s0 = performance.now(); for (let q = 0; q < k; q++) { sink = callSolve(cases[i].input); } cdt = performance.now() - s0; }
           tNs = cdt >= 1 ? (cdt * 1e6) / k : null;
         } else { tNs = cdt * 1e6; }
+        if (sink === caseLoop) console.log(sink); // unreachable; keeps `sink` observably used
         results.push({ i, ok: eq(got, cases[i].expected), got, expected: cases[i].expected, tNs });
       } catch (e) {
         results.push({ i, ok: false, error: String(e.message || e), expected: cases[i].expected });
@@ -55,9 +68,9 @@ const Runtimes = (() => {
     }
     let nsPerCase = cases.length ? ((performance.now() - t0) * 1e6) / cases.length : 0;
     // Fast runtimes (e.g. transpiled TS) can finish under the ~0.1ms clock
-    // grain and read 0 — adaptively repeat until measurable (capped: WASM
+    // grain and read 0 -- adaptively repeat until measurable (capped: WASM
     // per-case marshaling makes unbounded repeats expensive).
-    if (nsPerCase === 0 && results.every((r) => r.ok) && cases.length) {
+    if (!skipAggregate && nsPerCase === 0 && results.every((r) => r.ok) && cases.length) {
       let iters = 2, dt = 0;
       while (dt < 5 && iters <= 4096) {
         const s = performance.now();
@@ -70,48 +83,88 @@ const Runtimes = (() => {
     return { results, nsPerCase };
   }
 
-  // ── TypeScript: vendored compiler transpiles, then runs as JS ────────
+  // -- TypeScript: vendored compiler transpiles, then runs as JS --------
   async function loadTypeScript() {
     if (!(await vendored("typescript"))) return null;
     await script("vendor/typescript/typescript.js");   // exposes window.ts
-    return {
-      run(source, cases) {
-        const js = window.ts.transpileModule(source, {
+    // compile() separates COMPILE from MEASURE: the Complexity Lab calls the
+    // same source multiple times (a warm-up pass, then several measured
+    // reps), and re-transpiling + re-running `new Function(...)` on every
+    // call created a brand-new, cold function object each time -- defeating
+    // the engine's JIT tiering across the whole warm-up+reps sequence (this
+    // was the confirmed root cause of the wall-tier DCE/noise known issue
+    // for js-runtime.js; same pattern applies here). compile() runs the
+    // transpile + Function-construction ONCE; the returned measure() reuses
+    // the SAME solve reference for as many calls as the caller wants.
+    function compile(source) {
+      let js;
+      try {
+        js = window.ts.transpileModule(source, {
           compilerOptions: { module: window.ts.ModuleKind.CommonJS, target: window.ts.ScriptTarget.ES2020 },
         }).outputText;
-        const module = { exports: {} };
-        new Function("module", "exports", js)(module, module.exports);
-        const solve = module.exports.solve || module.exports;
-        if (typeof solve !== "function") return { error: "no solve() exported" };
-        return caseLoop(solve, cases);
+      } catch (e) {
+        return { error: "TS transpile error: " + String(e.message || e) };
+      }
+      const mod = { exports: {} };
+      try {
+        new Function("module", "exports", js)(mod, mod.exports);
+      } catch (e) {
+        return { error: "Compile error: " + String(e.message || e) };
+      }
+      const solve = mod.exports.solve || mod.exports;
+      if (typeof solve !== "function") return { error: "no solve() exported" };
+      return { measure: (cases, opts) => caseLoop(solve, cases, opts) };
+    }
+    return {
+      compile,
+      // Kept for the non-Lab callers (the plain Run button): a single
+      // compile + single measure, exactly the old behavior.
+      run(source, cases) {
+        const c = compile(source);
+        return c.error ? c : c.measure(cases);
       },
     };
   }
 
-  // ── Python: Pyodide (CPython on WASM) ────────────────────────────────
+  // -- Python: Pyodide (CPython on WASM) --------------------------------
   async function loadPython() {
     if (!(await vendored("python"))) return null;
     await script("vendor/python/pyodide.js");
     const py = await window.loadPyodide({ indexURL: "vendor/python/" });
+    // compile() runs py.runPython(source) ONCE (defining solve() in the
+    // shared Pyodide globals) and returns a measure() that reuses the SAME
+    // solve proxy across every call -- see the TypeScript loader above for
+    // why this matters (same pattern, same reason).
+    function compile(source) {
+      try {
+        py.runPython(source);
+      } catch (e) {
+        return { error: "Compile error: " + String(e.message || e) };
+      }
+      const solve = py.globals.get("solve");
+      if (typeof solve !== "function") return { error: "no solve() defined" };
+      const callSolve = (input) => {
+        const r = solve(py.toPy(input));
+        const v = r && typeof r.toJs === "function" ? r.toJs({ create_proxies: false }) : r;
+        return v instanceof Map ? Object.fromEntries(v) : v;
+      };
+      return { measure: (cases, opts) => caseLoop(callSolve, cases, opts) };
+    }
     return {
+      compile,
       run(source, cases) {
-        py.runPython(source);                          // defines solve()
-        const solve = py.globals.get("solve");
-        return caseLoop((input) => {
-          const r = solve(py.toPy(input));
-          const v = r && typeof r.toJs === "function" ? r.toJs({ create_proxies: false }) : r;
-          return v instanceof Map ? Object.fromEntries(v) : v;
-        }, cases);
+        const c = compile(source);
+        return c.error ? c : c.measure(cases);
       },
     };
   }
 
-  // ── Ruby: ruby.wasm ──────────────────────────────────────────────────
+  // -- Ruby: ruby.wasm --------------------------------------------------
   async function loadRuby() {
     if (!(await vendored("ruby"))) return null;
     // Deterministic UMD capture: the wrapper's first branch is
     // `typeof exports === 'object' -> factory(exports)`, so evaluating the
-    // file with an explicit exports object hands us the API directly — no
+    // file with an explicit exports object hands us the API directly -- no
     // global-name roulette, identical behavior on every device (the
     // window-probe approach failed on Android while passing on desktop).
     const src = await (await fetch("vendor/ruby/browser.umd.js", { cache: "no-cache" })).text();
@@ -123,18 +176,32 @@ const Runtimes = (() => {
     const res = await fetch("vendor/ruby/ruby+stdlib.wasm");
     const mod = await WebAssembly.compileStreaming(res);
     const { vm } = await DefaultRubyVM(mod);
-    return {
-      run(source, cases) {
+    // compile() runs vm.eval(source) ONCE (defining solve() in the shared
+    // Ruby VM) and returns a measure() that reuses the same callSolve
+    // across every call -- see the TypeScript loader above for why this
+    // matters (same pattern, same reason).
+    function compile(source) {
+      try {
         vm.eval(source);                               // defines solve
-        return caseLoop((input) => {
-          const r = vm.eval(`require "json"; JSON.generate(solve(JSON.parse(%q(${JSON.stringify(input)}))))`);
-          return JSON.parse(r.toString());
-        }, cases);
+      } catch (e) {
+        return { error: "Compile error: " + String(e.message || e) };
+      }
+      const callSolve = (input) => {
+        const r = vm.eval(`require "json"; JSON.generate(solve(JSON.parse(%q(${JSON.stringify(input)}))))`);
+        return JSON.parse(r.toString());
+      };
+      return { measure: (cases, opts) => caseLoop(callSolve, cases, opts) };
+    }
+    return {
+      compile,
+      run(source, cases) {
+        const c = compile(source);
+        return c.error ? c : c.measure(cases);
       },
     };
   }
 
-  // ── Database: PGlite (Postgres compiled to WASM) ────────────────────
+  // -- Database: PGlite (Postgres compiled to WASM) --------------------
   async function loadPostgres() {
     if (!(await vendored("postgres"))) return null;
     const { PGlite } = await import("./vendor/postgres/index.js");
@@ -150,39 +217,51 @@ const Runtimes = (() => {
     };
   }
 
-  // ── WAT: WebAssembly Text — vendored wabt assembles it, then it runs ──
+  // -- WAT: WebAssembly Text -- vendored wabt assembles it, then it runs --
   async function loadWat() {
     if (!(await vendored("wat"))) return null;
     await script("vendor/wat/index.js");               // exposes window.WabtModule
     const wabt = await window.WabtModule();
+    // compile() assembles + instantiates ONCE and returns a measure() that
+    // reuses the SAME instance across every call. WASM has its own tiered
+    // JIT (Liftoff baseline -> TurboFan optimizing) -- a fresh
+    // WebAssembly.Instance on every call discards that tiering exactly the
+    // way a fresh `new Function(...)` did for the JS-based loaders above
+    // (same confirmed root cause, same fix).
+    function compile(source) {
+      let binary;
+      try {
+        const mod = wabt.parseWat("solve.wat", source);
+        mod.resolveNames();
+        mod.validate();
+        binary = mod.toBinary({}).buffer;               // Uint8Array of wasm bytes
+        mod.destroy();
+      } catch (e) {
+        return { error: "WAT assembly error: " + String(e.message || e) };
+      }
+      let solve;
+      try {
+        const instance = new WebAssembly.Instance(new WebAssembly.Module(binary), {});
+        solve = instance.exports.solve;
+      } catch (e) {
+        return { error: "WASM instantiate error: " + String(e.message || e) };
+      }
+      if (typeof solve !== "function") return { error: 'no "solve" export (numbers in, number out)' };
+      // WAT is numeric-only: pass the input object's values positionally.
+      const callSolve = (input) => solve(...Object.values(input));
+      return { measure: (cases, opts) => caseLoop(callSolve, cases, opts) };
+    }
     return {
+      compile,
       run(source, cases) {
-        let binary;
-        try {
-          const mod = wabt.parseWat("solve.wat", source);
-          mod.resolveNames();
-          mod.validate();
-          binary = mod.toBinary({}).buffer;            // Uint8Array of wasm bytes
-          mod.destroy();
-        } catch (e) {
-          return { error: "WAT assembly error: " + String(e.message || e) };
-        }
-        let solve;
-        try {
-          const instance = new WebAssembly.Instance(new WebAssembly.Module(binary), {});
-          solve = instance.exports.solve;
-        } catch (e) {
-          return { error: "WASM instantiate error: " + String(e.message || e) };
-        }
-        if (typeof solve !== "function") return { error: 'no "solve" export (numbers in, number out)' };
-        // WAT is numeric-only: pass the input object's values positionally.
-        return caseLoop((input) => solve(...Object.values(input)), cases);
+        const c = compile(source);
+        return c.error ? c : c.measure(cases);
       },
     };
   }
 
-  // ── PHP: php-wasm (the official interpreter compiled to WASM) ────────
-  // php-wasm's run() is async — stdout arrives via the "output" event — so the
+  // -- PHP: php-wasm (the official interpreter compiled to WASM) --------
+  // php-wasm's run() is async -- stdout arrives via the "output" event -- so the
   // synchronous shared caseLoop can't drive it. Instead we run ONE batched
   // script: the user source plus an injected loop over the cases (base64-embedded
   // to dodge every quoting hazard) that json_encodes each solve() result between
@@ -204,7 +283,7 @@ const Runtimes = (() => {
         // A fresh throwaway interpreter per Run (like PGlite): reusing one would
         // hit "Cannot redeclare solve()" on the second run, since php-wasm keeps
         // memory across run() calls. locateFile pins every .wasm/.data asset to
-        // the vendored dir — nothing touches a CDN at run time (THE OFFLINE RULE).
+        // the vendored dir -- nothing touches a CDN at run time (THE OFFLINE RULE).
         let out = "";
         const php = new PhpWeb({
           print: (s) => { out += s; },
@@ -323,7 +402,7 @@ const Runtimes = (() => {
     };
   }
 
-  // ── C++: vendored Binji wasm-clang (single-process clang-8 + wasm-ld) ──
+  // -- C++: vendored Binji wasm-clang (single-process clang-8 + wasm-ld) --
   async function loadCpp() {
     if (!(await vendored("cpp"))) return null;
     const worker = new Worker("cpp-worker.js");   // drives the committed cpp-shared.js fork

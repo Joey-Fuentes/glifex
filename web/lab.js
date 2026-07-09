@@ -78,8 +78,27 @@ const GlifexLab = (() => {
     progress(panel, "Probing runtime tier\u2026");
     const runner = lang === "javascript" ? "js" : await window.Runtimes.get(lang);
     if (!runner) return void (panel.innerHTML = card(`<div class="lab-verdict bad">Runtime for ${esc(lang)} is not available${window.Runtimes.error(lang) ? ": " + esc(window.Runtimes.error(lang)) : ""}.</div>`));
-    const runOnce = async (cases) => runner === "js"
-      ? window.GlifexJsRuntime.runJavaScript(source, cases)
+
+    // COMPILABLE languages get compiled ONCE and measured many times (a
+    // probe, an optional warm-up, then `reps` measured passes) against the
+    // SAME solve reference. Compiling fresh on every one of those calls --
+    // the previous behavior -- discarded the engine's JIT tiering between
+    // calls entirely (confirmed root cause of the wall-tier DCE/noise known
+    // issue: a warm-up pass was warming a function that got thrown away
+    // immediately after). Retro tracks and the compiled-in-browser
+    // toolchains (C/C++/PHP) aren't in this set: they either have no
+    // meaningful "recompile" cost to amortize (retro assembles once per
+    // run already) or do their own internal per-case timing inside a
+    // single invocation (C/C++/PHP), so the old per-call runner.run() path
+    // is kept for them unchanged.
+    const COMPILABLE = new Set(["javascript", "typescript", "python", "ruby", "wat"]);
+    let compiled = null;
+    if (COMPILABLE.has(lang)) {
+      compiled = lang === "javascript" ? window.GlifexJsRuntime.compileJavaScript(source) : runner.compile(source);
+      if (compiled.error) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${esc(compiled.error)}</div>`));
+    }
+    const runOnce = async (cases) => compiled
+      ? compiled.measure(cases, { skipAggregate: true })
       : await runner.run(source, cases, p.languages[lang]);
 
     const probePlan = C.buildPlan(cfg, "wall", lang, "probe").plan.slice(0, 1);
@@ -94,10 +113,12 @@ const GlifexLab = (() => {
     const seedBase = p.id + ":" + lang + ":L1";
     const { sizes, plan } = C.buildPlan(cfg, tierId, lang, seedBase);
     const cases = plan.map((c) => mkCase(c, oracle));
-    // Wall tiers get one DISCARDED warm-up pass: a fresh script's first
-    // execution carries JIT/compile cost that can land anywhere in the
-    // ladder and bend the curve (deterministic cycle tiers don't need it;
-    // compiled-language harnesses warm up inside their own repeat loop).
+    // Wall tiers get one DISCARDED warm-up pass on the already-compiled
+    // reference: even reusing the same solve object, its very first call
+    // still shows some residual noise (inline caches settling, etc.) that
+    // can land anywhere in the ladder and bend the curve (deterministic
+    // cycle tiers don't need it; compiled-language harnesses warm up
+    // inside their own repeat loop).
     const warm = tierId === "wall" && !(C.LANG_OVERRIDES[lang] && C.LANG_OVERRIDES[lang].reps === 1);
     if (warm) {
       progress(panel, "Warm-up pass (JIT settle; discarded)\u2026");
@@ -162,7 +183,9 @@ const GlifexLab = (() => {
       ? vline("ok", `&#10003; Lower bound ${asOmega(lo.declared)}: unrefutable &mdash; every algorithm is ${OMEGA}(1). Your easy-family growth tracks ${j.perMode[lo.mode].closest}${j.perMode[lo.mode].closest === "O(1)" ? " &mdash; the early exit is real" : " &mdash; the easy inputs are not being exploited"}.`)
       : lo.verdict === "refuted"
         ? vline("bad", `&#10007; Lower bound ${asOmega(lo.declared)} REFUTED &mdash; growth on the &ldquo;${esc(modeLabel(cfg, lo.mode))}&rdquo; family is below it (closest: ${j.perMode[lo.mode].closest}).`)
-        : vline("ok", `&#10003; Lower bound ${asOmega(lo.declared)}: consistent on the &ldquo;${esc(modeLabel(cfg, lo.mode))}&rdquo; family.`);
+        : lo.verdict === "consistent"
+          ? vline("ok", `&#10003; Lower bound ${asOmega(lo.declared)}: consistent on the &ldquo;${esc(modeLabel(cfg, lo.mode))}&rdquo; family &mdash; this run failed to refute it.`)
+          : vline("ok", `&#10003; Lower bound ${asOmega(lo.declared)} holds on the &ldquo;${esc(modeLabel(cfg, lo.mode))}&rdquo; family, but is not tight (growth tracks ${j.perMode[lo.mode].closest}).`);
     // Theta: both ends pin the same class.
     html += j.theta
       ? vline("theta", `${THETA} Growth is pinned between matching bounds: consistent with ${j.theta.cls.replace("O(", THETA + "(")} on these families.`)

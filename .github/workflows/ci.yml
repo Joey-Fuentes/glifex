@@ -50,6 +50,8 @@ jobs:
         run: node web/corpus-integrity.test.mjs
       - name: Complexity Lab engine battery (L1)
         run: node web/lab-engine.test.mjs
+      - name: JS runtime battery (compile-once/measure-many)
+        run: node web/js-runtime.test.mjs
       - name: Retro 8080 core (unit battery + fast CP/M diagnostics, <5s)
         run: |
           node web/retro/cpu8080.test.mjs
