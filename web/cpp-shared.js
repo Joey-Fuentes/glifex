@@ -446,7 +446,13 @@ class App {
   }
 
   clock_time_get(clock_id, precision, time_out) {
-    throw new NotImplemented('wasi_unstable', 'clock_time_get');
+    this.mem.check();
+    // L1-clock: minimal, correct implementation. Only deltas are ever read
+    // back (languages/templates/harness.c + harness.cpp's --metrics gate),
+    // so any monotonic nanosecond count is correct regardless of clock_id.
+    const ns = BigInt(Math.round(performance.now() * 1e6));
+    this.mem.write64(time_out, Number(ns & 0xffffffffn), Number(ns >> 32n));
+    return ESUCCESS;
   }
 
   poll_oneoff(in_ptr, out_ptr, nsubscriptions, nevents_out) {

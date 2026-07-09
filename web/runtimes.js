@@ -37,8 +37,18 @@ const Runtimes = (() => {
     const t0 = performance.now();
     for (let i = 0; i < cases.length; i++) {
       try {
+        const c0 = performance.now();
         const got = callSolve(cases[i].input);
-        results.push({ i, ok: eq(got, cases[i].expected), got, expected: cases[i].expected });
+        let cdt = performance.now() - c0;
+        // L1-caseloop: per-case wall sample for the Complexity Lab; adaptive
+        // repeat past the clock grain (solve is pure by the corpus contract).
+        let tNs;
+        if (cdt < 2) {
+          let k = 1;
+          while (cdt < 2 && k < 1048576) { k *= 2; const s0 = performance.now(); for (let q = 0; q < k; q++) callSolve(cases[i].input); cdt = performance.now() - s0; }
+          tNs = cdt >= 1 ? (cdt * 1e6) / k : null;
+        } else { tNs = cdt * 1e6; }
+        results.push({ i, ok: eq(got, cases[i].expected), got, expected: cases[i].expected, tNs });
       } catch (e) {
         results.push({ i, ok: false, error: String(e.message || e), expected: cases[i].expected });
       }
@@ -207,7 +217,7 @@ const Runtimes = (() => {
           "$__g = json_decode(base64_decode('" + b64(JSON.stringify(cases)) + "'), true);\n" +
           "$__o = [];\n" +
           "foreach ($__g as $__i => $__c) {\n" +
-          "  try { $__o[] = ['i' => $__i, 'got' => solve($__c['input'])]; }\n" +
+          "  try { $__t = microtime(true); $__r = solve($__c['input']); $__o[] = ['i' => $__i, 'got' => $__r, 't' => (int)round((microtime(true) - $__t) * 1e9)]; }\n" +   // L1-php-time
           "  catch (\\Throwable $__e) { $__o[] = ['i' => $__i, 'err' => $__e->getMessage()]; }\n" +
           "}\n" +
           'echo "\n' + BEGIN + '" . json_encode($__o) . "' + END + '\n";' + "\n";
@@ -231,7 +241,7 @@ const Runtimes = (() => {
           const r = byI.get(i);
           if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
           if ("err" in r) return { i, ok: false, error: String(r.err), expected: c.expected };
-          return { i, ok: eq(r.got, c.expected), got: r.got, expected: c.expected };
+          return { i, ok: eq(r.got, c.expected), got: r.got, expected: c.expected, tNs: r.t != null && r.t > 0 ? r.t : null };   // L1-php-rows
         });
         const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
         return { results, nsPerCase };
@@ -283,23 +293,26 @@ const Runtimes = (() => {
           const wasm = await dir.readFile("/c/out.wasm");
           const prog = await Wasmer.fromFile(wasm);
           const rres = await (await prog.entrypoint.run({
-            args: ["practice"], mount: { [MP]: dir }, cwd: MP + "/c",
+            args: ["practice", "--metrics"], mount: { [MP]: dir }, cwd: MP + "/c",   // L1-c-args
           })).wait();
           const dt = performance.now() - t0;
 
           const out = String(rres.stdout || "");
-          const byI = new Map();
+          const byI = new Map(), metricByI = new Map();   // L1-c-parse
           for (const line of out.split("\n")) {
             const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
             if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
+            const mm = line.match(/\[METRIC\]\s+case\s+(\d+)\s+ns=(\d+)/);
+            if (mm) metricByI.set(Number(mm[1]), Number(mm[2]));
           }
           if (byI.size === 0) return { error: "no case results from harness:\n" + out.trim().slice(0, 600) };
 
           const results = cases.map((c, i) => {
             const r = byI.get(i);
             if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
-            if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected };
-            return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected };
+            const tNs = metricByI.get(i);   // L1-c-rows
+            if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected, tNs };
+            return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected, tNs };
           });
           const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
           return { results, nsPerCase };
@@ -331,17 +344,20 @@ const Runtimes = (() => {
         if (res.id === "error")
           return { error: "C++ compile/runtime error:\n" + String(res.error || "").slice(0, 400) + "\n" + String(res.output || "").trim().slice(0, 600) };
         const out = String(res.output || "");
-        const byI = new Map();
+        const byI = new Map(), metricByI = new Map();   // L1-cpp-parse
         for (const line of out.split("\n")) {
           const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
           if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
+          const mm = line.match(/\[METRIC\]\s+case\s+(\d+)\s+ns=(\d+)/);
+          if (mm) metricByI.set(Number(mm[1]), Number(mm[2]));
         }
         if (byI.size === 0) return { error: "no case results from harness:\n" + out.trim().slice(0, 600) };
         const results = cases.map((c, i) => {
           const r = byI.get(i);
           if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
-          if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected };
-          return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected };
+          const tNs = metricByI.get(i);   // L1-cpp-rows
+          if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected, tNs };
+          return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected, tNs };
         });
         const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
         return { results, nsPerCase };
@@ -420,7 +436,7 @@ const Runtimes = (() => {
               write: (a, v) => { ram[a & 0xffff] = v & 0xff; written[a & 0xffff] = 1; },
               readWord: (a) => ram[a & 0xffff] | (ram[(a + 1) & 0xffff] << 8),
             };
-            let got, insns = 0;
+            let got, insns = 0, caseCycles = null;   // L1-retro-decl
             try {
               const cpu = new core(bus);
               cpu.pc = cfg.entry;
@@ -431,7 +447,7 @@ const Runtimes = (() => {
                 cpu.step();
               }
               insns = steps;              // instructions executed
-              if (typeof cpu.cycles === "number") { totalCycles += cpu.cycles; hasCycles = true; }
+              if (typeof cpu.cycles === "number") { totalCycles += cpu.cycles; hasCycles = true; caseCycles = cpu.cycles; /* L1-retro-cyc */ }
               got = ram[cfg.outAddr & 0xffff] | (ram[(cfg.outAddr + 1) & 0xffff] << 8);   // u16 LE result
             } catch (e) {
               return { i, ok: false, error: String((e && e.message) || e), expected: c.expected };
@@ -440,7 +456,10 @@ const Runtimes = (() => {
             for (let a = 0; a < 0x10000; a++) if (written[a] && (a < cfg.entry || a >= progEnd)) space++;
             if (space > peakSpace) peakSpace = space;
             totalInsns += insns;
-            return { i, ok: eq(got, c.expected), got, expected: c.expected };
+            // L1-retro-rows: per-case exact samples for the Complexity Lab.
+            const row = { i, ok: eq(got, c.expected), got, expected: c.expected, insns, space };
+            if (caseCycles != null) row.cycles = caseCycles;
+            return row;
           });
           const insnsPerCase = cases.length ? totalInsns / cases.length : 0;
           const out = { results, instructions: Math.round(insnsPerCase), codeBytes: asm.bytes.length, spaceBytes: peakSpace };

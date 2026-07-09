@@ -29,10 +29,25 @@ int main(int argc, char** argv) {
         std::cout << "  " << variant << ": ~" << (long long)best << " ns/case (coarse)\n";
         return 0;
     }
+    bool metrics = argc > 2 && std::string(argv[2]) == "--metrics";   // L1-metrics-cpp
     int passed = 0, n = (int)cases->arr.size();
     for (int i = 0; i < n; i++) {
         auto& c = cases->arr[i];
         std::string got = dispatch(*c->obj["input"])->dump();
+        if (metrics) {
+            // Complexity Lab: per-case cost, adaptively repeated past the
+            // clock grain (solve is pure by the corpus contract). The result
+            // feeds the PASS/FAIL diff above, so -O2 cannot dead-code it.
+            long long reps = 1, el = 0;
+            for (;;) {
+                auto t0 = std::chrono::steady_clock::now();
+                for (long long r = 0; r < reps; r++) dispatch(*c->obj["input"]);
+                el = (long long)std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count();
+                if (el >= 2000000LL || reps >= 1048576) break;
+                reps *= 2;
+            }
+            if (el > 0) std::cout << "  [METRIC] case " << i << " ns=" << (el / reps) << "\n";
+        }
         std::string exp = c->obj["expected"]->dump();
         bool ok = got == exp;
         passed += ok;

@@ -18,9 +18,19 @@ function runJavaScript(source, cases) {
   const results = [];
   for (let i = 0; i < cases.length; i++) {
     try {
+      const c0 = performance.now();
       const got = solve(cases[i].input);
+      let cdt = performance.now() - c0;
+      // L1-percase: per-case wall sample for the Complexity Lab. Fast cases
+      // sit under the ~0.1ms clock grain, so adaptively repeat (solve is
+      // pure by the corpus contract) until the window is measurable.
+      if (cdt < 2) {
+        let k = 1;
+        while (cdt < 2 && k < 1048576) { k *= 2; const s0 = performance.now(); for (let q = 0; q < k; q++) solve(cases[i].input); cdt = performance.now() - s0; }
+        var tNs = cdt >= 1 ? (cdt * 1e6) / k : null;
+      } else { tNs = cdt * 1e6; }
       const ok = JSON.stringify(got) === JSON.stringify(cases[i].expected);
-      results.push({ i, ok, got, expected: cases[i].expected });
+      results.push({ i, ok, got, expected: cases[i].expected, tNs });
     } catch (e) {
       results.push({ i, ok: false, error: e.message, expected: cases[i].expected });
     }

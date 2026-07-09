@@ -7,7 +7,7 @@ var state = { corpus: null, current: null, lang: "javascript", revealed: false }
 function $(s) { return document.querySelector(s); }
 
 // clear the results panel back to the neutral prompt (problem/lang switch)
-function clearResults() { $("#results").innerHTML = `<div class="hint">Write your solution and press Run.</div>`; }
+function clearResults() { $("#results").innerHTML = `<div class="hint">Write your solution and press Run.</div>`; if (window.GlifexLab) GlifexLab.sync(state); /* L1-sync */ }
 // loading state: spinner + message during compile/runtime fetch/execution
 function showRunning(res, msg) { res.innerHTML = `<div class="running"><span class="spinner" aria-hidden="true"></span>${msg}</div>`; }
 

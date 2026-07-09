@@ -106,6 +106,31 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       in-browser -- sidesteps the missing in-browser `swiftc` (like rubri does for Rust).
       *Subset, not real swiftc -> CLI-divergence to disclose; MiniSwift scope unverified -- confirm.*
 
+### L -- Complexity Lab (browser face of C3; the falsifier doctrine applies)
+
+Empirical growth analysis inside the playground: seeded input families at
+growing sizes, correctness-gated against the JS clean oracle, judged by
+consecutive growth ratios (constants cancel; absolute cross-language speed
+never enters a verdict -- Decision 6 holds). Notation done properly: worst/
+average/best CASE are input families; O / Omega / Theta are BOUNDS on any of
+them. The declared O is tested on the adversarial family, the declared Omega
+on the easy family; a Theta badge appears only when both ends pin one class.
+
+- [x] **L1. Browser complexity falsifier, all tiers** -- per-case metric
+      samples through the existing runner contract (caseLoop + js-runtime
+      wall ns, retro per-case cycles/space, C/C++ harness `[METRIC]` lines
+      behind `--metrics`, PHP in-script timing); generators + declared
+      bounds live in `web/lab-config.mjs` for now; engine battery in CI;
+      e2e smoke on the JS track. Deterministic (cycle) tracks get tight
+      tolerance and exact verdicts; wall tiers get medians + loose
+      tolerance and honest "inconclusive" below timing resolution.
+- [ ] **L2. Manifest promotion** -- move generators + declared O/Omega into
+      problem manifests with verifier support; reconcile with the C3 CLI
+      falsifier so browser and CLI share one source of truth.
+- [ ] **L3. Worker migration + bigger ladders** -- move lab execution off
+      the main thread (cpp-worker pattern), raise size budgets, and close
+      the remaining hang exposure for runaway user code at large n.
+
 ### C — Corpus era (the forever-work; policy is law as of 002)
 - [ ] **C1. Problems 003+** — floor-of-four, manifest-first, blank stubs,
       original statements. Portfolio strategy: range over count (one great

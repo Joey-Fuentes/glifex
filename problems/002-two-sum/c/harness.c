@@ -35,9 +35,27 @@ int main(int argc, char **argv) {
         printf("  %s: ~%lld ns/case (coarse)\n", variant, (long long)best);
         return 0;
     }
+    int metrics = argc > 2 && !strcmp(argv[2], "--metrics");   /* L1-metrics-c */
     int passed = 0;
     for (int i = 0; i < cases->n; i++) {
-        char *got = jdumps(fn(jget(cases->items[i], "input")));
+        JVal *in = jget(cases->items[i], "input");
+        char *got = jdumps(fn(in));
+        if (metrics) {
+            /* Complexity Lab: per-case cost, adaptively repeated past the
+               clock grain (solve is pure by the corpus contract); compile
+               and startup are excluded by construction. */
+            long long reps = 1, el = 0;
+            for (;;) {
+                struct timespec t0, t1;
+                clock_gettime(CLOCK_MONOTONIC, &t0);
+                for (long long r = 0; r < reps; r++) fn(in);
+                clock_gettime(CLOCK_MONOTONIC, &t1);
+                el = (t1.tv_sec - t0.tv_sec) * 1000000000LL + (t1.tv_nsec - t0.tv_nsec);
+                if (el >= 2000000LL || reps >= 1048576) break;
+                reps *= 2;
+            }
+            if (el > 0) printf("  [METRIC] case %d ns=%lld\n", i, el / reps);
+        }
         char *exp = jdumps(jget(cases->items[i], "expected"));
         int ok = !strcmp(got, exp);
         passed += ok;

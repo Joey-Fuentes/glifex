@@ -58,6 +58,7 @@
           <label>Language
             <select id="lang-select"></select>
           </label>
+          <button id="lab-btn" class="ghost" hidden title="Complexity Lab: empirical growth analysis -- refutes declared bounds, never proves them">Analyze growth</button><!-- L1-btn -->
           <button id="reveal-btn" class="ghost" title="Show reference solution">Reveal</button>
           <button id="run-btn" class="primary">▶ Run tests</button>
         </div>
@@ -92,6 +93,8 @@
         natively in your browser — no download, works offline. Other languages need a
         one-time runtime fetch (see Docs).</div>
       </div>
+
+      <div id="lab" class="lab" hidden></div><!-- L1-panel -->
       </div>
     </div>
   </section>
@@ -114,6 +117,7 @@
 <script src="assertions.js"></script>
 <script src="runtimes.js"></script>
 <script src="js-runtime.js"></script>
+<script src="lab.js"></script><!-- L1-script -->
 <script src="app.js"></script>
 <script src="wiring.js"></script>
 </body>

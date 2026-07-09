@@ -55,7 +55,7 @@ async function compileLinkRun(source, headers, cases, variant) {
   const mod = await WebAssembly.compile(new Uint8Array(wasmBytes).slice());
   out = '';
   api.memfs.setStdinStr(JSON.stringify(cases));   // harness reads the cases from stdin
-  await api.run(mod, 'all.wasm', variant || 'practice');
+  await api.run(mod, 'all.wasm', variant || 'practice', '--metrics');   // L1-cpp-argv: harness emits per-case [METRIC] lines
   return out;
 }
 
