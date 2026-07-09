@@ -90,6 +90,80 @@ records the shipped set. First-contact lessons encoded:
   style.css on load order — win by specificity; batches must gate on
   `node --check`, not just report it.
 
+## ✅ Complexity Lab (L1) — verified in production
+
+Empirical growth-rate falsifier for the algorithm track, browser-side face of
+C3: seeded input families at growing sizes, correctness-gated against the
+JS clean oracle, judged by consecutive growth ratios (constants cancel;
+absolute cross-language speed never enters a verdict). Deterministic
+(cycle-counted) tracks get tight tolerance and exact verdicts; wall-clock
+tiers get medians, loose tolerance, and an honest "Inconclusive" below
+timing resolution rather than a forced guess. Engine battery
+(`web/lab-engine.test.mjs`) is 75/75 in CI; e2e coverage in
+`e2e/lab.spec.js` (Chromium).
+
+- **Per-variant declared complexity bounds (#28).** Declared O/Omega bounds
+  moved from one per-problem value to per-language, per-variant
+  (`[complexity.LANG.VARIANT]` manifest sections) — brute-force, clean, and
+  optimized can each declare a genuinely different bound instead of sharing
+  one. `web/build.mjs` resolves declared bounds with a `"default"` fallback;
+  `web/lab-engine.mjs`'s `matchKnownVariants()` does empirical-first
+  matching against a strict "consistent" set (a faster-than-declared result
+  does NOT count as matching a looser bound — only a tight fit does).
+- **Two judging modes**, both e2e-covered (`e2e/lab.spec.js`, "revealed" /
+  "empirical-match" specs):
+  - *Revealed*: with a specific reference solution open, the Lab tests the
+    code against THAT variant's own declared bound and reports a direct
+    verdict ("Upper bound O(n): consistent/REFUTED").
+  - *Empirical-match* (the default, no-reveal state most users hit Analyze
+    from): measures growth first, then reports which known variant(s), if
+    any, the empirical growth matches — a genuinely different code path
+    from "revealed", not a fallback dressed up to look the same.
+- **Brute-force as a first-class variant type (#26).** Added
+  project-wide alongside clean/optimized: reference-panel button, curated
+  002 (Two Sum) WAT trio — `brute-force.wat` (O(n²) nested loop),
+  `clean.wat` (fused lookup+insert hash map, Joe's design), `optimized.wat`
+  (generation-counter reset, ~15-20% faster) — each with its own declared
+  bound via the per-variant system above.
+- **Stale-cache fix (#29).** `lab-engine.mjs`/`lab-config.mjs` (dynamically
+  imported ES modules, unlike every other script which is a plain
+  `<script src>` tag) were the only assets `web/stamp.mjs`'s cache-busting
+  regex never matched (`.mjs` fell through a `.js`/`.css`-only pattern) —
+  visitors could keep getting pre-deploy Lab code indefinitely via the
+  service worker's stale-while-revalidate caching, live-site-confirmed as
+  `E.matchKnownVariants is not a function` for anyone whose browser cached
+  the old file. Fixed the regex AND `lab.js`'s dynamic import call sites
+  (which the regex fix alone doesn't reach, being hardcoded strings in
+  application source, not `index.html`/`sw.js`).
+- **C runtime: overlapping-call lock + single-use Wasmer instance (#30,
+  #31, #32).** Reported as C hanging on repeated Analyze/Run, cascading to
+  "every language broken until a hard refresh." Root-caused in two layers:
+  (a) Run and Analyze had no mutual-exclusion guard against overlapping
+  calls into the same cached runtime object — fixed with a shared lock
+  (`state.runtimeBusy` + `withRuntimeLock`, `web/app.js`) both entry points
+  now go through (#30). (b) Independently, and confirmed necessary by
+  testing — not assumed — the compiled `clang` Wasmer/WASIX module was
+  being reused across calls; Wasmer's `entrypoint.run()` behaves like a
+  single-use process invocation, so any second call on the same instance
+  hangs (`RuntimeError: unreachable` inside `wasmer_js_bg.wasm`, uncaught,
+  which is why it presented as a silent hang rather than a catchable
+  error). An in-place fix (#31, fresh `clang` instance per call, same
+  session) was confirmed insufficient by direct testing. The actual fix
+  (#32): every C run spawns a genuinely fresh Worker (`web/c-worker.js`)
+  with the SDK fully re-imported and re-initialized, terminated
+  afterward — matching an independent developer's confirmed fix for the
+  identical symptom on this exact SDK doing similar in-browser clang/LLVM
+  work (cited in the PR). This eliminated the cascading failure.
+  - **Known issue, not yet resolved (#33):** the underlying Wasmer SDK
+    still crashes intermittently even with a fresh Worker per call —
+    correlated with input complexity, not random: not observed on 001
+    (Nth Fibonacci, scalar), observed occasionally on 002 (Two Sum,
+    array/hash-map-based). No longer cascades; a failed run doesn't affect
+    other runs or languages. Diagnostic breadcrumb logging (source/case
+    size + execution-stage tracking, in both the worker and its caller)
+    is in place to correlate future occurrences; deliberately not masked
+    with automatic retry. Full detail: `docs/ROADMAP.md`'s Bx-3 entry.
+
 ## ✅ Tracks & infrastructure
 
 - **Database track** — `db test` (ephemeral SQLite) and `db bench`
@@ -189,6 +263,21 @@ Metric is instruction count (coarse) -- see TODO(cycle-accuracy) in the loaders.
 - Never-stale: SW navigations + corpus fetch with cache:"no-cache" (the browser
   HTTP cache made "network-first" up to 10 min stale); update detection runs at
   boot / tab refocus / every 5 min and lights the header refresh button.
+- Retro core #3: Intel 8080 (web/retro/cpu8080.mjs) -- first CYCLE-EXACT track.
+  T-state-accurate (incl. conditional CALL 17/11, RET 11/5), validated against
+  the CP/M diagnostic ROMs incl. the exhaustive 8080EXM: 23,803,381,171 cycles,
+  every CRC matching real Intel silicon (fixtures + GPLv3 sources vendored at
+  web/retro/test-roms/8080/, stripped from the Pages artifact). Plan pivot,
+  decision of record: Tom Harte SingleStepTests DO NOT EXIST for the 8080 (the
+  org covers z80/sm83/65x02/x86 etc., not 8080) -- CP/M ROM suite is the
+  community-standard validation instead; Harte remains the path for 6502/sm83.
+  UI: deterministic cycles + reference time @ 2.000 MHz + space metrics (code
+  bytes / workspace bytes = distinct RAM written outside the program image).
+  RETRO-CONTRACT paid at n=3: loaders factored to makeRetroLoader(config)
+  (runtimes.js, -80 lines of duplication) + fit-verifier (program/I-O collision
+  = assembly-time error). CI: unit battery + fast three (sub-second) in the
+  spine; retro-exhaustive.yml is workflow_dispatch by design (permanent, not a
+  free-tier diet item) -- run after any cpu8080.mjs change, ~1.5-4 min.
 
 ## Verify everything
 
