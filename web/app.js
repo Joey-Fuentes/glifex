@@ -115,6 +115,7 @@ function showReference(variant) {
   state.refVariant = variant;
   const src = currentSource(variant) || "(no reference for this variant)";
   $("#reference-code").value = src;
+  $("#ref-brute-force").classList.toggle("active", variant === "brute-force");
   $("#ref-clean").classList.toggle("active", variant === "clean");
   $("#ref-optimized").classList.toggle("active", variant === "optimized");
 }

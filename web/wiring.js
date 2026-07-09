@@ -26,6 +26,7 @@ async function boot() {
     if (show) showReference(state.refVariant || "optimized");
   }
   $("#reveal-btn").onclick = () => setRevealVisible($("#reference-panel").hidden);
+  $("#ref-brute-force").onclick = () => showReference("brute-force");
   $("#ref-clean").onclick = () => showReference("clean");
   $("#ref-optimized").onclick = () => showReference("optimized");
   $("#run-btn").onclick = run;

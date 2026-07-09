@@ -49,7 +49,7 @@ function algoProblems() {
       if (!ext) continue;
       const cap = lang === "java" || lang === "csharp";
       const f = (v) => read(join(ld, (cap ? v[0].toUpperCase() + v.slice(1) : v) + "." + ext));
-      languages[lang] = { practice: f("practice"), clean: f("clean"), optimized: f("optimized") };
+      languages[lang] = { practice: f("practice"), clean: f("clean"), optimized: f("optimized"), "brute-force": f("brute-force") };
       // Compiled langs build the real CLI harness in-browser, so bake its
       // invariant support files (identical across problems) alongside.
       if (lang === "c") languages[lang].support = {

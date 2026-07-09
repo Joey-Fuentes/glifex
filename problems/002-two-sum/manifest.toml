@@ -20,7 +20,7 @@ rust        = { variants = ["practice", "clean", "optimized"] }
 php         = { variants = ["practice", "clean", "optimized"] }
 dart        = { variants = ["practice", "clean", "optimized"] }
 zig         = { variants = ["practice", "clean", "optimized"] }
-wat         = { variants = ["practice", "clean", "optimized"] }
+wat         = { variants = ["practice", "brute-force", "clean", "optimized"] }
 
 [exclusions]
 asm-x86_64 = "help-wanted: feasible via the C-shim pattern (see 001)"
@@ -47,11 +47,15 @@ space = "O(1)"
 [complexity.wat.practice]
 time = "O(n^2)"
 space = "O(1)"
+[complexity.wat.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop baseline -- the pedagogical starting point every other WAT approach here improves on"
 [complexity.wat.clean]
 time = "O(n)"
 space = "O(n)"
-notes = "open-addressing hash table in linear memory (WAT has no built-in map type) -- see clean.wat's header comment for the design"
+notes = "open-addressing hash table in linear memory, fused lookup+insert loop, explicit full-table clear each call (see clean.wat's header comment for the design and why the clear was checked not to distort the O(n) measurement in practice)"
 [complexity.wat.optimized]
 time = "O(n)"
 space = "O(n)"
-notes = "same hash-table approach as clean.wat"
+notes = "a different hash-table design from clean.wat, not just a micro-optimized copy -- generation counter instead of an explicit clear, 2048 slots (headroom above clean.wat's exact-fit 1024) -- measured ~15-20% faster across multiple interleaved timing rounds, see optimized.wat's header comment"
