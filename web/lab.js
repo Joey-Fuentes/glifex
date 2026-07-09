@@ -2,7 +2,8 @@
 // falsifier. Drives the EXISTING runners (js-runtime.js, runtimes.js) with
 // generated input families at growing sizes, gates every sample on
 // correctness against the JavaScript clean oracle, then fits and judges
-// growth per lab-engine.mjs and renders the case x bound verdict card.
+// growth per lab-engine.mjs (shared-overhead-corrected classifier) and
+// renders the case x bound verdict card.
 //
 // Case vs bound, done properly: worst/average/best case are different cost
 // functions from different input families; O / Omega / Theta are bounds on
@@ -226,7 +227,7 @@ const GlifexLab = (() => {
     const tabs = X.cfg.modes.map((m, i) => `<button class="ghost sm${i === 0 ? " active" : ""}" data-labmode="${m.id}">${esc(m.id)}</button>`).join("");
     return `<h3 class="lab-sec">Step-ratio proof ${X.cfg.modes.length > 1 ? tabs : ""}</h3>
       <div class="lab-tablewrap">${tableFor(X, unit, X.cfg.modes[0].id)}</div>
-      <p class="lab-note">Ratios cancel constant factors: the same table reads exact cycle counts and coarse wall time alike, on any device &mdash; absolute speed never enters the verdict. Greyed steps are excluded from scoring (fixed overhead dominates at small n).</p>`;
+      <p class="lab-note">Ratios cancel constant multiplicative factors; a shared fixed-overhead estimate (subtracted before comparing, see provenance below) cancels the constant additive term too, the same way &mdash; absolute speed never enters the verdict either way. Greyed steps are excluded from the final scoring for statistical robustness.</p>`;
   }
 
   function tableFor(X, unit, modeId) {
@@ -236,7 +237,10 @@ const GlifexLab = (() => {
     for (const r of cls.rows) {
       h += `<tr${r.scored ? "" : ' class="dropped"'}><td>${r.from} &rarr; ${r.to}</td><td>&times;${r.meas.toFixed(2)}</td>`;
       for (const n of names) {
-        const close = Math.abs(Math.log(r.meas / r.pred[n])) <= X.tier.tol;
+        // Hit/miss reflects the SAME bHat-corrected comparison that produced
+        // the verdict (not the raw uncorrected ratio) -- otherwise a cell
+        // could show "miss" while the overall verdict says "consistent".
+        const close = r.scored && r.correctedMeas != null && Math.abs(Math.log(r.correctedMeas / r.pred[n])) <= X.tier.tol;
         h += `<td class="${n === declared ? "declared " : ""}${r.scored ? (close ? "hit" : n === declared ? "miss" : "") : ""}">&times;${r.pred[n].toFixed(2)}</td>`;
       }
       if (X.tierId === "det") h += `<td>${X.spaceBy[modeId + ":" + r.to] != null ? X.spaceBy[modeId + ":" + r.to] : "&mdash;"}</td>`;
@@ -248,11 +252,18 @@ const GlifexLab = (() => {
   function prov(X) {
     const det = X.tierId === "det";
     const clock = det && X.detMeta ? ` &middot; ${(X.detMeta.clockHz / 1e6).toFixed(3)} MHz reference` : "";
+    const fmtB = (v) => Math.abs(v) >= 100 ? Math.round(v).toString() : v.toFixed(1);
+    const bUp = X.j.perMode[X.cfg.roles.upper].bHat, bLo = X.j.perMode[X.cfg.roles.lower].bHat;
+    const overhead = X.cfg.roles.upper === X.cfg.roles.lower
+      ? ` &middot; shared overhead subtracted before comparing: ${fmtB(bUp)} ${unitOf(X)}`
+      : ` &middot; shared overhead subtracted: ${fmtB(bUp)} ${unitOf(X)} (upper family), ${fmtB(bLo)} ${unitOf(X)} (lower family)`;
     return `${det ? "deterministic cycle counts (1 rep is exact)" + clock
       : `wall time inside this runtime &mdash; median of ${X.reps} pass${X.reps > 1 ? "es" : ""}; absolute values are not comparable across languages or devices`}
       &middot; sizes ${X.sizes.join(", ")} &middot; inputs: seeded generators (base &ldquo;${esc(X.seedBase)}&rdquo;)
-      &middot; oracle: javascript clean &middot; correctness-gated &middot; ${new Date().toISOString().slice(0, 10)}`;
+      &middot; oracle: javascript clean &middot; correctness-gated${overhead}
+      &middot; ${new Date().toISOString().slice(0, 10)}`;
   }
+  const unitOf = (X) => (X.tierId === "det" ? "cycles" : "ns");
 
   function init() {
     const btn = $("#lab-btn");

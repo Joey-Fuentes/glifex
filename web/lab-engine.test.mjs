@@ -1,4 +1,5 @@
-// Complexity Lab engine battery (L1). Plain node script, zero deps:
+// Complexity Lab engine battery (L1, shared-overhead-corrected classifier).
+// Plain node script, zero deps:
 //   node web/lab-engine.test.mjs
 // Covers: fit recovery, falsifier verdicts each direction, Theta
 // composition, the trivial-Omega(1) rule, and the generator invariants the
@@ -99,6 +100,38 @@ ok(CLASSES.length === 6, "fitted model set mirrors the polynomial whitelist");
   ok(capped.sizes.length === 4, "compiled-language ladder is capped");
   const det = buildPlan(PROBLEMS["003-nth-fibonacci"], "det", "i8080", "s");
   ok(Math.max(...det.sizes) <= 24, "retro fib ladder respects the u16 result contract");
+}
+
+// --- shared-overhead classifier: regression tests for the det-tier false-
+// refutation bug (real 8080 clean.s cycle counts: cycles(n) = 29n + 95
+// exactly, hand-assembled and run through web/retro/cpu8080.mjs) ---------
+{
+  const ns = [3, 6, 12, 24], ys = [182, 269, 443, 791];   // exact, real, noiseless
+  const c = classifyGrowth(ns, ys, TIERS.det.tol);
+  ok(Math.abs(c.errs["O(n)"]) < 1e-9, "real 8080 fib: O(n) error is exactly zero (perfect affine fit)");
+  ok(c.closest === "O(n)", "real 8080 fib: closest class is O(n)");
+  ok(c.consistent.includes("O(n)"), "real 8080 fib: O(n) is NOT refuted (this was the reported bug)");
+  ok(!c.consistent.includes("O(n^2)") && !c.consistent.includes("O(log n)"), "real 8080 fib: wrong classes still correctly excluded");
+  ok(Math.abs(c.bHat - 95) < 1e-6, "real 8080 fib: recovered shared overhead matches the true fixed cost (95 cycles)");
+}
+// A wrong class must not be able to fit its OWN convenient intercept to
+// fake a match (confirmed failure mode of an earlier design attempt: a
+// per-class free intercept let O(n) pass even noiseless quadratic data).
+{
+  const ns = [64, 128, 256, 512, 1024];
+  const ys = ns.map((n) => 0.002 * n * n + 50);   // exact, noiseless O(n^2)
+  const c = classifyGrowth(ns, ys, TIERS.wall.tol);
+  ok(c.consistent.includes("O(n^2)") && c.closest === "O(n^2)", "clean quadratic: correctly consistent with O(n^2)");
+  ok(!c.consistent.includes("O(n)"), "clean quadratic: O(n) is refuted even noiseless (regression guard for the per-class-intercept cheat)");
+}
+// Noise robustness: realistic wall-tier jitter must not false-refute a
+// genuinely correct O(n) bound (fixed seed for a deterministic regression).
+{
+  const r = mulberry32(12345);
+  const ns = [64, 128, 256, 512, 1024];
+  const ys = ns.map((n) => (3 * n + 200) * (1 + (r() - 0.5) * 0.3));
+  const c = classifyGrowth(ns, ys, TIERS.wall.tol);
+  ok(c.consistent.includes("O(n)"), "noisy-but-correct O(n) (30% jitter, seeded): not falsely refuted");
 }
 
 console.log(`lab-engine battery: ${n}/${n} passed`);
