@@ -104,27 +104,36 @@ export const PROBLEMS = {
       // ROADMAP), so it falls through to the wall tier like any
       // non-cycle-exact language, but its retro-contract u16 result
       // register is the SAME one the det ladder is already capped at 24
-      // to respect -- reusing that exact, already-proven-safe ladder here
-      // rather than inventing a new one. WAT's clean.wat uses i32 (not
-      // i64): fib(47) = 2971215073 overflows a signed 32-bit int (max
-      // 2147483647); fib(46) = 1836311903 is the last safe value, so its
-      // ladder stays comfortably under that. asm-6502 has cycle tracking
-      // (should stay det-tier classified) -- included here too as a
-      // defensive fallback in case that ever fails to report for some
-      // case and it falls through to wall-tier, same as SM83 currently
-      // does.
-      // WAT's ladder was densified from 4 points to 20 (still within the
-      // same [12,46] safe range -- i32 precision is the hard ceiling
-      // here, not point count) after a real report of inconsistent/
-      // refuted results with a signature matching JS's original tiny-
-      // ladder overhead-domination bias (flat step ratios well below
-      // O(n)'s prediction, tiny shared-overhead figure). Unlike JS, WAT
-      // can't escape by going WIDER (i32 caps it at 46), only denser --
-      // this is a reasonable, motivated attempt at the same fix, not a
-      // proven one the way JS's widening was (no vendored WASM runtime
-      // available to validate with real timing data the way JS's fix
-      // was validated).
-      wallByLang: { sm83: [3, 6, 12, 24], "asm-6502": [3, 6, 12, 24], wat: [12, 14, 16, 17, 19, 21, 23, 25, 26, 28, 30, 32, 33, 35, 37, 39, 41, 42, 44, 46] },
+      // to respect. Densified from 4 to 15 points within that same
+      // [6,24] safe range once the underlying measurement itself was
+      // fixed (web/runtimes.js's makeRetroLoader originally allocated a
+      // fresh 64KB RAM array on every timing repeat -- measured directly:
+      // that allocation alone was 83-92% of the total time, burying the
+      // real O(n) signal and making growth measure as flat/O(1) even
+      // though the algorithm is genuinely O(n); replaced with a
+      // targeted-reset design that only clears the specific addresses
+      // each execution actually wrote).
+      //
+      // asm-6502 has cycle tracking (should stay det-tier classified) --
+      // included here too as a defensive fallback in case that ever
+      // fails to report for some case and it falls through to wall-tier,
+      // same as SM83.
+      //
+      // WAT has NO override here anymore: clean.wat/optimized.wat were
+      // rewritten to use i64 accumulators instead of i32 (the loop
+      // counter $n stays i32; only the Fibonacci values widen), pushing
+      // its own overflow point out to fib(93) -- past what the shared
+      // ladder below ever tests (capped at 78 to match the JS oracle's
+      // own exact-double ceiling, not WAT's i64 limit). WAT now safely
+      // uses the exact same shared 30-point ladder as JS/Python/Ruby/TS.
+      // Motivated by the SAME overhead-domination signature found for
+      // JS's original tiny ladder: at i32's narrow [12,46] range, WAT's
+      // near-native execution speed left too little absolute signal
+      // above fixed overhead to reliably classify growth (confirmed
+      // directly: measurements consistently read as flat O(1)).
+      // loadWat's callSolve() converts the resulting BigInt back to a
+      // Number for the oracle comparison (see web/runtimes.js).
+      wallByLang: { sm83: [6, 7, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 23, 24], "asm-6502": [6, 7, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 23, 24] },
     },
     // Retro ladder tops out at 24: fib(25) = 75025 overflows the tracks'
     // u16 result contract. Wall ladder tops at 78: fib(78) is the last

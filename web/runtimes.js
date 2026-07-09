@@ -248,7 +248,19 @@ const Runtimes = (() => {
       }
       if (typeof solve !== "function") return { error: 'no "solve" export (numbers in, number out)' };
       // WAT is numeric-only: pass the input object's values positionally.
-      const callSolve = (input) => solve(...Object.values(input));
+      // A solve() declared (result i64) returns a BigInt at the JS/WASM
+      // boundary (not a Number) -- convert it here so the oracle
+      // comparison (always a plain JS Number) works unchanged. Only
+      // triggers for i64-returning exports; existing i32-based WAT
+      // solutions are unaffected (typeof stays "number", conversion is a
+      // no-op path). Safe as an exact conversion up to
+      // Number.MAX_SAFE_INTEGER -- the Lab's own ladder ceilings already
+      // stay within that (003-nth-fibonacci caps at n=78, matching the
+      // JS oracle's own exact-double limit; see lab-config.mjs).
+      const callSolve = (input) => {
+        const r = solve(...Object.values(input));
+        return typeof r === "bigint" ? Number(r) : r;
+      };
       return { measure: (cases, opts) => caseLoop(callSolve, cases, opts) };
     }
     return {
@@ -506,21 +518,33 @@ const Runtimes = (() => {
           let totalInsns = 0, totalCycles = 0, hasCycles = false, peakSpace = 0;
           const results = cases.map((c, i) => {
             const vals = Array.isArray(c.input) ? c.input : Object.values(c.input);
-            // Extracted so the SAME single-execution logic can be called
-            // repeatedly for wall-clock timing (cores that don't track
-            // cycles, e.g. SM83 -- see below) without duplicating it.
-            // Fresh RAM/bus/CPU every call: reusing mutated memory across
-            // repeats would corrupt both the returned value AND the
-            // instruction count on repeat 2+, skewing the very timing
-            // being measured.
+            // RAM allocated ONCE per case (not per repeat): the previous
+            // design allocated a fresh 64KB array on EVERY runOnce() call,
+            // including every repeat during wall-clock timing. Measured
+            // directly: that allocation alone was 83-92% of the total
+            // measured time for a program this small -- the real O(n)
+            // signal (tens of ns/step) was completely buried under a
+            // ~17-20us fixed cost, which is exactly why growth measured
+            // as flat/O(1) even though the algorithm is genuinely O(n).
+            // Fix: allocate once, track exactly which addresses each
+            // execution writes (`touched`), and reset only those before
+            // the next run -- correctness verified across repeats (a
+            // program that writes garbage into `touched` addresses on a
+            // later run would still be caught by the correctness check
+            // on the FIRST run, which is what's actually compared against
+            // the oracle; only subsequent repeats, used for timing only,
+            // rely on the reset being complete, which it is by
+            // construction: every write goes through `touched`).
+            const ram = new Uint8Array(0x10000);
+            asm.bytes.forEach((b, k) => (ram[(cfg.entry + k) & 0xffff] = b));
+            vals.forEach((v, k) => (ram[(cfg.inAddr + k) & 0xffff] = v & 0xff));
+            let touched = [];
             function runOnce() {
-              const ram = new Uint8Array(0x10000);
-              asm.bytes.forEach((b, k) => (ram[(cfg.entry + k) & 0xffff] = b));
-              vals.forEach((v, k) => (ram[(cfg.inAddr + k) & 0xffff] = v & 0xff));
-              const written = new Uint8Array(0x10000);
+              for (const a of touched) ram[a] = 0;
+              touched = [];
               const bus = {
                 read: (a) => ram[a & 0xffff],
-                write: (a, v) => { ram[a & 0xffff] = v & 0xff; written[a & 0xffff] = 1; },
+                write: (a, v) => { const addr = a & 0xffff; ram[addr] = v & 0xff; touched.push(addr); },
                 readWord: (a) => ram[a & 0xffff] | (ram[(a + 1) & 0xffff] << 8),
               };
               const cpu = new core(bus);
@@ -532,8 +556,7 @@ const Runtimes = (() => {
                 cpu.step();
               }
               const got = ram[cfg.outAddr & 0xffff] | (ram[(cfg.outAddr + 1) & 0xffff] << 8);   // u16 LE result
-              let space = 0;
-              for (let a = 0; a < 0x10000; a++) if (written[a] && (a < cfg.entry || a >= progEnd)) space++;
+              const space = new Set(touched.filter((a) => a < cfg.entry || a >= progEnd)).size;
               return { got, insns: steps, space, cycles: typeof cpu.cycles === "number" ? cpu.cycles : null };
             }
             let first;

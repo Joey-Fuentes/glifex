@@ -159,13 +159,17 @@ ok(CLASSES.length === 6, "fitted model set mirrors the polynomial whitelist");
   const sm83Sizes = buildPlan(cfg, "wall", "sm83", "s").sizes;
   const asm6502Sizes = buildPlan(cfg, "wall", "asm-6502", "s").sizes;
   const watSizes = buildPlan(cfg, "wall", "wat", "s").sizes;
+  const jsSizes = buildPlan(cfg, "wall", "javascript", "s").sizes;
   ok(Math.max(...sm83Sizes) <= 24 && fib(Math.max(...sm83Sizes)) <= 0xffff, "SM83 wall override stays within its u16 result register");
+  ok(sm83Sizes.length === 15, "SM83 wall override is the densified 15-point version (up from 4), same u16-safe range");
+  ok(new Set(sm83Sizes).size === 15, "SM83 wall override has no duplicate sizes");
   ok(Math.max(...asm6502Sizes) <= 24, "6502's defensive wall override also stays within u16, in case it ever falls through to wall-tier");
-  ok(Math.max(...watSizes) <= 46 && fib(Math.max(...watSizes)) <= 0x7fffffff, "WAT wall override stays within its i32 result (fib(47) overflows signed i32)");
-  ok(watSizes.length === 20, "WAT wall override is the densified 20-point version (up from 4), same [12,46] safe range");
-  ok(new Set(watSizes).size === 20, "WAT wall override has no duplicate sizes");
   ok(!sm83Sizes.includes(25), "SM83 override no longer includes n=25, the exact reported failure point");
-  ok(!watSizes.includes(48), "WAT override no longer includes n=48 (48 was never actually safe -- also confirms the old 4-point ladder's specific values aren't silently still present)");
+  // WAT no longer has its own override: clean.wat/optimized.wat were
+  // rewritten to use i64 (safe past fib(78), the shared ladder's own
+  // ceiling), so WAT now safely uses the exact same ladder as JS.
+  ok(JSON.stringify(watSizes) === JSON.stringify(jsSizes), "WAT now uses the exact same shared ladder as JS (i64 rewrite removed the need for its own override)");
+  ok(fib(78) <= Number.MAX_SAFE_INTEGER, "sanity: fib(78) stays exactly representable as a JS Number after BigInt->Number conversion (the oracle's own ceiling, unchanged)");
 }
 
 console.log(`lab-engine battery: ${n}/${n} passed`);
