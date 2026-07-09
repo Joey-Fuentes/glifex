@@ -16,13 +16,28 @@ const { test, expect } = require("@playwright/test");
 
 // A correct O(n) iterative fib -- exactly the shape lab-config.mjs's
 // declared bound describes, using the SAME safe, precision-validated
-// ladder [16,32,55,78] (see lab-config.mjs's comments for why those exact
-// values).
+// wall ladder (see lab-config.mjs's comments for why those exact values).
 const JS_FIB = `module.exports = function solve(c) {
   let a = 0, b = 1;
   for (let i = 0; i < c.n; i++) { const t = a + b; a = b; b = t; }
   return a;
 };`;
+
+// Extracts a short, guaranteed-readable summary of one attempt's verdict
+// text -- specifically the "X of Y" counts from an Inconclusive card, the
+// thing this test exists partly to surface. Plain console.log() from a
+// PASSING test is commonly swallowed by CI reporters (confirmed: a real
+// run here passed but the diagnostic counts weren't visible in the job
+// output) -- test.step() names, by contrast, show up in Playwright's
+// reporters (list/html/line) as a structured per-test breakdown
+// regardless of whether the test ultimately passes or fails.
+function summarize(text) {
+  if (/consistent/i.test(text)) return "consistent";
+  const m = text.match(/Inconclusive: (\d+) of (\d+)/);
+  if (m) return `inconclusive (${m[1]} of ${m[2]})`;
+  if (/REFUTED/.test(text)) return "refuted";
+  return text.slice(0, 80);
+}
 
 test("Complexity Lab renders a verdict card (JavaScript, Nth Fibonacci)", async ({ page }) => {
   page.on("pageerror", (e) => console.error("[pageerror]", e.message));
@@ -54,11 +69,8 @@ test("Complexity Lab renders a verdict card (JavaScript, Nth Fibonacci)", async 
   // rep-to-rep consistency floor's own retry-worthy outcome -- a
   // completely different card that never contains "Upper bound" at all;
   // waiting on only the first pattern hung forever the one time this
-  // happened in CI). 5 attempts, not 3: even after switching to fib's
-  // lower-noise ladder, a real CI run (Firefox) exhausted 3 attempts on
-  // two-sum's ladder, confirming Firefox's noise floor runs meaningfully
-  // worse than sandbox testing suggested -- more margin here is cheap
-  // insurance against a smoke test that's supposed to be a formality.
+  // happened in CI). 5 attempts: Firefox's noise floor has run worse than
+  // sandbox testing suggested more than once.
   let text = "";
   const maxAttempts = 5;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -66,8 +78,11 @@ test("Complexity Lab renders a verdict card (JavaScript, Nth Fibonacci)", async 
     await expect(verdicts.first()).toBeVisible({ timeout: 60000 });
     await expect(verdicts.first()).toContainText(/Upper bound O\(n\)|Inconclusive/, { timeout: 60000 });
     text = await verdicts.first().textContent();
+    const summary = summarize(text);
+    // Empty step body -- this call exists solely to record a step name
+    // Playwright's reporters will show, not to perform an action.
+    await test.step(`attempt ${attempt}/${maxAttempts}: ${summary}`, async () => {});
     if (/consistent/i.test(text)) break;
-    if (attempt < maxAttempts) console.log(`[lab.spec.js] attempt ${attempt}/${maxAttempts} was not consistent (timing noise or inconclusive) -- retrying:`, text);
   }
   expect(text).toMatch(/consistent/i);
 
