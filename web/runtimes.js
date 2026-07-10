@@ -296,85 +296,38 @@ const Runtimes = (() => {
   // -- WAT: WebAssembly Text -- vendored wabt assembles it, then it runs --
   async function loadWat() {
     if (!(await vendored("wat"))) return null;
-    await script("vendor/wat/index.js");               // exposes window.WabtModule
-    const wabt = await window.WabtModule();
-    // compile() assembles + instantiates ONCE and returns a measure() that
-    // reuses the SAME instance across every call. WASM has its own tiered
-    // JIT (Liftoff baseline -> TurboFan optimizing) -- a fresh
-    // WebAssembly.Instance on every call discards that tiering exactly the
-    // way a fresh `new Function(...)` did for the JS-based loaders above
-    // (same confirmed root cause, same fix).
-    function compile(source) {
-      let binary;
-      try {
-        const mod = wabt.parseWat("solve.wat", source);
-        mod.resolveNames();
-        mod.validate();
-        binary = mod.toBinary({}).buffer;               // Uint8Array of wasm bytes
-        mod.destroy();
-      } catch (e) {
-        return { error: "WAT assembly error: " + String(e.message || e) };
-      }
-      let solve, instance;
-      try {
-        instance = new WebAssembly.Instance(new WebAssembly.Module(binary), {});
-        solve = instance.exports.solve;
-      } catch (e) {
-        return { error: "WASM instantiate error: " + String(e.message || e) };
-      }
-      if (typeof solve !== "function") return { error: 'no "solve" export (numbers in, number out)' };
-      // Two calling conventions, auto-detected from what the module
-      // exports:
-      //  - Pure scalar (e.g. 003-nth-fibonacci's solve(n: i32)): pass the
-      //    input object's values positionally, unchanged.
-      //  - Memory-marshaled (e.g. 002-two-sum's
-      //    solve(ptr: i32, len: i32, target: f64), documented in that
-      //    file's own header comment): the module exports its own
-      //    "memory". Any array-valued input field gets written into that
-      //    memory (as i32 elements, matching what these WAT solutions
-      //    read back via i32.load) and replaced in the argument list with
-      //    (ptr, len); non-array fields pass through unchanged, in order.
-      //    Previously unsupported entirely -- two-sum's WAT track never
-      //    actually worked (confirmed: reported "got=-1" on every case,
-      //    the array argument was silently coerced to garbage before
-      //    this fix, not a regression from any i64-related change).
-      // A solve() declared (result i64) returns a BigInt at the JS/WASM
-      // boundary, not a Number -- left as-is here (not converted): eq()
-      // (see above) is BigInt-safe for a simple scalar result
-      // (003-nth-fibonacci's WAT track). Multi-value results (e.g. this
-      // problem's own (result i32 i32)) return a plain JS array at the
-      // boundary already -- no BigInt, no packing/unpacking needed at
-      // all; see 002-two-sum/wat/clean.wat's header comment for why that
-      // was chosen over packing a pair into one i64.
-      const memory = instance.exports.memory;
-      const callSolve = (input) => {
-        const values = Object.values(input);
-        let args = values;
-        if (memory) {
-          let offset = 0, usedMemory = false;
-          const marshaled = [];
-          for (const v of values) {
-            if (Array.isArray(v)) {
-              usedMemory = true;
-              const view = new Int32Array(memory.buffer, offset, v.length);
-              view.set(v);
-              marshaled.push(offset, v.length);
-              offset += v.length * 4;
-            } else {
-              marshaled.push(v);
-            }
-          }
-          if (usedMemory) args = marshaled;
-        }
-        return solve(...args);
-      };
-      return { measure: (cases, opts) => caseLoop(callSolve, cases, opts) };
-    }
+    // L3: compile+execute moved off the main thread into wat-worker.js.
+    // Unlike the retro CPU emulators (a hard maxSteps ceiling built
+    // into their step loop), raw WebAssembly execution has NO built-in
+    // bound at all -- directly confirmed (a hand-crafted minimal WASM
+    // module, no wabt needed, plus a real, reported example: a fib
+    // loop with its decrement accidentally removed, which hangs the
+    // page with zero safeguard): a genuine infinite loop inside an
+    // exported function hangs the calling thread indefinitely. Same
+    // class of unbounded-hang risk L3 originally fixed for JavaScript,
+    // not defense-in-depth the way the retro migration mostly was. See
+    // wat-worker.js's own header comment for the fuller reasoning.
+    //
+    // One persistent worker for the whole page session (like the JS
+    // Run button's jsRunWorkerState, not like retro's per-language
+    // state -- there's only one WAT language). Classic worker
+    // (importScripts), not module -- matches how vendor/wat/index.js
+    // is already loaded on the main thread (a plain script, not an ES
+    // module).
+    const watWorkerState = { worker: null };
+    const WAT_TIMEOUT_MS = 20000;
     return {
-      compile,
-      run(source, cases) {
-        const c = compile(source);
-        return c.error ? c : c.measure(cases);
+      async run(source, cases) {
+        try {
+          const res = await window.callWorker(
+            watWorkerState, "wat-worker.js", { id: "run", source, cases },
+            WAT_TIMEOUT_MS, "Your code took too long to finish (over 20s) -- likely an infinite loop or code much slower than expected on these inputs.");
+          if (res.id === "error") return { error: res.error };
+          const { id, ...out } = res;
+          return out;
+        } catch (e) {
+          return { error: String((e && e.message) || e) };
+        }
       },
     };
   }
