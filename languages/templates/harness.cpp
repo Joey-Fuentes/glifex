@@ -7,6 +7,7 @@
 Value practice(const Input&);
 Value clean(const Input&);
 Value optimized(const Input&);
+__attribute__((weak)) Value bruteforce(const Input&);
 
 int main(int argc, char** argv) {
     std::string variant = argc > 1 ? argv[1] : "practice";
@@ -15,6 +16,7 @@ int main(int argc, char** argv) {
     auto cases = Json::parse(buf.str());
     auto dispatch = [&](const Input& c) {
         if (variant == "practice") return practice(c);
+        if (variant == "brute-force") return bruteforce(c);
         if (variant == "clean") return clean(c);
         return optimized(c);
     };

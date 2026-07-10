@@ -12,6 +12,7 @@
    without colliding -- practice.c's real, unrenamed "solve" is the only
    one left with that name in the final binary. */
 JVal *solve(JVal *c);
+JVal *__glifex_ref_bruteforce(JVal *c) __attribute__((weak));
 JVal *__glifex_ref_clean(JVal *c);
 JVal *__glifex_ref_optimized(JVal *c);
 
@@ -29,6 +30,7 @@ int main(int argc, char **argv) {
     int bench = argc > 2 && !strcmp(argv[2], "--bench");
     JVal *cases = json_parse(read_file("../test_cases.json"));
     JVal *(*fn)(JVal *) = !strcmp(variant, "practice") ? solve
+                        : !strcmp(variant, "brute-force") ? __glifex_ref_bruteforce
                         : !strcmp(variant, "clean") ? __glifex_ref_clean : __glifex_ref_optimized;
     if (bench) {
         double best = 1e18;
