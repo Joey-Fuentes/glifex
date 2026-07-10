@@ -1,6 +1,9 @@
-export function solve(c: { nums: number[]; target: number }): number[] {
-  const nums = c.nums, target = c.target;
-  // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.
-  return [];
+export function solve(c: any): number[] | null {
+  const seen: Record<number, number> = {};
+  for (let i = 0; i < c.nums.length; i++) {
+    const need = c.target - c.nums[i];
+    if (need in seen) return [seen[need], i];
+    seen[c.nums[i]] = i;
+  }
+  return null;
 }
-

@@ -3,7 +3,10 @@
 JVal *solve(JVal *c) {
     JVal *nums = jget(c, "nums");
     double target = jget(c, "target")->num;
-    /* Return the indices [i, j] (i < j) of the two numbers in nums that add up to target. */
+    for (int i = 0; i < nums->n; i++)
+        for (int j = i + 1; j < nums->n; j++)
+            if (nums->items[i]->num + nums->items[j]->num == target) {
+                JVal *r = jarr_(2); jpush_(r, jnum_(i)); jpush_(r, jnum_(j)); return r;
+            }
     return jarr_(0);
 }
-

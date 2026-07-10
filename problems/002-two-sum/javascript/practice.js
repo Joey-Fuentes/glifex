@@ -1,6 +1,9 @@
 module.exports = function solve(c) {
-  const nums = c.nums, target = c.target;
-  // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.
-  return [];
+  const seen = {};
+  for (let i = 0; i < c.nums.length; i++) {
+    const need = c.target - c.nums[i];
+    if (need in seen) return [seen[need], i];
+    seen[c.nums[i]] = i;
+  }
+  return null;
 };
-

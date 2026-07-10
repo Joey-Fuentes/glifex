@@ -226,14 +226,17 @@ jobs:
   # explicitly fails if any of them isn't a genuine "success". Point
   # branch protection's required check at THIS job, not at e2e directly
   # -- see the repo's Settings > Branches (not something this workflow
-  # file can configure by itself).
+  # file can configure by itself). Deliberately no `name:` field here --
+  # GitHub then reports it under the job id itself ("ci-status-gate"),
+  # so the string typed into Settings > Branches, the job id in this
+  # file, and what actually gets reported are all the same one string,
+  # not two that can silently drift apart.
   #
   # matrix and security are deliberately excluded: both are currently
   # disabled (if: ${{ false }}), so their result is always "skipped" by
   # design, not a real signal -- including them here would permanently
   # block every merge. Add them back in if/when they're re-enabled.
   ci-status-gate:
-    name: CI status gate (required check)
     needs: [lint, corpus, playground, e2e]
     if: always()
     runs-on: ubuntu-latest
