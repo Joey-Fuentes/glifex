@@ -8,7 +8,7 @@
 // the WASIX C/C++ toolchain requires -- needs the page to be crossOriginIsolated.
 // Every Glifex asset is same-origin, so require-corp blocks nothing.
 const CACHE = "glifex-dev";
-const ASSETS = ["./", "index.html", "style.css", "app.js", "md.js", "assertions.js", "runtimes.js", "storage.js", "editor.js", "js-runtime.js", "js-lab-worker.js", "lab.js", "lab-engine.mjs", "lab-config.mjs", "wiring.js", "problems.generated.json", "privacy.html", "licenses.html", "c-worker.js", "cpp-worker.js", "retro-worker.js", "wat-worker.js"];
+const ASSETS = ["./", "index.html", "style.css", "app.js", "md.js", "assertions.js", "runtimes.js", "storage.js", "editor.js", "js-runtime.js", "js-lab-worker.js", "lab.js", "lab-engine.mjs", "lab-config.mjs", "wiring.js", "problems.generated.json", "privacy.html", "licenses.html", "c-worker.js", "cpp-worker.js", "retro-worker.js", "wat-worker.js", "ts-worker.js"];
 
 function coi(res) {
   if (!res || res.status === 0) return res;   // opaque response -- leave untouched

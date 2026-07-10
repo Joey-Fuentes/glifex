@@ -162,42 +162,33 @@ const Runtimes = (() => {
   // -- TypeScript: vendored compiler transpiles, then runs as JS --------
   async function loadTypeScript() {
     if (!(await vendored("typescript"))) return null;
-    await script("vendor/typescript/typescript.js");   // exposes window.ts
-    // compile() separates COMPILE from MEASURE: the Complexity Lab calls the
-    // same source multiple times (a warm-up pass, then several measured
-    // reps), and re-transpiling + re-running `new Function(...)` on every
-    // call created a brand-new, cold function object each time -- defeating
-    // the engine's JIT tiering across the whole warm-up+reps sequence (this
-    // was the confirmed root cause of the wall-tier DCE/noise known issue
-    // for js-runtime.js; same pattern applies here). compile() runs the
-    // transpile + Function-construction ONCE; the returned measure() reuses
-    // the SAME solve reference for as many calls as the caller wants.
-    function compile(source) {
-      let js;
-      try {
-        js = window.ts.transpileModule(source, {
-          compilerOptions: { module: window.ts.ModuleKind.CommonJS, target: window.ts.ScriptTarget.ES2020 },
-        }).outputText;
-      } catch (e) {
-        return { error: "TS transpile error: " + String(e.message || e) };
-      }
-      const mod = { exports: {} };
-      try {
-        new Function("module", "exports", js)(mod, mod.exports);
-      } catch (e) {
-        return { error: "Compile error: " + String(e.message || e) };
-      }
-      const solve = mod.exports.solve || mod.exports;
-      if (typeof solve !== "function") return { error: "no solve() exported" };
-      return { measure: (cases, opts) => caseLoop(solve, cases, opts) };
-    }
+    // L3: transpile+execute moved off the main thread into
+    // ts-worker.js. Same class of hang risk as plain JavaScript
+    // (already fixed by L3's earlier JS work) -- once transpiled,
+    // this is just `new Function(...)` executing ordinary JS, no
+    // different from js-runtime.js's own compileJavaScript(). See
+    // ts-worker.js's own header comment for the fuller reasoning.
+    //
+    // One persistent worker for the whole page session (like the JS
+    // Run button's jsRunWorkerState, not like retro's per-language
+    // state -- there's only one TypeScript language). Classic worker
+    // (importScripts), not module -- matches how
+    // vendor/typescript/typescript.js is already loaded on the main
+    // thread (a plain script, not an ES module).
+    const tsWorkerState = { worker: null };
+    const TS_TIMEOUT_MS = 20000;
     return {
-      compile,
-      // Kept for the non-Lab callers (the plain Run button): a single
-      // compile + single measure, exactly the old behavior.
-      run(source, cases) {
-        const c = compile(source);
-        return c.error ? c : c.measure(cases);
+      async run(source, cases) {
+        try {
+          const res = await window.callWorker(
+            tsWorkerState, "ts-worker.js", { id: "run", source, cases },
+            TS_TIMEOUT_MS, "Your code took too long to finish (over 20s) -- likely an infinite loop or code much slower than expected on these inputs.");
+          if (res.id === "error") return { error: res.error };
+          const { id, ...out } = res;
+          return out;
+        } catch (e) {
+          return { error: String((e && e.message) || e) };
+        }
       },
     };
   }
