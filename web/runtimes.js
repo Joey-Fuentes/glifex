@@ -412,93 +412,89 @@ const Runtimes = (() => {
   // wasm, then run it: the harness reads ../test_cases.json and prints PASS/FAIL
   // per case, which we parse into the usual {results, nsPerCase} shape. Same
   // artifact as the CLI harness.
+  //
+  // A FRESH Worker (web/c-worker.js) is spawned for EVERY run() call and
+  // terminated afterward -- unlike loadCpp() below, which spawns ONE
+  // persistent worker and reuses it (fine for that toolchain; NOT fine
+  // for this one). Confirmed necessary in two stages, not guessed
+  // upfront: an earlier fix re-instantiated just the compiled `clang`
+  // module fresh per call, within a single long-lived session -- still
+  // hung on a second, fully sequential run (browser console: uncaught
+  // "RuntimeError: unreachable" inside wasmer_js_bg.wasm, escaping as a
+  // silent hang since it happened inside a shared context rather than
+  // propagating a rejected Promise). An independent developer building a
+  // similar in-browser clang/LLVM tool on this exact SDK documented the
+  // identical symptom after "launching more than a couple programs", and
+  // their confirmed fix required a genuinely fresh execution context --
+  // a new Worker with the SDK completely re-imported and re-initialized
+  // -- for every single run, not just fresh module instances within a
+  // shared one. (https://lights0123.com/blog/2025/01/07/hip-script/)
+  // An earlier, separate fix added a mutual-exclusion lock between Run
+  // and Analyze on the assumption overlapping calls were the trigger;
+  // that lock is still correct and worth keeping (real concurrency risk
+  // exists independently), but was confirmed NOT sufficient for this.
+  //
+  // Costs a fresh worker spawn + SDK re-init + clang re-instantiation on
+  // every C run instead of just the first -- real overhead, but far
+  // better than a hang requiring a hard refresh. dt (compile+run timing)
+  // is measured INSIDE the worker, bracketing only that region exactly
+  // as before -- excludes this new spawn/init overhead, which would
+  // otherwise leak into nsPerCase and distort the Complexity Lab's
+  // growth-rate measurements for C.
   async function loadC() {
     if (!(await vendored("c"))) return null;
-    const { init, Wasmer, Directory } = await import("./vendor/c/index.mjs");
-    await init();   // loads the sibling wasmer_js_bg.wasm (vendored) -- offline
-    const webc = new Uint8Array(await (await fetch("vendor/c/clang.webc")).arrayBuffer());
-    // webc (the raw bytes) is cached here, loaded once per session -- but
-    // NOT the compiled `clang` module itself. Confirmed directly (repro:
-    // Analyze/Run C once, wait for it to FULLY finish, run it again --
-    // hangs every time, no concurrency or overlapping calls involved):
-    // Wasmer's entrypoint.run() behaves like a single-use process
-    // invocation, not a reusable one. A second call on the SAME compiled
-    // module instance hangs the underlying WASM instance indefinitely --
-    // and since a hung `clang` here is cached and reused for every future
-    // caller (see runtimes.js's module-level cache in Runtimes.get),
-    // every subsequent Run or Analyze for ANY language hangs too, matching
-    // the originally reported "breaks badly... stops working for all
-    // languages until a hard refresh." An earlier fix added a mutual-
-    // exclusion lock between Run and Analyze on the assumption that
-    // OVERLAPPING calls were the trigger; that lock is still correct and
-    // worth keeping (real concurrency risk exists and is now prevented),
-    // but confirmed NOT sufficient on its own -- the hang persisted even
-    // strictly sequentially. This is the actual fix: never reuse a
-    // `clang` instance across calls at all. Costs re-instantiating the
-    // module (from the already-cached bytes, not a repeated ~100MB
-    // network fetch) on every C run instead of just the first -- a real
-    // trade-off, but far better than a hang requiring a hard refresh.
-    // Mirrors the pattern already used a few lines below for `prog` (the
-    // compiled user program), which was ALREADY being freshly
-    // instantiated per call without issue.
     return {
       async run(source, cases, lang) {
-        const L = lang || {};
-        const sup = L.support || {};
+        const worker = new Worker("c-worker.js");
+        let res;
         try {
-          const clang = await Wasmer.fromFile(webc);   // fresh instance every call -- see comment above
-          // One Directory mounted at "/": test_cases.json at the root and sources
-          // under /c, run with cwd /c so the harness's "../test_cases.json"
-          // resolves to /test_cases.json whether or not cwd is honored.
-          const dir = new Directory();
-          await dir.createDir("/c");
-          await dir.writeFile("/test_cases.json", JSON.stringify(cases));
-          await dir.writeFile("/c/practice.c", source);
-          await dir.writeFile("/c/clean.c", L.clean || "");
-          await dir.writeFile("/c/optimized.c", L.optimized || "");
-          await dir.writeFile("/c/harness.c", sup["harness.c"] || "");
-          await dir.writeFile("/c/json.h", sup["json.h"] || "");
-          await dir.writeFile("/c/solution.h", sup["solution.h"] || "");
-
-          const t0 = performance.now();
-          const MP = "/project";   // named mount (root-mount is not honored)
-          const comp = await clang.entrypoint.run({
-            args: ["-O2", "-std=c11", MP + "/c/practice.c", MP + "/c/clean.c", MP + "/c/optimized.c",
-                   MP + "/c/harness.c", "-o", MP + "/c/out.wasm"],
-            mount: { [MP]: dir },
-          });
-          const cres = await comp.wait();
-          if (!cres.ok) return { error: "compile error:\n" + String(cres.stderr || "").trim().slice(0, 800) };
-
-          const wasm = await dir.readFile("/c/out.wasm");
-          const prog = await Wasmer.fromFile(wasm);
-          const rres = await (await prog.entrypoint.run({
-            args: ["practice", "--metrics"], mount: { [MP]: dir }, cwd: MP + "/c",   // L1-c-args
-          })).wait();
-          const dt = performance.now() - t0;
-
-          const out = String(rres.stdout || "");
-          const byI = new Map(), metricByI = new Map();   // L1-c-parse
-          for (const line of out.split("\n")) {
-            const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
-            if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
-            const mm = line.match(/\[METRIC\]\s+case\s+(\d+)\s+ns=(\d+)/);
-            if (mm) metricByI.set(Number(mm[1]), Number(mm[2]));
-          }
-          if (byI.size === 0) return { error: "no case results from harness:\n" + out.trim().slice(0, 600) };
-
-          const results = cases.map((c, i) => {
-            const r = byI.get(i);
-            if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
-            const tNs = metricByI.get(i);   // L1-c-rows
-            if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected, tNs };
-            return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected, tNs };
-          });
-          const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
-          return { results, nsPerCase };
+          res = await Promise.race([
+            new Promise((resolve, reject) => {
+              const cleanup = () => { worker.removeEventListener("message", onmsg); worker.removeEventListener("error", onerr); };
+              const onmsg = (e) => { cleanup(); resolve(e.data || {}); };
+              const onerr = (e) => { cleanup(); reject(new Error(String((e && e.message) || e))); };
+              worker.addEventListener("message", onmsg);
+              worker.addEventListener("error", onerr);
+              worker.postMessage({ id: "run", source, cases, lang });
+            }),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("C worker timed out after 90s (likely stuck; terminated)")), 90000)),
+          ]);
         } catch (e) {
           return { error: "C runtime error: " + String((e && e.message) || e) };
+        } finally {
+          // Always runs, whichever branch of the race above settled --
+          // including the local timeout, so a stuck worker can't leak.
+          // (The outer app-level runtime lock also has its own 2-minute
+          // timeout, but that one only stops WAITING on this call, it
+          // can't reach in and terminate the worker itself -- this local
+          // one, shorter and specific to this call, is what actually
+          // cleans it up.)
+          worker.terminate();
         }
+
+        if (res.id === "error")
+          return { error: "C runtime error:\n" + String(res.error || "").slice(0, 400) + (res.output ? "\n" + String(res.output).trim().slice(0, 600) : "") };
+
+        const out = String(res.output || "");
+        const byI = new Map(), metricByI = new Map();   // L1-c-parse
+        for (const line of out.split("\n")) {
+          const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
+          if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
+          const mm = line.match(/\[METRIC\]\s+case\s+(\d+)\s+ns=(\d+)/);
+          if (mm) metricByI.set(Number(mm[1]), Number(mm[2]));
+        }
+        if (byI.size === 0) return { error: "no case results from harness:\n" + out.trim().slice(0, 600) };
+
+        const results = cases.map((c, i) => {
+          const r = byI.get(i);
+          if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
+          const tNs = metricByI.get(i);   // L1-c-rows
+          if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected, tNs };
+          return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected, tNs };
+        });
+        const nsPerCase = cases.length ? (res.dt * 1e6) / cases.length : 0;
+        return { results, nsPerCase };
       },
     };
   }
