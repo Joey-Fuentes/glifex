@@ -205,35 +205,32 @@ const Runtimes = (() => {
   // -- Python: Pyodide (CPython on WASM) --------------------------------
   async function loadPython() {
     if (!(await vendored("python"))) return null;
-    // L3: Pyodide setup+execute moved off the main thread into
-    // python-worker.js. Same class of unbounded-hang risk as the
-    // other L3 migrations: a genuine infinite loop in a user's Python
-    // solve() has no built-in step-count safeguard. See
-    // python-worker.js's own header comment for the fuller reasoning,
-    // including why Pyodide's official Worker support makes the
-    // "does the global get exposed correctly" question lower-risk
-    // here than it was for WAT/TypeScript (still confirmed directly,
-    // not just assumed).
-    //
-    // One persistent worker for the whole page session (like the JS
-    // Run button's jsRunWorkerState -- there's only one Python
-    // language). Classic worker (importScripts): matches how
-    // vendor/python/pyodide.js is already loaded on the main thread
-    // (a plain script, not an ES module).
-    const pythonWorkerState = { worker: null };
-    const PYTHON_TIMEOUT_MS = 20000;
+    await script("vendor/python/pyodide.js");
+    const py = await window.loadPyodide({ indexURL: "vendor/python/" });
+    // compile() runs py.runPython(source) ONCE (defining solve() in the
+    // shared Pyodide globals) and returns a measure() that reuses the SAME
+    // solve proxy across every call -- see the TypeScript loader above for
+    // why this matters (same pattern, same reason).
+    function compile(source) {
+      try {
+        py.runPython(source);
+      } catch (e) {
+        return { error: "Compile error: " + String(e.message || e) };
+      }
+      const solve = py.globals.get("solve");
+      if (typeof solve !== "function") return { error: "no solve() defined" };
+      const callSolve = (input) => {
+        const r = solve(py.toPy(input));
+        const v = r && typeof r.toJs === "function" ? r.toJs({ create_proxies: false }) : r;
+        return v instanceof Map ? Object.fromEntries(v) : v;
+      };
+      return { measure: (cases, opts) => caseLoop(callSolve, cases, opts) };
+    }
     return {
-      async run(source, cases) {
-        try {
-          const res = await window.callWorker(
-            pythonWorkerState, "python-worker.js", { id: "run", source, cases },
-            PYTHON_TIMEOUT_MS, "Your code took too long to finish (over 20s) -- likely an infinite loop or code much slower than expected on these inputs.");
-          if (res.id === "error") return { error: res.error };
-          const { id, ...out } = res;
-          return out;
-        } catch (e) {
-          return { error: String((e && e.message) || e) };
-        }
+      compile,
+      run(source, cases) {
+        const c = compile(source);
+        return c.error ? c : c.measure(cases);
       },
     };
   }
@@ -283,15 +280,32 @@ const Runtimes = (() => {
   // -- Database: PGlite (Postgres compiled to WASM) --------------------
   async function loadPostgres() {
     if (!(await vendored("postgres"))) return null;
-    const { PGlite } = await import("./vendor/postgres/index.js");
+    // L3: PGlite setup+execute moved off the main thread into
+    // postgres-worker.js. Same class of unbounded-hang risk as the
+    // other L3 migrations: a malicious or buggy query (e.g. an
+    // unbounded recursive CTE) has no built-in step-count safeguard --
+    // directly confirmed (a real `WITH RECURSIVE` query with no
+    // terminating condition) against the real vendored PGlite. Module
+    // worker, matching how vendor/postgres/index.js is already loaded
+    // on the main thread (a genuine ES module dynamic import).
+    //
+    // One persistent worker for the whole page session (like the JS
+    // Run button's jsRunWorkerState -- there's only one Postgres
+    // "language"). The query() interface below is unchanged -- this
+    // is the only loader whose public shape isn't run(source, cases)
+    // (app.js's database-track handling calls .query(schema, seed,
+    // sql) directly), so the worker call is wrapped to preserve it
+    // exactly rather than reshaping the caller.
+    const postgresWorkerState = { worker: null };
+    const POSTGRES_TIMEOUT_MS = 20000;
     return {
       async query(schema, seed, sql) {
-        const db = new PGlite();                       // in-memory, throwaway
-        await db.exec(schema);
-        await db.exec(seed);
-        const res = await db.query(sql);
-        await db.close();
-        return res.rows.map((r) => Object.values(r));
+        const res = await window.callWorker(
+          postgresWorkerState, "postgres-worker.js", { id: "run", schema, seed, sql },
+          POSTGRES_TIMEOUT_MS, "Your query took too long to finish (over 20s) -- likely an unbounded recursive query or a query much slower than expected.",
+          { type: "module" });
+        if (res.id === "error") throw new Error(res.error);
+        return res.rows;
       },
     };
   }
