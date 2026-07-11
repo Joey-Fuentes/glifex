@@ -17,18 +17,25 @@ JVal *__glifex_ref_clean(JVal *c);
 JVal *__glifex_ref_optimized(JVal *c);
 
 static char *read_file(const char *path) {
+    printf("[BEFORE-OPEN] %s\n", path); fflush(stdout);
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "cannot open %s\n", path); exit(2); }
+    printf("[AFTER-OPEN]\n"); fflush(stdout);
     fseek(f, 0, SEEK_END); long n = ftell(f); rewind(f);
     char *buf = malloc(n + 1);
     if (fread(buf, 1, n, f) != (size_t)n) { fprintf(stderr, "read error\n"); exit(2); }
-    buf[n] = 0; fclose(f); return buf;
+    buf[n] = 0; fclose(f);
+    printf("[AFTER-READ] len=%ld\n", n); fflush(stdout);
+    return buf;
 }
 
 int main(int argc, char **argv) {
+    printf("[MAIN-START]\n"); fflush(stdout);
     const char *variant = argc > 1 ? argv[1] : "practice";
     int bench = argc > 2 && !strcmp(argv[2], "--bench");
-    JVal *cases = json_parse(read_file("../test_cases.json"));
+    char *raw = read_file("../test_cases.json");
+    JVal *cases = json_parse(raw);
+    printf("[AFTER-JSON-PARSE] n=%d\n", cases->n); fflush(stdout);
     JVal *(*fn)(JVal *) = !strcmp(variant, "practice") ? solve
                         : !strcmp(variant, "brute-force") ? __glifex_ref_bruteforce
                         : !strcmp(variant, "clean") ? __glifex_ref_clean : __glifex_ref_optimized;
