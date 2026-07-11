@@ -10,9 +10,9 @@ Value optimized(const Input& c) {
     double target = c.obj.at("target")->num;
 
     constexpr int CAP = 4096;
-    static thread_local double keys[CAP];
-    static thread_local int idxs[CAP];
-    static thread_local bool used[CAP];
+    static double keys[CAP];
+    static int idxs[CAP];
+    static bool used[CAP];
     std::memset(used, 0, sizeof(used));
 
     int n = (int)nums.size();
