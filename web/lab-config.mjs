@@ -44,18 +44,34 @@ export const TIERS = {
 
 // Per-language overrides: compiled-in-browser toolchains repeat per case
 // inside the harness (stable medians from one run), so lab-level reps stay
-// at 1 to avoid recompiling; their ladders are also capped -- compile time
-// dwarfs execution and JSON marshaling grows with n.
+// at 1 to avoid repeating the WHOLE ladder multiple times -- NOT to avoid
+// per-point recompiles: buildPlan() already batches every size into ONE
+// test_cases.json, so a single Analyze click is already exactly one
+// compile regardless of ladder length (confirmed directly in c-worker.js:
+// the full plan is JSON.stringify'd once and read once by the harness,
+// which loops over every case internally in one execution -- same
+// one-compile-many-cases shape "Run" uses for the fixed correctness
+// cases). maxSizes bounds the total duration of that one batched call
+// (JSON marshaling + the harness's own per-case adaptive-repeat timing
+// loop, both of which grow with the ladder), not the number of compiles.
+//
+// maxSizes: 10 is grounded in a real, observed measurement, not a guess:
+// the 4-point ladder (3 modes x 4 sizes = 12 cases) took ~20s end to end
+// on 001/C. Since compile is the fixed, dominant cost and doesn't scale
+// with ladder length, extending to the full 10-point ladder was estimated
+// at roughly another ~20s (~40s total) -- comfortably under the 120s
+// outer runtime-lock timeout (app.js's RUNTIME_TIMEOUT_MS), which wraps
+// the whole Analyze call. Re-measure if the ladder grows further.
 export const LANG_OVERRIDES = {
-  c: { reps: 1, maxSizes: 4 },
-  cpp: { reps: 1, maxSizes: 4 },
+  c: { reps: 1, maxSizes: 10 },
+  cpp: { reps: 1, maxSizes: 10 },
   php: { maxSizes: 4 },
 };
 
 export const PROBLEMS = {
   "001-anagram-detection": {
     sizeLabel: "string length n",
-    sizes: { wall: [64, 128, 256, 512, 1024] },
+    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768] },
     declared: { upper: "O(n)", lower: "O(1)" },
     roles: { upper: "worst", lower: "best" },
     modes: [
@@ -67,7 +83,7 @@ export const PROBLEMS = {
 
   "002-two-sum": {
     sizeLabel: "array length n",
-    sizes: { wall: [64, 128, 256, 512, 1024] },
+    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768] },
     declared: { upper: "O(n)", lower: "O(1)" },
     roles: { upper: "worst", lower: "best" },
     // Base array: distinct even values, shuffled; target = odd (sum of the

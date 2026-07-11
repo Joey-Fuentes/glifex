@@ -138,7 +138,7 @@ ok(CLASSES.length === 6, "fitted model set mirrors the polynomial whitelist");
 }
 {
   const capped = buildPlan(PROBLEMS["001-anagram-detection"], "wall", "cpp", "s");
-  ok(capped.sizes.length === 4, "compiled-language ladder is capped");
+  ok(capped.sizes.length === 10, "compiled-language ladder is capped (maxSizes: 10, per LANG_OVERRIDES)");
   const det = buildPlan(PROBLEMS["003-nth-fibonacci"], "det", "i8080", "s");
   ok(Math.max(...det.sizes) <= 24, "retro fib ladder respects the u16 result contract");
 }

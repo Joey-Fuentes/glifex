@@ -241,7 +241,7 @@ const GlifexLab = (() => {
     const repDurations = [];      // wall time for the WHOLE runOnce() call, one entry per rep
     let detMeta = null;
     for (let r = 0; r < reps; r++) {
-      progress(panel, `Running ${plan.length} cases &mdash; ${cfg.modes.length} input famil${cfg.modes.length > 1 ? "ies" : "y"} \u00d7 ${sizes.length} sizes (pass ${r + 1}/${reps})\u2026`);
+      progress(panel, `Running ${plan.length} cases: ${cfg.modes.length} input famil${cfg.modes.length > 1 ? "ies" : "y"} \u00d7 ${sizes.length} sizes (pass ${r + 1}/${reps})\u2026`);
       const t0 = performance.now();
       const out = await runOnce(cases);
       repDurations.push(performance.now() - t0);
