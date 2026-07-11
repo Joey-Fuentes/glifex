@@ -83,9 +83,16 @@ All under repo **Settings**:
 - [ ] **Code security → Dependabot**: enable alerts + security updates
       (the `.github/dependabot.yml` version-update config is already in the repo)
 - [ ] **Branches → Add rule for `main`**: require status checks before merge
-      (add them after the first CI run so the check names exist), require
-      linear history, and set **squash merge** as the only merge method
-      (Settings → General → Pull Requests)
+      -- specifically **`ci-status-gate`** (a single job in `ci.yml` that
+      depends on every other job and explicitly fails unless all of them
+      genuinely succeeded), not `e2e` or any individual leg. A skipped
+      required check satisfies branch protection the same as a passed one --
+      requiring an individual job whose own `needs:` can skip it under
+      failure is a real trap, not a hypothetical one: see
+      [docs/ci-cd.md](ci-cd.md) for the incident this caused and why
+      `ci-status-gate` exists. Also require linear history, and set
+      **squash merge** as the only merge method (Settings → General →
+      Pull Requests)
 - [ ] Optional: install **CodeRabbit** from the Marketplace — but leave it
       **advisory**; do not add it to required checks
 - [ ] Optional: Settings → Pages, if you want the playground served from

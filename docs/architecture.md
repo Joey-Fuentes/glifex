@@ -81,6 +81,26 @@ never a required check: merge ability must not depend on third-party SaaS uptime
 Secrets are caught pre-commit (gitleaks) and by GitHub push protection — CI
 scanning is the backstop; on a public repo, a secret reaching CI is already burned.
 
+## Decision 9 — A required check must itself be required, and must actually be reported
+
+A red `playground` job still deployed once: its downstream `e2e` job (`needs:
+[playground]`) was skipped rather than failed, and GitHub's branch protection
+treats a **skipped** required check as satisfying it, not blocking it — only a
+genuinely failed one blocks a merge. Fixed with a single `ci-status-gate` job
+that depends on every real job, runs unconditionally (`if: always()`), and
+explicitly fails unless every dependency's result is `success` — required
+status checks point at *this* job, not at any individual leg. A second,
+independent gap let it through anyway: Deploy Pages triggered on `push:
+{branches: [main]}` with zero awareness of whether CI had passed at all: fixed
+by switching to a `workflow_run` trigger gated on `conclusion == 'success'`,
+checking out the exact commit CI tested rather than assuming `main` hasn't
+moved. Verified by deliberately breaking each gate on a real PR and confirming
+merge/deploy correctly refused, not just by reasoning about the YAML. Full
+incident account, every gotcha (including a required-check name silently not
+matching what the job actually reports, which reintroduces the same failure
+mode from a different angle), and the verification methodology: [CI/CD
+pipeline](ci-cd.md).
+
 ## Invariants
 
 Decisions above are choices; these are the load-bearing rules a change must not
