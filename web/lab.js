@@ -195,9 +195,9 @@ const GlifexLab = (() => {
     progress(panel, "Probing runtime tier\u2026");
     const runner = lang === "javascript" ? "js" : await window.Runtimes.get(lang);
     if (!runner) return void (panel.innerHTML = card(`<div class="lab-verdict bad">Runtime for ${esc(lang)} is not available${window.Runtimes.error(lang) ? ": " + esc(window.Runtimes.error(lang)) : ""}.</div>`));
-    const runOnce = async (cases, modeSize) => runner === "js"
+    const runOnce = async (cases) => runner === "js"
       ? await runJsInWorker(source, cases)
-      : await runner.run(source, cases, p.languages[lang], modeSize);
+      : await runner.run(source, cases, p.languages[lang]);
 
     const probePlan = C.buildPlan(cfg, "wall", lang, "probe").plan.slice(0, 1);
     const probe = await runOnce(probePlan.map((c) => mkCase(c, oracle)));
@@ -218,7 +218,7 @@ const GlifexLab = (() => {
     const warm = tierId === "wall" && !(C.LANG_OVERRIDES[lang] && C.LANG_OVERRIDES[lang].reps === 1);
     if (warm) {
       progress(panel, "Warm-up pass (JIT settle; discarded)\u2026");
-      const w = await runOnce(cases, sizes.length);
+      const w = await runOnce(cases);
       if (w.error) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${esc(w.error)}</div>`));
     }
     // Correctness gate: a wrong solution must never reach the fitter.
@@ -240,10 +240,19 @@ const GlifexLab = (() => {
     const repRows = [];
     const repDurations = [];      // wall time for the WHOLE runOnce() call, one entry per rep
     let detMeta = null;
+    const maxRetries = (C.LANG_OVERRIDES[lang] && C.LANG_OVERRIDES[lang].retryOnError) || 0;
+    let totalRetries = 0;         // surfaced in the final output, never silent -- see retryOnError's own comment
     for (let r = 0; r < reps; r++) {
       progress(panel, `Running ${plan.length} cases: ${cfg.modes.length} input famil${cfg.modes.length > 1 ? "ies" : "y"} \u00d7 ${sizes.length} sizes (pass ${r + 1}/${reps})\u2026`);
       const t0 = performance.now();
-      const out = await runOnce(cases, sizes.length);
+      let out, attempt = 0;
+      for (;;) {
+        out = await runOnce(cases);
+        if (!out.error || attempt >= maxRetries) break;
+        attempt++;
+        totalRetries++;
+        progress(panel, `Pass ${r + 1}/${reps} hit a runtime error, retrying (attempt ${attempt + 1}/${maxRetries + 1})\u2026`);
+      }
       repDurations.push(performance.now() - t0);
       if (out.error) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${esc(out.error)}</div>`));
       if (out.clockHz) detMeta = { clockHz: out.clockHz };
@@ -298,7 +307,14 @@ const GlifexLab = (() => {
       if (replacementBudgetSpent >= REPLACEMENT_BUDGET_MS) break;
       progress(panel, `Pass ${r + 1}/${reps} looked contaminated (a whole-pass slowdown, not a single point) &mdash; replacing it\u2026`);
       const t0 = performance.now();
-      const out = await runOnce(cases, sizes.length);
+      let out, attempt = 0;
+      for (;;) {
+        out = await runOnce(cases);
+        if (!out.error || attempt >= maxRetries) break;
+        attempt++;
+        totalRetries++;
+        progress(panel, `Pass ${r + 1}/${reps} replacement hit a runtime error, retrying (attempt ${attempt + 1}/${maxRetries + 1})\u2026`);
+      }
       const dt = performance.now() - t0;
       replacementBudgetSpent += dt;
       if (out.error) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${esc(out.error)}</div>`));
@@ -364,10 +380,10 @@ const GlifexLab = (() => {
       // declared claim to test against; render() shows different headline
       // lines for this mode instead of the usual refuted/consistent ones.
       const j = E.judge(modes, cfg.roles, { upper: mv.upperClosest, lower: mv.lowerClosest }, tier.tol);
-      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, mv, variantBounds });
+      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, mv, variantBounds, totalRetries });
     } else {
       const j = E.judge(modes, cfg.roles, declared, tier.tol);
-      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, revealedVariant });
+      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, revealedVariant, totalRetries });
     }
   }
 
@@ -375,7 +391,7 @@ const GlifexLab = (() => {
 
   // ---- rendering ------------------------------------------------------
   function render(panel, X) {
-    const { cfg, tierId, tier, j, boundMode } = X;
+    const { cfg, tierId, tier, j, boundMode, totalRetries } = X;
     const unit = tierId === "det" ? "cycles" : "ns";
     const vline = (kind, html) => `<div class="lab-verdict ${kind}">${html}</div>`;
 
@@ -407,6 +423,7 @@ const GlifexLab = (() => {
         : vline("dim", `No ${THETA} badge: the two families&rsquo; growth does not pin a single class (upper tracks ${j.perMode[up.mode].closest}, lower ${j.perMode[lo.mode].closest}) &mdash; which is itself the point: case spread is real.`);
     }
     if (cfg.note) html += `<p class="lab-note">${esc(cfg.note)}</p>`;
+    if (totalRetries > 0) html += `<p class="lab-note">Note: ${totalRetries} runtime error${totalRetries === 1 ? "" : "s"} occurred and ${totalRetries === 1 ? "was" : "were"} retried before this result completed (a known, intermittent runtime instability -- see docs/ROADMAP.md's Bx-3 entry). The result below reflects only successful runs.</p>`;
 
     html += chart(X, unit);
     html += table(X, unit);
