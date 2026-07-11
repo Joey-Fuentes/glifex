@@ -220,7 +220,18 @@ self.onmessage = async (e) => {
     // (correctness only, no growth-rate math to protect) -- falls back
     // to one chunk covering every case, i.e. today's original,
     // un-chunked behavior.
-    const CHUNK_SIZE = d.modeSize || Infinity;
+    // TEMPORARY DIAGNOSTIC OVERRIDE (not the shipped design): testing
+    // whether an even finer-grained chunk size changes crash behavior
+    // at all. mode-aligned chunking (modeSize, usually 10) made things
+    // WORSE -- 0% success, failing on the very first chunk, versus the
+    // prior ~1% baseline. This intentionally goes small enough to
+    // reintroduce the same measurement-accuracy problem the modeSize
+    // fix solved (see the comment below) -- that tradeoff is accepted
+    // for this specific experiment, to isolate one variable: does
+    // finer-grained re-instantiation help or hurt the actual crash.
+    // This sandbox has never once reproduced the real crash, so the
+    // only way to learn anything here is live testing against it.
+    const CHUNK_SIZE = 2;
     const decoder = new TextDecoder();
     const allCases = d.cases || [];
     for (let chunkStart = 0; chunkStart < allCases.length; chunkStart += CHUNK_SIZE) {
