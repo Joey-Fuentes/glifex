@@ -186,90 +186,34 @@ self.onmessage = async (e) => {
 
     stage = "compiled ok, reading out.wasm";
     const wasm = await dir.readFile("/c/out.wasm");
-    console.log(`[glifex-c-worker] compiled -- ${ctx} out.wasm=${wasm.byteLength}b`);
-
-    // Run in small chunks, each against a FRESH Wasmer.fromFile(wasm)
-    // instantiation, rather than one long-lived instance processing
-    // every case. Rationale: the intermittent "unreachable" trap
-    // (tracked as a known Wasmer SDK issue -- see docs/ROADMAP.md's
-    // Bx-3 entry) has been observed crashing at a case number that
-    // varies between runs of the SAME input, not a fixed threshold --
-    // more consistent with something accumulating across repeated
-    // calls into one instance than with a specific case triggering it.
-    // Re-instantiating periodically (same compiled bytes, no recompile)
-    // is a mitigation for that pattern, not a fix for a known root
-    // cause -- the underlying SDK issue remains genuinely unverified
-    // to be about accumulation at all.
-    //
-    // Chunk size: the Complexity Lab's caller (web/lab.js) passes
-    // `modeSize` -- the number of sizes in its ladder, i.e. exactly how
-    // many consecutive cases belong to the same input family (its
-    // buildPlan() generates cases mode-by-mode, ladder-in-order within
-    // each mode). Chunking at that boundary, not an arbitrary fixed
-    // size, matters: directly measured, a fixed CHUNK_SIZE=3 broke the
-    // Lab's own growth-rate verdicts -- two runs of the identical,
-    // correct clean.c produced two different WRONG verdicts ("no
-    // match" and "matches brute-force O(n^2)"; the real complexity is
-    // O(n)) where the un-chunked version was correct on the same two
-    // runs. Working theory: each fresh instantiation's own cold-start
-    // cost bled into whichever mode/size happened to fall right after
-    // a chunk boundary, distorting the timing comparisons a verdict
-    // depends on. Chunking only BETWEEN modes, never within one, keeps
-    // every point a verdict actually compares (same mode, adjacent
-    // sizes) inside the same instance. Run() doesn't pass modeSize
-    // (correctness only, no growth-rate math to protect) -- falls back
-    // to one chunk covering every case, i.e. today's original,
-    // un-chunked behavior.
-    // TEMPORARY DIAGNOSTIC OVERRIDE (not the shipped design): testing
-    // whether an even finer-grained chunk size changes crash behavior
-    // at all. mode-aligned chunking (modeSize, usually 10) made things
-    // WORSE -- 0% success, failing on the very first chunk, versus the
-    // prior ~1% baseline. This intentionally goes small enough to
-    // reintroduce the same measurement-accuracy problem the modeSize
-    // fix solved (see the comment below) -- that tradeoff is accepted
-    // for this specific experiment, to isolate one variable: does
-    // finer-grained re-instantiation help or hurt the actual crash.
-    // This sandbox has never once reproduced the real crash, so the
-    // only way to learn anything here is live testing against it.
-    const CHUNK_SIZE = 2;
+    stage = "instantiating compiled program";
+    const prog = await Wasmer.fromFile(wasm);
+    stage = "executing";
+    console.log(`[glifex-c-worker] ${stage} -- ${ctx} out.wasm=${wasm.byteLength}b`);
+    const runInst = await prog.entrypoint.run({
+      args: ["practice", "--metrics"], mount: { [MP]: dir }, cwd: MP + "/c",   // L1-c-args
+    });
+    // Pipe stdout into `out` as it's produced, not only once .wait()
+    // resolves -- confirmed a real, supported pattern (not just
+    // theorized): Wasmer's own official examples pipe Instance.stdout
+    // this exact way (e.g. their wasmer.sh in-browser terminal,
+    // github.com/wasmerio/wasmer-js/.../examples/wasmer.sh/index.ts).
+    // If the trap is severe enough to escape even this try/catch
+    // (landing in self.onerror below instead -- see its own comment),
+    // `out` still has whatever was written before the crash, instead
+    // of self.onerror's previous hardcoded empty output. .catch(()=>{})
+    // here: if the pipe itself errors for some unrelated reason, `out`
+    // still keeps whatever arrived before that -- a logging path
+    // failing shouldn't crash the actual run.
     const decoder = new TextDecoder();
-    const allCases = d.cases || [];
-    for (let chunkStart = 0; chunkStart < allCases.length; chunkStart += CHUNK_SIZE) {
-      const chunk = allCases.slice(chunkStart, chunkStart + CHUNK_SIZE);
-      await dir.writeFile("/test_cases.json", JSON.stringify(chunk));
-      stage = `instantiating compiled program (cases ${chunkStart}-${chunkStart + chunk.length - 1})`;
-      const prog = await Wasmer.fromFile(wasm);
-      stage = `executing (cases ${chunkStart}-${chunkStart + chunk.length - 1})`;
-      const runInst = await prog.entrypoint.run({
-        args: ["practice", "--metrics"], mount: { [MP]: dir }, cwd: MP + "/c",   // L1-c-args
-      });
-      // Pipe stdout into `out` as it's produced, not only once .wait()
-      // resolves -- confirmed a real, supported pattern (not just
-      // theorized): Wasmer's own official examples pipe Instance.stdout
-      // this exact way (e.g. their wasmer.sh in-browser terminal,
-      // github.com/wasmerio/wasmer-js/.../examples/wasmer.sh/index.ts).
-      // If the trap is severe enough to escape even this try/catch
-      // (landing in self.onerror below instead -- see its own comment),
-      // `out` still has whatever was written before the crash, including
-      // every earlier chunk that already finished, instead of
-      // self.onerror's previous hardcoded empty output. .catch(()=>{})
-      // here: if the pipe itself errors for some unrelated reason, `out`
-      // still keeps whatever arrived before that.
-      let chunkOut = "";
-      const pipeDone = runInst.stdout.pipeTo(new WritableStream({
-        write(c) { chunkOut += decoder.decode(c, { stream: true }); },
-      })).catch(() => {});
-      await runInst.wait();
-      await pipeDone;   // make sure every already-produced chunk actually reached chunkOut before we read it
-      // The harness numbers cases 0-based WITHIN whatever test_cases.json
-      // it was given -- remap back to this case's true position in the
-      // full plan before appending, so downstream parsing (and anyone
-      // reading the raw output) sees consistent global indices.
-      out += chunkOut.replace(/\bcase (\d+)\b/g, (_, n) => `case ${Number(n) + chunkStart}`);
-    }
+    const pipeDone = runInst.stdout.pipeTo(new WritableStream({
+      write(chunk) { out += decoder.decode(chunk, { stream: true }); },
+    })).catch(() => {});
+    await runInst.wait();
+    await pipeDone;   // make sure every already-produced chunk actually reached `out` before we read it
     const dt = performance.now() - t0;
     stage = "done";
-    console.log(`[glifex-c-worker] ${stage} -- ${ctx} dt=${Math.round(dt)}ms cases=${allCases.length} chunkSize=${Number.isFinite(CHUNK_SIZE) ? CHUNK_SIZE : "none"}`);
+    console.log(`[glifex-c-worker] ${stage} -- ${ctx} dt=${Math.round(dt)}ms`);
 
     self.postMessage({ id: "result", output: out, dt });
   } catch (err) {
