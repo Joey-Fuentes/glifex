@@ -63,12 +63,14 @@ export const TIERS = {
 // outer runtime-lock timeout (app.js's RUNTIME_TIMEOUT_MS), which wraps
 // the whole Analyze call. Re-measure if the ladder grows further.
 export const LANG_OVERRIDES = {
-  // TEMPORARY DIAGNOSTIC: bisecting up from a confirmed-safe maxSizes=3
-  // (up to n=256, ran crash-free across many attempts) toward the
-  // original 10 (up to n=32768). This step: 6 (up to n=2048), halfway
-  // between 3 and 10, narrowing down where instability starts. Not
-  // the shipped value -- revert to 10 once this experiment concludes.
-  c: { reps: 1, maxSizes: 6 },
+  // TEMPORARY DIAGNOSTIC: bisecting C's Analyze maxSizes. Confirmed so
+  // far, directly measured: 3 (up to n=256) -- 0% failures across many
+  // attempts. 5 (up to n=1024, the original pre-extension ladder) --
+  // intermittent failures. 6 (up to n=2048) -- 50-70% failures. This
+  // step: 4 (up to n=512), between the confirmed-safe 3 and
+  // confirmed-unsafe 5. Not the shipped value -- revert to 10 once
+  // this experiment concludes.
+  c: { reps: 1, maxSizes: 4 },
   cpp: { reps: 1, maxSizes: 10 },
   php: { maxSizes: 4 },
 };
