@@ -290,3 +290,50 @@ export function mulberry32(seed) {
   };
 }
 export const hashSeed = (str) => { let h = 0x9e3779b9; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x85ebca6b); return h >>> 0; };
+
+// L4 -- SPACE upper-bound falsifier. Space is judged with the SAME
+// doctrine (refute, never confirm) and the same growth machinery, but the
+// declared space bound is upper-only (the corpus carries a single `space`
+// class per variant; there is no declared space-lower anywhere) and the
+// DOMINANT declared class is O(1) -- most algorithms use constant
+// auxiliary workspace. That O(1) dominance is exactly where reusing
+// classifyGrowth directly fails: its bHat shared-overhead correction,
+// built for TIME's per-call fixed cost, absorbs the ENTIRE constant of a
+// flat O(1) curve, driving every corrected step non-positive and falling
+// to the -10 no-signal sentinel -- so a genuinely O(1)-space algorithm
+// would read as NOT consistent with O(1). (Confirmed directly against the
+// engine before this function existed; it is also a latent limitation of
+// classifyGrowth for ANY O(1) UPPER bound, time or space -- it just never
+// fired for time because no corpus variant declares an O(1) time upper.)
+//
+// So: declared O(1) is judged by a pure, uncorrected flatness test (does
+// measured space grow at all beyond tolerance?); declared O(n)+ is judged
+// by the normal bHat-corrected classifier, where a fixed workspace
+// baseline SHOULD be corrected the same way per-call time overhead is.
+// Returns the judge()-compatible upper shape: { declared, mode, err,
+// verdict, closest }. verdict: "consistent" | "refuted" | "not-tight".
+export function judgeSpaceUpper(ns, ys, declaredSpace, tol) {
+  const cls = classifyGrowth(ns, ys, tol);
+  if (declaredSpace === "O(1)") {
+    // Pure flatness: mean of the scored (top-half, large-n) uncorrected
+    // consecutive log-ratios. Growth above tol refutes O(1); flat is
+    // consistent. No bHat -- a constant baseline IS the O(1) signal here,
+    // not overhead to subtract.
+    const first = Math.max(1, Math.floor(ns.length / 2));
+    const errs = [];
+    for (let i = 1; i < ns.length; i++) {
+      if (i < first) continue;
+      if (ys[i - 1] > 0 && ys[i] > 0) errs.push(Math.log(ys[i] / ys[i - 1]));
+    }
+    const err = errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : 0;
+    return {
+      declared: declaredSpace, mode: null, err, closest: cls.closest,
+      verdict: err > tol ? "refuted" : Math.abs(err) <= tol ? "consistent" : "not-tight",
+    };
+  }
+  const err = cls.errs[declaredSpace];
+  return {
+    declared: declaredSpace, mode: null, err, closest: cls.closest,
+    verdict: err > tol ? "refuted" : Math.abs(err) <= tol ? "consistent" : "not-tight",
+  };
+}

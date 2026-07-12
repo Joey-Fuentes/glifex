@@ -204,3 +204,6 @@ button.ghost.active { color: var(--accent); border-color: var(--accent); }
 .lab-table td.miss { color: var(--fail); }
 .lab-table tr.dropped td { color: var(--muted); opacity: .55; }
 .lab-prov { font-family: var(--mono); font-size: .66rem; color: var(--muted); margin-top: .8rem; border-top: 1px dashed var(--line); padding-top: .5rem; line-height: 1.7; }
+
+/* L4: Complexity Lab Time|Space metric switch */
+.lab-metrictabs { display: flex; gap: .4rem; margin: .6rem 0 .2rem; }
