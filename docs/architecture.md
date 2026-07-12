@@ -106,35 +106,37 @@ pipeline](ci-cd.md).
 A runtime that executes potentially slow or unbounded code belongs in a Web
 Worker with an enforced timeout, not the main thread -- otherwise a hang
 freezes the entire tab with no way to recover short of force-closing it. This
-was independently fixed, in sequence, for TypeScript (#40), Ruby (#41), PHP
-(#42), Python (#43), and Postgres (#44) -- the "L3" work referenced throughout
+was independently fixed, in sequence, for TypeScript, Ruby, PHP, Python, and
+Postgres -- the "L3" work referenced throughout
 `web/*-worker.js`. Each fix moved compile+execute into a dedicated
 `<runtime>-worker.js`, with `load<Runtime>()` in `runtimes.js` reduced to a
 thin wrapper around the shared `window.callWorker()` helper.
 
-By the time PR #44 merged, four of those five fixes had been **silently
-reverted** -- not by anyone editing them back, but by a cascading merge
-pattern: each PR's branch was evidently cut before the previous one merged, so
-merging it reintroduced that previous loader's pre-fix, main-thread version
-while adding its own fix on top. Confirmed by direct git archaeology, not
-inferred: `f51e641` (Ruby, #41) reverts TypeScript's #40 fix; `c43fd68` (PHP,
-#42) reverts Ruby's own #41 fix; `ebf14f8` (Postgres, #44) reverts Python's #43
-fix. `778d697` (Python, #43) reverts PHP's #42 fix too. Postgres alone
-survived, only because no later L3-shaped PR came after it to repeat the
-pattern. At time of writing, `loadTypeScript()`, `loadPython()`, `loadRuby()`,
-and `loadPhp()` all execute directly on the main thread again -- confirmed
-directly for Ruby with a real Playwright click on Analyze, instrumented with a
-`requestAnimationFrame` heartbeat measuring actual main-thread responsiveness
-(not just "did it eventually return"): 88-89% of the run, consistently across
-5 repeated measurements, was one unbroken block where the page could not
-render a frame or process any input.
+By the time the last of those five merged, four of the five fixes had been
+**silently reverted** -- not by anyone editing them back, but by a cascading
+merge pattern: each fix's branch was evidently cut before the previous one
+merged, so merging it reintroduced that previous loader's pre-fix,
+main-thread version while adding its own fix on top. Confirmed by direct git
+archaeology, not inferred: each merge in the chain was verified
+commit-by-commit to have reverted the loader fixed immediately before it.
+Postgres alone survived, only because no later L3-shaped merge came after it
+to repeat the pattern. While the regression was live, `loadTypeScript()`,
+`loadPython()`, `loadRuby()`, and `loadPhp()` all executed directly on the
+main thread again -- confirmed directly for Ruby with a real Playwright click
+on Analyze, instrumented with a `requestAnimationFrame` heartbeat measuring
+actual main-thread responsiveness (not just "did it eventually return"):
+88-89% of the run, consistently across 5 repeated measurements, was one
+unbroken block where the page could not render a frame or process any input.
 
-This is a narrower fix than it looks: `web/ts-worker.js`, `ruby-worker.js`,
+The fix was narrower than it looked: `web/ts-worker.js`, `ruby-worker.js`,
 `php-worker.js`, and `python-worker.js` were never deleted. Byte-for-byte
-diffed against the commit each was originally reviewed and merged at -- all
-four are still fully intact, just orphaned. Restoring the four `load<Runtime>`
-functions to their known-good, already-reviewed shape is what's needed, not a
-rewrite.
+diffed against the version each was originally reviewed and merged at -- all
+four were still fully intact, just orphaned. The resolution, since shipped,
+restored the four `load<Runtime>` functions to that known-good,
+already-reviewed shape -- a restoration, not a rewrite -- and re-measured with
+the same heartbeat instrumentation: main-thread blocking during a Ruby
+Analyze dropped from 88-89% of the run to ~1% (ordinary event-loop noise),
+with all four restored languages passing Run and Analyze afterward.
 
 Worth being precise about why CI didn't catch this, since a test aimed
 squarely at this failure mode already exists: `e2e/runtimes.spec.js`'s own

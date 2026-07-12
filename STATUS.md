@@ -325,11 +325,10 @@ Metric is instruction count (coarse) -- see TODO(cycle-accuracy) in the loaders.
   picks up the RETRO-CONTRACT work (docs/RETRO-CONTRACT.md). Tom Harte validation of
   both cores is deferred until offloaded compute exists (vector sets are millions of cases).
 
-## Operational: fork + minutes diet + never-stale (July 2026)
+## Operational: minutes diet + never-stale (July 2026)
 
-- Development moved temporarily to the CommonEmailDotCom/glifex fork (free-tier
-  Actions/Codespaces exhausted on the main account). Codespaces docs remain valid;
-  current flow is local (Termux) + push. Site: commonemaildotcom.github.io/glifex/.
+- Development is at Joey-Fuentes/glifex; the site is https://glifex.dev.
+  Codespaces docs remain valid; current flow is local (Termux) + push.
 - CI diet: the 3-OS test matrix, security job, retro-smoke and codeql triggers are
   TEMP-disabled (grep `TEMP(free-tier)` to re-enable by deleting marked lines).
   Kept spine: lint -> corpus (staleness + integrity) -> playground -> e2e + pages.
