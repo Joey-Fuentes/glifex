@@ -84,7 +84,7 @@ jobs:
           # B2: content-stamp asset URLs (?v=<sha>) + self-version the SW cache.
           node web/stamp.mjs "$SHA"
           grep glifex-version web/index.html && grep -m1 "app.js?v=" web/index.html && grep "const CACHE" web/sw.js
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - name: Strip repo-only test fixtures from the site artifact
         # web/retro/test-roms are CPU-validation fixtures (incl. GPLv3 CP/M
         # diagnostics) executed only by the test harness -- never deployed.
