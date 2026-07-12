@@ -19,6 +19,46 @@
 <meta name="twitter:title" content="Glifex: polyglot practice playground" />
 <meta name="twitter:description" content="Practice algorithms in 18 languages. Runs in your browser, offline. No account, no tracking." />
 <meta name="twitter:image" content="https://glifex.dev/og.png" />
+<style id="coi-boot-style">
+  html.coi-loading body { visibility: hidden; }
+  html.coi-loading::before { content: ""; position: fixed; inset: 0; z-index: 2147483646; background: #0d1117; }
+  html.coi-loading::after {
+    content: "Enabling fast, isolated timing\2026";
+    position: fixed; inset: 0; z-index: 2147483647;
+    display: flex; align-items: center; justify-content: center;
+    color: #8b949e; font: 500 15px/1.5 system-ui, -apple-system, sans-serif; letter-spacing: .01em;
+  }
+</style>
+<script id="coi-boot">
+// Cross-origin isolation bootstrap (runs before the app renders). sw.js stamps
+// COOP/COEP, but a document is only isolated once it loads THROUGH a controlling
+// SW. On the first visit we aren't isolated yet, so: show a full-screen overlay
+// (so nothing is interactive / no draft can be typed and lost), register the SW,
+// and once it's ready reload once to pick up the headers -- then the reloaded
+// page is isolated and this whole block is skipped, so the overlay never shows.
+// One-shot (coiTried) + an 8s failsafe guarantee the overlay always clears, even
+// on a browser where isolation never engages (it just runs un-isolated).
+// This makes high-res performance.now() (Lab timing) and
+// measureUserAgentSpecificMemory (JS/TS space) available site-wide.
+(function () {
+  try {
+    if (location.protocol.indexOf("http") === 0 && "serviceWorker" in navigator
+        && !self.crossOriginIsolated && !sessionStorage.getItem("coiTried")) {
+      var de = document.documentElement;
+      de.classList.add("coi-loading");
+      var clear = function () { de.classList.remove("coi-loading"); };
+      navigator.serviceWorker.register("sw.js", { updateViaCache: "none" })
+        .then(function () { return navigator.serviceWorker.ready; })
+        .then(function () {
+          try { sessionStorage.setItem("coiTried", "1"); } catch (e) {}
+          if (!self.crossOriginIsolated) location.reload(); else clear();
+        })
+        .catch(clear);
+      setTimeout(clear, 8000);   // failsafe: never let the overlay stick
+    }
+  } catch (e) {}
+})();
+</script>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
