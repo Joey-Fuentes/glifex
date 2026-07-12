@@ -17,11 +17,14 @@ test("JS space: main-thread measurement surfaces the tab + approximate disclaime
   test.skip(browserName !== "chromium", "measureUserAgentSpecificMemory is Chromium-only");
   test.setTimeout(90000);
   page.on("pageerror", (e) => console.error("[pageerror]", e.message));
-  // Stub the window-context API (the one real place it runs). Monotonic bytes so
-  // each before/after pair yields a positive delta -> a real >=2-point series.
+  // Stub the window API with a per-call DELAY so the progressive path is
+  // observable: the verdict + a "measuring memory" note must appear first, then
+  // the Space tab slots in once the background pass completes. Monotonic bytes so
+  // each size shows growth over the baseline -> a real >=2-point series.
   await page.addInitScript(() => {
     let c = 0;
-    performance.measureUserAgentSpecificMemory = async () => { c += 1; return { bytes: 1_000_000 + c * 30000 }; };
+    performance.measureUserAgentSpecificMemory = () =>
+      new Promise((res) => setTimeout(() => { c += 1; res({ bytes: 1_000_000 + c * 30000 }); }, 500));
   });
   await page.goto("http://localhost:8080/");
   await expect(page.locator("#problem-list li").first()).toBeVisible();
@@ -32,10 +35,15 @@ test("JS space: main-thread measurement surfaces the tab + approximate disclaime
   await page.locator("#lab-btn").click();
   await page.locator("#lab .lab-verdict").first().waitFor({ timeout: 75000 });
 
+  // progressive: verdict is up now, with a measuring note, and NO space tab yet
+  await expect(page.locator("#lab")).toContainText(/Measuring memory/i);
+  expect(await page.locator("[data-labmetric='space']").count()).toBe(0);
+
+  // ...then the background pass lands and the tab appears with the disclaimer
   const spaceTab = page.locator("[data-labmetric='space']");
-  await expect(spaceTab).toBeVisible();                     // tab appears only when a space verdict exists
+  await expect(spaceTab).toBeVisible({ timeout: 30000 });
   await spaceTab.click();
   const panel = page.locator("[data-metricpanel='space']");
-  await expect(panel).toContainText(/Approximate/i);       // the honest disclaimer, not the retro "measured exactly" note
+  await expect(panel).toContainText(/Approximate/i);
   await expect(panel).toContainText("measureUserAgentSpecificMemory");
 });

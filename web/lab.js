@@ -172,7 +172,9 @@ const GlifexLab = (() => {
     }
   }
 
+  let analyzeSeq = 0;   // bumped each analyze; guards a slow background space pass from clobbering a newer run
   async function analyze(p, lang, panel) {
+    const runId = ++analyzeSeq;
     const cfg = C.PROBLEMS[p.id];
     if (!cfg) return void (panel.innerHTML = card('<div class="lab-verdict dim">This problem has no input-family generators yet (web/lab-config.mjs) &mdash; the Lab needs authored best/adversarial families to say anything honest.</div>'));
     const source = window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value;
@@ -328,41 +330,6 @@ const GlifexLab = (() => {
       repDurations[r] = dt;
     }
 
-    // L4 (JS space): measure on the MAIN THREAD. performance.measureUserAgentSpecificMemory
-    // is unavailable in dedicated workers by spec (a window-context call already
-    // accounts for nested workers), so the timing worker can't sample it -- only the
-    // window can. Running solve() here for the memory pass is safe specifically because
-    // it happens AFTER the timed reps: those already proved solve() terminates at these
-    // sizes, so the L3 hang concern that put execution in a worker doesn't apply to this
-    // one extra, post-verification pass. The API is slow (it waits for GC -- up to seconds
-    // each), so we sample only the upper (space-worst) family and cap the number of sizes.
-    // Values are an explicitly-approximate heap proxy (see js-runtime.js measureJsSpace +
-    // the space-table disclaimer); merged into repRows[0], the row space collection reads.
-    if (runner === "js" && repRows[0]
-        && typeof performance !== "undefined" && typeof performance.measureUserAgentSpecificMemory === "function"
-        && window.GlifexJsRuntime && window.GlifexJsRuntime.compileJavaScript) {
-      const upperIdx = [];
-      for (let i = 0; i < plan.length; i++) if (plan[i].mode === cfg.roles.upper) upperIdx.push(i);
-      const MAX_SPACE_SIZES = 4;
-      let picks = upperIdx;
-      if (upperIdx.length > MAX_SPACE_SIZES) {
-        const set = new Set();
-        for (let k = 0; k < MAX_SPACE_SIZES; k++) set.add(upperIdx[Math.round((k * (upperIdx.length - 1)) / (MAX_SPACE_SIZES - 1))]);
-        picks = [...set];
-      }
-      try {
-        progress(panel, "Measuring memory (approximate; waits for GC, may take a few seconds)\u2026");
-        const compiled = window.GlifexJsRuntime.compileJavaScript(source);
-        if (compiled && !compiled.error && compiled.measureSpace) {
-          const deadline = Date.now() + 12000;   // hard budget: never let the slow API stall analyze
-          const sp = await compiled.measureSpace(picks.map((i) => cases[i]), deadline);
-          if (sp) picks.forEach((i, k) => { if (sp[k] != null && repRows[0][i]) repRows[0][i].space = sp[k]; });
-          const dbg = picks.map((i) => ({ mode: plan[i].mode, n: plan[i].n, bytes: repRows[0][i] && repRows[0][i].space }));
-          if (dbg.some((d) => d.bytes != null)) console.debug("[glifex] JS space (approx) raw (n,bytes):", dbg);
-        }
-      } catch (e) { /* best-effort: leave space unmeasured, tab omits itself */ }
-    }
-
     // Aggregate: median across reps, per (mode, size). A single measurement
     // can be wildly unreliable even when it's present (a GC pause, thermal
     // throttle, or background OS activity hitting one rep) -- catch that at
@@ -386,7 +353,7 @@ const GlifexLab = (() => {
     // tolerance -- that's a different, more fundamental failure than a
     // single noisy pass.
     const UNRELIABLE_TOLERANCE = 10;
-    const modes = {}, spaceBy = {};
+    const modes = {};
     let missing = 0, unreliable = 0;
     for (const mode of cfg.modes) modes[mode.id] = { ns: [], ys: [] };
     for (let i = 0; i < plan.length; i++) {
@@ -395,14 +362,6 @@ const GlifexLab = (() => {
       if (vals.length >= 2 && !E.isReliable(vals, SPREAD_LIMIT)) { unreliable++; continue; }
       modes[plan[i].mode].ns.push(plan[i].n);
       modes[plan[i].mode].ys.push(E.median(vals));
-      // L4: collect the exact per-size workspace metric wherever the
-      // runtime reports one -- retro reports `space` on every track, but
-      // only i8080 hits the det tier; 6502/SM83 land on the wall tier for
-      // TIME (no cycle table) yet their space is just as exact (distinct
-      // bytes written, not a clock reading). Gate on the value's presence,
-      // not the tier, so those two get judged too. JS/interpreted report
-      // no `space`, so they naturally contribute nothing here.
-      if (repRows[0][i].space != null) spaceBy[plan[i].mode + ":" + plan[i].n] = repRows[0][i].space;
     }
     if (missing) {
       return void (panel.innerHTML = card(`<div class="lab-verdict warn">Inconclusive: ${missing} of ${plan.length} measurements came back below timing resolution for this runtime. No verdict is honest here &mdash; a larger ladder needs the L3 worker budget.</div>`));
@@ -417,32 +376,69 @@ const GlifexLab = (() => {
     // spaceJ stays null when there's no declared space bound (empirical
     // match, or an unmigrated variant) or fewer than two measured points:
     // nothing to refute, so nothing is shown -- the tab omits itself.
-    const spaceSeries = { ns: [], ys: [] };
-    for (const n of modes[cfg.roles.upper].ns) {
-      const v = spaceBy[cfg.roles.upper + ":" + n];
-      if (v != null) { spaceSeries.ns.push(n); spaceSeries.ys.push(v); }
-    }
-    const spaceJ = (declaredSpace && spaceSeries.ns.length >= 2)
-      ? E.judgeSpaceUpper(spaceSeries.ns, spaceSeries.ys, declaredSpace, tier.tol) : null;
-
-    if (boundMode === "empirical-match") {
-      const variantBounds = {};
-      for (const [variant, b] of Object.entries(langComplexity)) {
-        if (variant === "practice") continue;   // a blank starter stub, not a reference solution with a meaningful claim
-        variantBounds[variant] = { upper: b.upper, lower: b.lower };
+    // Progressive render. The time verdict is shown IMMEDIATELY. JS space is
+    // measured on the window (the API is unavailable in workers) and each call
+    // waits for GC -- up to ~20s -- so it is far too slow to block the verdict on.
+    // finalize() renders from whatever `.space` is currently on repRows[0] (retro:
+    // exact and present now; JS: none yet), and for JS we then measure space in the
+    // BACKGROUND and call finalize() again to slot the Space tab in when it lands.
+    // A run token stops a slow background pass from clobbering a newer analyze.
+    const finalize = (spaceMeasuring) => {
+      const spaceBy = {};
+      for (let i = 0; i < plan.length; i++) if (repRows[0][i] && repRows[0][i].space != null) spaceBy[plan[i].mode + ":" + plan[i].n] = repRows[0][i].space;
+      const spaceSeries = { ns: [], ys: [] };
+      for (const n of modes[cfg.roles.upper].ns) {
+        const v = spaceBy[cfg.roles.upper + ":" + n];
+        if (v != null) { spaceSeries.ns.push(n); spaceSeries.ys.push(v); }
       }
-      const mv = E.matchKnownVariants(modes, cfg.roles, variantBounds, tier.tol);
-      // Reuse the existing chart/table rendering by feeding judge() a
-      // "declared" equal to the empirical closest class itself -- always
-      // "consistent" by construction (closest has the smallest error by
-      // definition), so the chart/table render sensibly with no real
-      // declared claim to test against; render() shows different headline
-      // lines for this mode instead of the usual refuted/consistent ones.
-      const j = E.judge(modes, cfg.roles, { upper: mv.upperClosest, lower: mv.lowerClosest }, tier.tol);
-      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, mv, variantBounds, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: runner === "js" });
-    } else {
-      const j = E.judge(modes, cfg.roles, declared, tier.tol);
-      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, revealedVariant, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: runner === "js" });
+      const spaceJ = (declaredSpace && spaceSeries.ns.length >= 2)
+        ? E.judgeSpaceUpper(spaceSeries.ns, spaceSeries.ys, declaredSpace, tier.tol) : null;
+      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: runner === "js", spaceMeasuring: !!spaceMeasuring };
+      if (boundMode === "empirical-match") {
+        const variantBounds = {};
+        for (const [variant, b] of Object.entries(langComplexity)) {
+          if (variant === "practice") continue;   // a blank starter stub, not a reference solution with a meaningful claim
+          variantBounds[variant] = { upper: b.upper, lower: b.lower };
+        }
+        const mv = E.matchKnownVariants(modes, cfg.roles, variantBounds, tier.tol);
+        const j = E.judge(modes, cfg.roles, { upper: mv.upperClosest, lower: mv.lowerClosest }, tier.tol);
+        render(panel, { ...common, j, mv, variantBounds });
+      } else {
+        const j = E.judge(modes, cfg.roles, declared, tier.tol);
+        render(panel, { ...common, j, revealedVariant });
+      }
+    };
+
+    // Is a JS space measurement worth attempting? Needs a declared bound to judge
+    // against and the window API present (absent on Firefox / headless -> no tab).
+    const jsSpacePossible = runner === "js" && declaredSpace
+      && typeof performance !== "undefined" && typeof performance.measureUserAgentSpecificMemory === "function"
+      && window.GlifexJsRuntime && window.GlifexJsRuntime.compileJavaScript;
+
+    finalize(jsSpacePossible);   // verdict now; JS shows a "measuring memory" note where the tab will appear
+
+    if (jsSpacePossible) {
+      (async () => {
+        try {
+          const upperIdx = [];
+          for (let i = 0; i < plan.length; i++) if (plan[i].mode === cfg.roles.upper) upperIdx.push(i);
+          const MAX_SPACE_SIZES = 4;
+          let picks = upperIdx;
+          if (upperIdx.length > MAX_SPACE_SIZES) {
+            const set = new Set();
+            for (let k = 0; k < MAX_SPACE_SIZES; k++) set.add(upperIdx[Math.round((k * (upperIdx.length - 1)) / (MAX_SPACE_SIZES - 1))]);
+            picks = [...set];
+          }
+          const compiled = window.GlifexJsRuntime.compileJavaScript(source);
+          if (compiled && !compiled.error && compiled.measureSpace) {
+            const sp = await compiled.measureSpace(picks.map((i) => cases[i]), { deadline: Date.now() + 180000 });
+            if (sp) picks.forEach((i, k) => { if (sp[k] != null && repRows[0][i]) repRows[0][i].space = sp[k]; });
+            const dbg = picks.map((i) => ({ mode: plan[i].mode, n: plan[i].n, bytes: repRows[0][i] && repRows[0][i].space }));
+            if (dbg.some((d) => d.bytes != null)) console.debug("[glifex] JS space (approx) raw (n,bytes):", dbg);
+          }
+        } catch (e) { /* best-effort: leave space unmeasured */ }
+        if (runId === analyzeSeq) finalize(false);   // re-render only if this analyze is still current
+      })();
     }
   }
 
@@ -510,6 +506,9 @@ const GlifexLab = (() => {
     } else {
       html += chart(X, unit);
       html += table(X, unit);
+      if (X.spaceMeasuring) {
+        html += `<p class="lab-note lab-note-warn">&#9203; Measuring memory (approximate)&hellip; this uses a slow, GC-gated browser API &mdash; each sample can take ~20s &mdash; so the <b>Space</b> tab will appear here shortly via a background pass. The time verdict above is already final and won't change.</p>`;
+      }
     }
     html += boundMode === "empirical-match"
       ? `<p class="lab-note">No solution was revealed, so there was no specific claim to refute &mdash; this mode measures growth first and reports which known solution type(s) (if any) it matches, using the same tolerance-based classification as every refutation elsewhere in this tool. Reveal a specific solution (clean, optimized, brute-force&hellip;) to test your code against THAT variant's own declared bound instead.</p>`
