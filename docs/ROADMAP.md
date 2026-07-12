@@ -239,20 +239,36 @@ on the easy family; a Theta badge appears only when both ends pin one class.
       (~20s for the original 4-point ladder scaled to ~40s for 10, well
       under the 2-minute outer runtime-lock timeout) rather than a guess.
 - [ ] **L4. Space complexity falsifier** -- extend the declared-bounds
-      system (currently time-only: O/Omega/Theta as time bounds) to test
-      declared SPACE complexity too, using the same falsifier doctrine
-      (refute, never confirm) against growth in measured space rather
-      than measured time. Retro tracks and C/C++ already capture a raw
-      space metric per run (`spaceBytes` -- distinct bytes written outside
-      the program image; C/C++ also report `codeBytes`) but nothing
-      currently judges it against a DECLARED bound the way time is
-      judged. *Spike first:* precise, comparable space measurement is
-      straightforward for retro/native tracks (fixed memory model) but
-      unproven for JS/interpreted/managed-memory tracks -- confirm a
-      viable proxy metric before committing to the full per-variant
-      schema extension. Sequenced after L2/L3 (manifest promotion should
-      land first, so space bounds join the SAME per-variant schema
-      rather than a second, parallel one).
+      system (time-only: O/Omega/Theta as time bounds) to test declared
+      SPACE complexity too, same falsifier doctrine (refute, never
+      confirm) against growth in measured space rather than measured time.
+      **Landed (retro tracks):** `judgeSpaceUpper` (web/lab-engine.mjs)
+      judges the exact per-size workspace metric against the corpus's
+      per-variant `space` bound. Upper-only (the corpus carries a single
+      `space` class, no declared space-lower) and O(1)-aware: a flat curve
+      is consistent, judged by a pure flatness test rather than the
+      time-tier's bHat overhead correction, which would absorb the entire
+      constant of a flat series and wrongly refute a genuine O(1). Space
+      is collected on every tier, so 6502/SM83 (wall-tier for time) are
+      judged too, not only i8080. A conditional Time|Space tab + byte-axis
+      chart renders when a space verdict exists; JS tracks (no space
+      signal) omit it rather than show a dead control. Coverage: engine
+      battery + e2e assert both the consistent and the refuted directions
+      (the refuted fixture is a correct fib that wastes O(n) stack, so
+      output correctness alone cannot distinguish it -- only the space
+      falsifier does).
+      **Prior-art correction:** only the retro tracks capture the raw
+      metric (`spaceBytes`/`space`, web/retro-worker.js); C/C++ do NOT
+      report `spaceBytes`/`codeBytes` today -- an earlier draft of this
+      entry overstated that. The L2 dependency proved largely moot: the
+      per-variant `space` schema already exists in the generated corpus,
+      so retro space did not need manifest promotion first.
+      **Remaining:** C/C++ and WAT via WASM linear-memory high-water;
+      Python/Ruby/PHP via native introspection (`tracemalloc`, `GC.stat`,
+      `memory_get_peak_usage`); JS/TS deferred -- a clean per-call heap
+      peak needs cross-origin isolation (the same wall as the L1 clock
+      issue), so JS/TS space stays unmeasured rather than reported from a
+      GC-noise proxy, and lands with the COI change.
 
 ### C — Corpus era (the forever-work; policy is law as of 002)
 - [ ] **C1. Problems 003+** — floor-of-four, manifest-first, blank stubs,

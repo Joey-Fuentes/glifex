@@ -53,11 +53,15 @@ actual `result`, and explicitly fails unless all of them are `success`.
 Skipped, cancelled, and failed dependencies are all treated as "not good
 enough" -- only a genuine, uniform `success` passes.
 
-`matrix` and `security` are deliberately excluded from `needs:` -- both are
-currently disabled (`if: ${{ false }}`, a free-tier cost measure), so their
-result is always `skipped` by design, not a real signal. Including them would
-permanently block every merge. Re-add them to `ci-status-gate`'s `needs:` if
-and when they're re-enabled.
+`matrix`, `security`, and `codeql` are now **enabled and required** -- each
+runs on every PR and appears in `ci-status-gate`'s `needs:`, so the gate
+fails unless all three report `success`. (While any was disabled via
+`if: ${{ false }}`, its result was always `skipped` -- which this gate treats
+as failure -- so listing it then would have permanently blocked merges.
+Re-disabling one means dropping it from `needs:` in the same change.) `codeql`
+was moved in from the old standalone `codeql.yml`: a separate workflow cannot
+be a dependency of `ci-status-gate`, so requiring it meant making it a job
+here (with job-level `security-events: write`).
 
 **Deliberately no `name:` field on this job.** See "The naming gotcha" below
 for why that matters and what happened when an earlier version of this fix
@@ -156,9 +160,13 @@ already accounts for all of them.
 
 ## Job graph (`ci.yml`)
 
-`lint` + `corpus` → `playground` → `e2e` → `ci-status-gate` (needs all four,
-`if: always()`). `matrix` and `security` exist in the file but are
-`if: ${{ false }}` (free-tier cost measure) -- always skipped by design, not
-included in `ci-status-gate`'s `needs:`. `CodeQL` runs as its own, separate
-workflow, non-blocking. `pages.yml` runs after `CI` completes on `main`, via
-`workflow_run`, gated on that workflow's overall `conclusion`.
+`lint` + `corpus` fan out to `matrix`, `security`, `codeql`, and `playground`
+(→ `e2e`); `ci-status-gate` needs all seven (`lint`, `corpus`, `matrix`,
+`security`, `codeql`, `playground`, `e2e`), `if: always()`, and fails unless
+every one is `success`. `matrix` (3-OS toolchain matrix -- macOS bills 10x,
+Windows 2x), `security` (Trivy vuln+secret scan, blocking), and `codeql`
+(static analysis, matrix over javascript-typescript + python) are all enabled
+and required now -- the free-tier cost measure that disabled them has been
+lifted. `pages.yml` runs after `CI` completes on `main`, via `workflow_run`,
+gated on that workflow's overall `conclusion`. (`codeql.yml` no longer exists
+-- CodeQL is the `codeql` job in `ci.yml`.)

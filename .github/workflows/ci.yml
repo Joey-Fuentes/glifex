@@ -61,7 +61,6 @@ jobs:
   matrix:
     name: glifex test (${{ matrix.os }})
     needs: [lint, corpus]
-    if: ${{ false }}   # TEMP(free-tier): 3-OS matrix disabled to save minutes (macOS bills 10x, Windows 2x). Re-enable by deleting this line.
     strategy:
       fail-fast: false
       matrix:
@@ -232,12 +231,14 @@ jobs:
   # file, and what actually gets reported are all the same one string,
   # not two that can silently drift apart.
   #
-  # matrix and security are deliberately excluded: both are currently
-  # disabled (if: ${{ false }}), so their result is always "skipped" by
-  # design, not a real signal -- including them here would permanently
-  # block every merge. Add them back in if/when they're re-enabled.
+  # matrix, security, and codeql are now ENABLED and REQUIRED -- each runs
+  # on every PR and this gate fails unless all report "success". (While any
+  # was disabled via if: ${{ false }} its result was always "skipped",
+  # which this gate treats as failure, so it could not be listed here
+  # without permanently blocking merges. Re-disabling one means dropping it
+  # from needs below in the SAME change.)
   ci-status-gate:
-    needs: [lint, corpus, playground, e2e]
+    needs: [lint, corpus, matrix, security, codeql, playground, e2e]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -245,10 +246,16 @@ jobs:
         run: |
           echo "lint:       ${{ needs.lint.result }}"
           echo "corpus:     ${{ needs.corpus.result }}"
+          echo "matrix:     ${{ needs.matrix.result }}"
+          echo "security:   ${{ needs.security.result }}"
+          echo "codeql:     ${{ needs.codeql.result }}"
           echo "playground: ${{ needs.playground.result }}"
           echo "e2e:        ${{ needs.e2e.result }}"
           if [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.corpus.result }}" != "success" ] || \
+             [ "${{ needs.matrix.result }}" != "success" ] || \
+             [ "${{ needs.security.result }}" != "success" ] || \
+             [ "${{ needs.codeql.result }}" != "success" ] || \
              [ "${{ needs.playground.result }}" != "success" ] || \
              [ "${{ needs.e2e.result }}" != "success" ]; then
             echo "::error::One or more required CI jobs did not succeed (see results above) -- this must block merge"
@@ -258,7 +265,6 @@ jobs:
 
   # ── Stage 5: security ────────────────────────────────────────────────
   security:
-    if: ${{ false }}   # TEMP(free-tier): advisory job disabled to save minutes. Re-enable by deleting this line.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -270,3 +276,25 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           scanners: vuln,secret
+
+  # ── Stage 6: CodeQL static analysis ──────────────────────────────────
+  # Moved in from the old standalone codeql.yml: a SEPARATE workflow cannot
+  # be a dependency of ci-status-gate, and this must be gate-required now.
+  # Job-level permissions grant the security-events write CodeQL needs
+  # without widening the workflow-level default (contents: read).
+  codeql:
+    needs: [lint, corpus]
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with: { languages: "${{ matrix.language }}" }
+      - uses: github/codeql-action/analyze@v4

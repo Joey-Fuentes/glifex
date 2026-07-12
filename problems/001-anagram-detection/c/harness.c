@@ -12,7 +12,13 @@
    without colliding -- practice.c's real, unrenamed "solve" is the only
    one left with that name in the final binary. */
 JVal *solve(JVal *c);
+/* Weak DEFINITION, not a bare declaration: an undefined weak reference
+   links to zero on ELF (Linux) but is an "Undefined symbols" link error
+   on Mach-O (macOS) and PE (MinGW). A weak definition links cleanly on all
+   three and is overridden by the strong symbol in brute-force.c when the
+   problem ships one. */
 JVal *__glifex_ref_bruteforce(JVal *c) __attribute__((weak));
+JVal *__glifex_ref_bruteforce(JVal *c) { (void)c; fprintf(stderr, "brute-force reference not provided\n"); exit(2); }
 JVal *__glifex_ref_clean(JVal *c);
 JVal *__glifex_ref_optimized(JVal *c);
 
