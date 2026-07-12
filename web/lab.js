@@ -45,7 +45,7 @@ const GlifexLab = (() => {
     return q === -1 ? "" : src.slice(q);
   })();
 
-  let E = null, C = null;              // lab-engine.mjs / lab-config.mjs (lazy ESM)
+  let E = null, C = null, SP = null;   // lab-engine.mjs / lab-config.mjs / lab-space-probes.mjs (lazy ESM)
   let ctx = null;                      // { p, lang } for the visible button
   // L3 (docs/ROADMAP.md): the JS runtime used to execute directly on the
   // main thread here, same as every language except C/C++ -- a runaway
@@ -106,7 +106,7 @@ const GlifexLab = (() => {
     panel.hidden = false;
     await withRuntimeLock(panel, async () => {
       try {
-        if (!E) { E = await import("./lab-engine.mjs" + VERSION_SUFFIX); C = await import("./lab-config.mjs" + VERSION_SUFFIX); }
+        if (!E) { E = await import("./lab-engine.mjs" + VERSION_SUFFIX); C = await import("./lab-config.mjs" + VERSION_SUFFIX); SP = await import("./lab-space-probes.mjs" + VERSION_SUFFIX); }
         await analyze(ctx.p, ctx.lang, panel);
       } catch (e) {
         panel.innerHTML = card(`<div class="lab-verdict bad">Lab error: ${esc((e && e.message) || e)}</div>`);
@@ -383,17 +383,24 @@ const GlifexLab = (() => {
     // exact and present now; JS: none yet), and for JS we then measure space in the
     // BACKGROUND and call finalize() again to slot the Space tab in when it lands.
     // A run token stops a slow background pass from clobbering a newer analyze.
-    const finalize = (spaceStatus) => {
+    const finalize = (spaceStatus, jsProbe) => {
+      // spaceSeries: from the JS peak-space probe (the revealed reference's
+      // measured high-water workspace) when we have one, else from the retro
+      // tracks' exact inline `space` on repRows.
       const spaceBy = {};
-      for (let i = 0; i < plan.length; i++) if (repRows[0][i] && repRows[0][i].space != null) spaceBy[plan[i].mode + ":" + plan[i].n] = repRows[0][i].space;
       const spaceSeries = { ns: [], ys: [] };
-      for (const n of modes[cfg.roles.upper].ns) {
-        const v = spaceBy[cfg.roles.upper + ":" + n];
-        if (v != null) { spaceSeries.ns.push(n); spaceSeries.ys.push(v); }
+      if (jsProbe) {
+        for (const pt of jsProbe) if (pt && pt.bytes != null) { spaceSeries.ns.push(pt.n); spaceSeries.ys.push(pt.bytes); spaceBy[cfg.roles.upper + ":" + pt.n] = pt.bytes; }
+      } else {
+        for (let i = 0; i < plan.length; i++) if (repRows[0][i] && repRows[0][i].space != null) spaceBy[plan[i].mode + ":" + plan[i].n] = repRows[0][i].space;
+        for (const n of modes[cfg.roles.upper].ns) {
+          const v = spaceBy[cfg.roles.upper + ":" + n];
+          if (v != null) { spaceSeries.ns.push(n); spaceSeries.ys.push(v); }
+        }
       }
       const spaceJ = (declaredSpace && spaceSeries.ns.length >= 2)
         ? E.judgeSpaceUpper(spaceSeries.ns, spaceSeries.ys, declaredSpace, tier.tol) : null;
-      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: runner === "js", spaceStatus: spaceStatus || null };
+      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: runner === "js", spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
       if (boundMode === "empirical-match") {
         const variantBounds = {};
         for (const [variant, b] of Object.entries(langComplexity)) {
@@ -410,49 +417,46 @@ const GlifexLab = (() => {
     };
 
     // JS space STATUS -- always surfaced, so the card is never silently blank
-    // about memory. Retro tracks report exact space inline (spaceStatus stays
-    // null; their tab just appears). For JS we resolve one of: `unavailable`
-    // (Firefox / headless / not isolated), `needs-reveal` (no declared bound to
-    // test against), `measuring` (a background pass is running), or -- once it
-    // finishes -- `failed` (couldn't land >=2 samples). On success the tab renders
-    // and the status is moot. This is what makes the feature honest in EVERY state.
+    // about memory. Retro tracks report exact inline space (spaceStatus null;
+    // their tab just appears). For JS we resolve one of: `unavailable` (no API),
+    // `needs-reveal` (no declared bound to test), `not-instrumented` (no
+    // cooperating peak-probe authored for this problem+variant yet -- see
+    // web/lab-space-probes.mjs), `measuring` (a probe pass is running), or --
+    // once it finishes -- `failed` (couldn't land >=2 samples). Success renders
+    // the tab. This keeps the feature honest in EVERY state.
     const jsApiOk = runner === "js"
       && typeof performance !== "undefined" && typeof performance.measureUserAgentSpecificMemory === "function"
-      && window.GlifexJsRuntime && window.GlifexJsRuntime.compileJavaScript;
+      && window.GlifexJsRuntime && window.GlifexJsRuntime.measureSpaceProbe;
+    const probeSet = (runner === "js" && SP && SP.SPACE_PROBES) ? SP.SPACE_PROBES[p.id] : null;
+    const spaceProbe = (probeSet && revealedVariant && probeSet.variants) ? probeSet.variants[revealedVariant] : null;
     let spaceStatus = null;
     if (runner === "js") {
       spaceStatus = !jsApiOk ? { state: "unavailable" }
         : !declaredSpace ? { state: "needs-reveal" }
-          : { state: "measuring" };
+          : !spaceProbe ? { state: "not-instrumented" }
+            : { state: "measuring", variant: revealedVariant };
     }
 
     finalize(spaceStatus);   // verdict now; JS surfaces its space status where the tab will appear
 
     if (spaceStatus && spaceStatus.state === "measuring") {
       (async () => {
-        let got = 0, total = 0;
+        let series = null, got = 0;
+        const total = probeSet.sizes.length;
         try {
-          const upperIdx = [];
-          for (let i = 0; i < plan.length; i++) if (plan[i].mode === cfg.roles.upper) upperIdx.push(i);
-          const MAX_SPACE_SIZES = 4;
-          let picks = upperIdx;
-          if (upperIdx.length > MAX_SPACE_SIZES) {
-            const set = new Set();
-            for (let k = 0; k < MAX_SPACE_SIZES; k++) set.add(upperIdx[Math.round((k * (upperIdx.length - 1)) / (MAX_SPACE_SIZES - 1))]);
-            picks = [...set];
+          // Measure the revealed reference's PEAK workspace: the probe awaits a
+          // sample at its allocation high-water (see lab-space-probes.mjs), on a
+          // dedicated >=256KB ladder that clears the API's ~64KB resolution floor.
+          series = await window.GlifexJsRuntime.measureSpaceProbe(spaceProbe, probeSet.gen, probeSet.sizes, { deadline: Date.now() + 240000 });
+          if (series) {
+            got = series.filter((pt) => pt && pt.bytes != null).length;
+            console.debug("[glifex] JS peak-space (approx) raw (n,bytes):", series.map((pt) => ({ n: pt.n, bytes: pt.bytes })));
           }
-          total = picks.length;
-          const compiled = window.GlifexJsRuntime.compileJavaScript(source);
-          if (compiled && !compiled.error && compiled.measureSpace) {
-            const sp = await compiled.measureSpace(picks.map((i) => cases[i]), { deadline: Date.now() + 180000 });
-            if (sp) picks.forEach((i, k) => { if (sp[k] != null && repRows[0][i]) { repRows[0][i].space = sp[k]; got++; } });
-            const dbg = picks.map((i) => ({ mode: plan[i].mode, n: plan[i].n, bytes: repRows[0][i] && repRows[0][i].space }));
-            if (dbg.some((d) => d.bytes != null)) console.debug("[glifex] JS space (approx) raw (n,bytes):", dbg);
-          }
-        } catch (e) { /* best-effort: leave space unmeasured */ }
-        // Re-render only if this analyze is still current. If >=2 points landed,
-        // finalize shows the tab; otherwise it shows the honest "failed" note.
-        if (runId === analyzeSeq) finalize({ state: "failed", samples: got, total });
+        } catch (e) { /* best-effort */ }
+        if (runId === analyzeSeq) {
+          if (series && got >= 2) finalize({ state: "done", variant: revealedVariant }, series);        // -> tab
+          else finalize({ state: "failed", samples: got, total, variant: revealedVariant });            // -> honest note
+        }
       })();
     }
   }
@@ -467,9 +471,10 @@ const GlifexLab = (() => {
     if (!st || !st.state) return "";
     let msg = "";
     if (st.state === "unavailable") msg = "Memory profiling isn't available in this browser (it needs Chromium with cross-origin isolation). Space is still measured exactly on the retro CPU tracks.";
-    else if (st.state === "needs-reveal") msg = "Reveal a reference solution to also measure this code's memory usage (approximate).";
-    else if (st.state === "measuring") msg = "&#9203; Measuring memory (approximate)&hellip; a quick background pass; the <b>Space</b> tab will appear here in a moment. The time verdict above is already final.";
-    else if (st.state === "failed") msg = "&#9888; Attempted to measure memory but couldn't get a reliable reading" + (st.total ? ` (${st.samples} of ${st.total} samples returned)` : "") + ". In-browser JS memory profiling is best-effort and approximate; the time verdict above is unaffected. Try Analyze again.";
+    else if (st.state === "needs-reveal") msg = "Reveal a reference solution to also measure its peak memory usage (approximate).";
+    else if (st.state === "not-instrumented") msg = "Peak-memory measurement isn't set up for this problem/variant yet. It's opt-in per reference solution (see web/lab-space-probes.mjs); the retro CPU tracks measure space exactly.";
+    else if (st.state === "measuring") msg = "&#9203; Measuring peak memory (approximate)&hellip; a background pass at large sizes; the <b>Space</b> tab will appear here shortly. The time verdict above is already final.";
+    else if (st.state === "failed") msg = "&#9888; Attempted to measure peak memory but couldn't get a reliable reading" + (st.total ? ` (${st.samples} of ${st.total} samples returned)` : "") + ". In-browser JS memory profiling is best-effort and approximate; the time verdict above is unaffected. Try Analyze again.";
     return msg ? `<p class="lab-note lab-note-warn">${msg}</p>` : "";
   }
 
@@ -684,7 +689,7 @@ const GlifexLab = (() => {
     for (let i = 0; i < pts.length; i++) g += `<circle cx="${pts[i].split(",")[0]}" cy="${pts[i].split(",")[1]}" r="3.6" fill="${col}" stroke="#0d1117" stroke-width="1.4"/>`;
     g += `<text x="${(L + W - R) / 2}" y="${H - 5}" text-anchor="middle" fill="#8b949e" font-size="10">${esc(cfg.sizeLabel)} (log)</text>`;
     g += `<text x="13" y="${(T + H - B) / 2}" fill="#8b949e" font-size="10" transform="rotate(-90 13 ${(T + H - B) / 2})" text-anchor="middle">bytes / case (log)</text>`;
-    const legend = `<span class="lab-k" style="background:${col}"></span>${esc(modeLabel(cfg, cfg.roles.upper))} ${X.spaceApprox ? "retained heap <em>(approx)</em>" : "workspace"} <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
+    const legend = `<span class="lab-k" style="background:${col}"></span>${X.spaceProbeVariant ? esc(X.spaceProbeVariant) + " ref peak workspace <em>(approx)</em>" : (X.spaceApprox ? "retained heap <em>(approx)</em>" : "workspace")} <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
     return `<figure class="lab-fig"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="space growth chart" font-family="var(--mono)">${g}</svg><figcaption>${legend}</figcaption></figure>`;
   }
 
@@ -694,16 +699,18 @@ const GlifexLab = (() => {
     let h = `<h3 class="lab-sec">${X.spaceApprox ? "Heap-growth step-ratio (approximate)" : "Workspace step-ratio proof"}</h3><div class="lab-tablewrap"><table class="lab-table"><tr><th>step</th><th>${X.spaceApprox ? "heap &Delta; B" : "workspace B"}</th><th>measured &times;</th>${names.map((n) => `<th${n === declared ? ' class="declared"' : ""}>${n === declared ? "declared " : ""}${n} &times;</th>`).join("")}</tr>`;
     for (let i = 1; i < ns.length; i++) {
       const meas = ys[i] / ys[i - 1];
-      h += `<tr><td>${ns[i - 1]} &rarr; ${ns[i]}</td><td>${ys[i]}</td><td>&times;${meas.toFixed(2)}</td>`;
+      const flat = ys[i] === 0 && ys[i - 1] === 0;
+      const measStr = flat ? "flat" : Number.isFinite(meas) ? "&times;" + meas.toFixed(2) : "&mdash;";
+      h += `<tr><td>${ns[i - 1]} &rarr; ${ns[i]}</td><td>${ys[i]}</td><td>${measStr}</td>`;
       for (const n of names) {
         const pred = E.classById(n).f(ns[i]) / E.classById(n).f(ns[i - 1]);
-        const close = Math.abs(Math.log(meas / pred)) <= X.tier.tol;
+        const close = Number.isFinite(meas) && Math.abs(Math.log(meas / pred)) <= X.tier.tol;
         h += `<td class="${n === declared ? "declared " : ""}${close ? "hit" : (n === declared ? "miss" : "")}">&times;${pred.toFixed(2)}</td>`;
       }
       h += "</tr>";
     }
     h += X.spaceApprox
-      ? `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate.</b> Unlike the retro tracks' exact workspace metric, JavaScript memory here is a coarse proxy: <code>performance.measureUserAgentSpecificMemory()</code> reports the <em>whole worker heap</em> (not this call), is quantized and GC-dependent, and only runs at all in cross-origin-isolated Chromium. Small allocations sit under its noise floor, so treat a &ldquo;refuted&rdquo; here as a prompt to look closer &mdash; not proof. Growing this into a trustworthy metric is tracked in the roadmap (L4).</p>`
+      ? `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate &mdash; and it measures the revealed ${X.spaceProbeVariant ? esc(X.spaceProbeVariant) + " " : ""}reference solution's PEAK workspace, not your typed code.</b> The reference is run instrumented, sampling <code>performance.measureUserAgentSpecificMemory()</code> at its allocation high-water (a churn forces the GC the API waits on). Unlike the retro tracks' exact per-cell metric this is a whole-heap, GC-timed, quantized proxy with a ~64KB resolution floor (hence the large sizes), so treat a &ldquo;refuted&rdquo; as a prompt to look closer &mdash; not proof. Roadmap L4 tracks making it exact.</p>`
       : `</table></div><p class="lab-note">Workspace = distinct bytes written outside the program image, measured exactly (deterministic; no clock). Judged the same way as time &mdash; refute, never prove. A flat curve is consistent with O(1); growth above the declared class refutes it.</p>`;
     return h;
   }

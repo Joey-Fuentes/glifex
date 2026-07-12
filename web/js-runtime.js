@@ -143,6 +143,58 @@ function measureJsCases(solve, cases, opts) {
 // retained, and report the clamped delta. Deltas are measured fresh per size
 // and the result released between sizes, so they don't accumulate. See
 // docs/ROADMAP.md (L4) for the path toward a cleaner metric.
+// Shared: one churn-forced memory sample. measureUserAgentSpecificMemory only
+// resolves at the next GC (Chrome defers it up to ~60s); we PROVOKE that GC by
+// churning short-lived garbage in small yielding bursts while the call is
+// pending, collapsing it from ~60s to well under a second (verified live). The
+// churn is released each iteration so it isn't counted -- only whatever the
+// caller holds live is. Returns bytes, or null if the API is unavailable/slow.
+async function churnForcedSample() {
+  if (typeof performance === "undefined" || typeof performance.measureUserAgentSpecificMemory !== "function") return null;
+  let t;
+  try {
+    const pending = performance.measureUserAgentSpecificMemory().then((x) => x, () => null);
+    for (let round = 0; round < 6; round++) {
+      for (let k = 0; k < 8; k++) { let junk = new Array(500000).fill(k); junk = null; }
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    const r = await Promise.race([pending, new Promise((res) => { t = setTimeout(() => res(null), 20000); })]);
+    return (r && typeof r.bytes === "number") ? r.bytes : null;
+  } catch (e) { return null; }
+  finally { clearTimeout(t); }
+}
+
+// L4 (JS PEAK-space): measure a cooperating probe's high-water workspace. The
+// probe (see web/lab-space-probes.mjs) is an async reference solution that
+// `await sample()`s at its allocation peak while the scratch is still live --
+// which is the only way to catch TRANSIENT workspace (a sort, a temp buffer)
+// that's freed before a plain solve() returns. Per size: build the input
+// (counted in the baseline so only the probe's own scratch shows), sample the
+// baseline, run the probe (it samples at its peak), and report peak - baseline.
+// Measured on the caller's larger `sizes` ladder (>=256KB) to clear the ~64KB
+// resolution floor. Returns [{ n, bytes|null }] aligned to sizes, or null if the
+// API can't run at all. Never throws.
+async function measureSpaceProbe(probe, gen, sizes, opts) {
+  opts = opts || {};
+  if (typeof performance === "undefined" || typeof performance.measureUserAgentSpecificMemory !== "function") return null;
+  if ((await churnForcedSample()) == null) return null;   // API present but not callable here
+  const deadline = opts.deadline || (Date.now() + 240000);
+  const out = [];
+  for (const n of sizes) {
+    if (Date.now() > deadline) { out.push({ n, bytes: null }); continue; }
+    let input = null, baseline = null, peak = null;
+    try {
+      input = gen(n);                                    // input lives -> folded into baseline
+      baseline = await churnForcedSample();
+      const sample = async () => { peak = await churnForcedSample(); };
+      await probe(input, sample);                        // probe samples at its peak
+    } catch (e) { /* leave this size null */ }
+    input = null;                                        // release before the next size
+    out.push({ n, bytes: (baseline != null && peak != null) ? Math.max(0, peak - baseline) : null });
+  }
+  return out;
+}
+
 async function measureJsSpace(solve, cases, opts) {
   opts = opts || {};
   if (typeof performance === "undefined" || typeof performance.measureUserAgentSpecificMemory !== "function") return null;
@@ -193,5 +245,5 @@ function runJavaScript(source, cases) {
   return c.measure(cases);
 }
 
-if (typeof window !== "undefined") window.GlifexJsRuntime = { runJavaScript, compileJavaScript };
-if (typeof module !== "undefined") module.exports = { runJavaScript, compileJavaScript };
+if (typeof window !== "undefined") window.GlifexJsRuntime = { runJavaScript, compileJavaScript, measureSpaceProbe };
+if (typeof module !== "undefined") module.exports = { runJavaScript, compileJavaScript, measureSpaceProbe };

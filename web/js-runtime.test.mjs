@@ -6,7 +6,7 @@
 //   node web/js-runtime.test.mjs
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { runJavaScript, compileJavaScript } = require("./js-runtime.js");
+const { runJavaScript, compileJavaScript, measureSpaceProbe } = require("./js-runtime.js");
 
 let n = 0;
 const ok = (cond, msg) => { n++; if (!cond) { console.error("FAIL:", msg); process.exit(1); } };
@@ -156,5 +156,29 @@ await withMockMemory(
     ok(sp[0] === 200 && sp[1] === null && sp[2] === 900, "measureSpace: a single failed sample nulls only its own size");
   }
 );
+
+// --- L4 (JS peak-space): measureSpaceProbe --------------------------------
+// Deterministic tests of the baseline/peak/delta logic via a scripted mock.
+// Call order per run: 1 initial availability probe, then per size (baseline,
+// peak) where the probe awaits `sample()` at its peak.
+const fakeProbe = async (input, sample) => { const scratch = new Array(4); await sample(); return scratch.length >= 0; };
+const fakeGen = (n) => ({ n });
+await withMockMemory(
+  [1000,          // initial availability probe
+   1000, 1100,    // size 262144: baseline 1000, peak 1100 -> 100
+   1000, 1300],   // size 524288: baseline 1000, peak 1300 -> 300
+  async () => {
+    const out = await measureSpaceProbe(fakeProbe, fakeGen, [262144, 524288], { deadline: Date.now() + 60000 });
+    ok(Array.isArray(out) && out.length === 2, "measureSpaceProbe: one entry per size");
+    ok(out[0].n === 262144 && out[0].bytes === 100, "measureSpaceProbe: peak - baseline for size 0");
+    ok(out[1].n === 524288 && out[1].bytes === 300, "measureSpaceProbe: peak - baseline for size 1");
+  }
+);
+await (async () => {
+  globalThis.performance = { now: () => 0 };   // no API
+  const out = await measureSpaceProbe(fakeProbe, fakeGen, [262144, 524288]);
+  globalThis.performance = savedPerf;
+  ok(out === null, "measureSpaceProbe: null when the API is unavailable");
+})();
 
 console.log(`js-runtime battery: ${n}/${n} passed`);
