@@ -160,10 +160,10 @@ const GlifexLab = (() => {
   // identifies "your code" as the likely cause rather than a generic
   // stuck-runtime message.
   const JS_LAB_TIMEOUT_MS = 20000;
-  async function runJsInWorker(source, cases, wantSpace) {
+  async function runJsInWorker(source, cases) {
     try {
       const res = await window.callWorker(
-        jsLabWorkerState, "js-lab-worker.js", { id: "measure", source, cases, opts: { space: !!wantSpace } },
+        jsLabWorkerState, "js-lab-worker.js", { id: "measure", source, cases },
         JS_LAB_TIMEOUT_MS, "Your code took too long to finish (over 20s) -- likely an infinite loop or a much slower algorithm than expected at this input size.");
       if (res.id === "error") return { error: res.error };
       return { results: res.results, nsPerCase: res.nsPerCase };
@@ -198,8 +198,8 @@ const GlifexLab = (() => {
     progress(panel, "Probing runtime tier\u2026");
     const runner = lang === "javascript" ? "js" : await window.Runtimes.get(lang);
     if (!runner) return void (panel.innerHTML = card(`<div class="lab-verdict bad">Runtime for ${esc(lang)} is not available${window.Runtimes.error(lang) ? ": " + esc(window.Runtimes.error(lang)) : ""}.</div>`));
-    const runOnce = async (cases, wantSpace) => runner === "js"
-      ? await runJsInWorker(source, cases, wantSpace)
+    const runOnce = async (cases) => runner === "js"
+      ? await runJsInWorker(source, cases)
       : await runner.run(source, cases, p.languages[lang]);
 
     const probePlan = C.buildPlan(cfg, "wall", lang, "probe").plan.slice(0, 1);
@@ -328,29 +328,37 @@ const GlifexLab = (() => {
       repDurations[r] = dt;
     }
 
-    // L4 (JS space): a dedicated, best-effort space pass -- run AFTER the
-    // timed reps and separately from them, so measureUserAgentSpecificMemory's
-    // async cost never inflates a rep's duration (which would trip the
-    // rep-outlier replacement above). Only the JS worker attempts it, and
-    // only where the API can actually run (cross-origin isolated, Chromium,
-    // non-headless): elsewhere the returned results carry no `.space`, so
-    // nothing merges, spaceBy stays empty, and the Time|Space tab omits
-    // itself exactly as before. The values it does produce are an
-    // explicitly-approximate heap proxy (see js-runtime.js's measureJsSpace
-    // and the disclaimer in the space table) -- NOT the exact per-case
-    // workspace the retro tracks report. Merged into repRows[0], which is
-    // the row the space collection below reads.
-    if (runner === "js" && repRows[0]) {
-      const sp = await runOnce(cases, true);
-      if (sp && !sp.error && sp.results) {
-        sp.results.forEach((r, i) => { if (r && r.space != null && repRows[0][i]) repRows[0][i].space = r.space; });
-        // Diagnostic (Chrome DevTools console.debug -- silent by default): the raw
-        // (n, bytes) heap-proxy series, so the approximate JS/TS space methodology
-        // can be iterated against REAL numbers in the one place the API runs (a
-        // headed, cross-origin-isolated Chrome). Not user-facing.
-        const dbg = plan.map((c, i) => ({ mode: c.mode, n: c.n, bytes: repRows[0][i] && repRows[0][i].space }));
-        if (dbg.some((d) => d.bytes != null)) console.debug("[glifex] JS space (approx) raw (n,bytes):", dbg);
+    // L4 (JS space): measure on the MAIN THREAD. performance.measureUserAgentSpecificMemory
+    // is unavailable in dedicated workers by spec (a window-context call already
+    // accounts for nested workers), so the timing worker can't sample it -- only the
+    // window can. Running solve() here for the memory pass is safe specifically because
+    // it happens AFTER the timed reps: those already proved solve() terminates at these
+    // sizes, so the L3 hang concern that put execution in a worker doesn't apply to this
+    // one extra, post-verification pass. The API is slow (it waits for GC -- up to seconds
+    // each), so we sample only the upper (space-worst) family and cap the number of sizes.
+    // Values are an explicitly-approximate heap proxy (see js-runtime.js measureJsSpace +
+    // the space-table disclaimer); merged into repRows[0], the row space collection reads.
+    if (runner === "js" && repRows[0]
+        && typeof performance !== "undefined" && typeof performance.measureUserAgentSpecificMemory === "function"
+        && window.GlifexJsRuntime && window.GlifexJsRuntime.compileJavaScript) {
+      const upperIdx = [];
+      for (let i = 0; i < plan.length; i++) if (plan[i].mode === cfg.roles.upper) upperIdx.push(i);
+      const MAX_SPACE_SIZES = 6;
+      let picks = upperIdx;
+      if (upperIdx.length > MAX_SPACE_SIZES) {
+        const set = new Set();
+        for (let k = 0; k < MAX_SPACE_SIZES; k++) set.add(upperIdx[Math.round((k * (upperIdx.length - 1)) / (MAX_SPACE_SIZES - 1))]);
+        picks = [...set];
       }
+      try {
+        const compiled = window.GlifexJsRuntime.compileJavaScript(source);
+        if (compiled && !compiled.error && compiled.measureSpace) {
+          const sp = await compiled.measureSpace(picks.map((i) => cases[i]));
+          if (sp) picks.forEach((i, k) => { if (sp[k] != null && repRows[0][i]) repRows[0][i].space = sp[k]; });
+          const dbg = picks.map((i) => ({ mode: plan[i].mode, n: plan[i].n, bytes: repRows[0][i] && repRows[0][i].space }));
+          if (dbg.some((d) => d.bytes != null)) console.debug("[glifex] JS space (approx) raw (n,bytes):", dbg);
+        }
+      } catch (e) { /* best-effort: leave space unmeasured, tab omits itself */ }
     }
 
     // Aggregate: median across reps, per (mode, size). A single measurement
