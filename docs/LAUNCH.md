@@ -1,5 +1,9 @@
 # Glifex Launch Walkthrough
 
+**Status: launched.** Glifex is live at https://glifex.dev from
+Joey-Fuentes/glifex. This walkthrough is retained because Phases 2–3 double
+as the settings and first-CI verification runbook for any future re-setup.
+
 The complete, ordered path from zip file to verified project: initial commit,
 first CI run, and a test of every feature. Work top to bottom; each phase ends
 with a checkpoint. Expected time: ~30 min for Phases 0–3, then toolchain- and
