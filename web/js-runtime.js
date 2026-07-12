@@ -158,7 +158,7 @@ async function churnForcedSample() {
       for (let k = 0; k < 8; k++) { let junk = new Array(500000).fill(k); junk = null; }
       await new Promise((r) => setTimeout(r, 0));
     }
-    const r = await Promise.race([pending, new Promise((res) => { t = setTimeout(() => res(null), 20000); })]);
+    const r = await Promise.race([pending, new Promise((res) => { t = setTimeout(() => res(null), 65000); })]);
     return (r && typeof r.bytes === "number") ? r.bytes : null;
   } catch (e) { return null; }
   finally { clearTimeout(t); }
@@ -177,8 +177,11 @@ async function churnForcedSample() {
 async function measureSpaceProbe(probe, gen, sizes, opts) {
   opts = opts || {};
   if (typeof performance === "undefined" || typeof performance.measureUserAgentSpecificMemory !== "function") return null;
-  if ((await churnForcedSample()) == null) return null;   // API present but not callable here
-  const deadline = opts.deadline || (Date.now() + 240000);
+  // No availability pre-check: on a working-but-slow browser it would burn a
+  // full (up to ~60s) sample just to confirm the API is callable. If the API is
+  // truly absent, the per-size samples return null fast and we report [] of nulls
+  // (-> honest "couldn't measure"). Generous deadline: worst case is ~60s/sample.
+  const deadline = opts.deadline || (Date.now() + 600000);
   const out = [];
   for (const n of sizes) {
     if (Date.now() > deadline) { out.push({ n, bytes: null }); continue; }

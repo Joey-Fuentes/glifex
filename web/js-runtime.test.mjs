@@ -164,8 +164,7 @@ await withMockMemory(
 const fakeProbe = async (input, sample) => { const scratch = new Array(4); await sample(); return scratch.length >= 0; };
 const fakeGen = (n) => ({ n });
 await withMockMemory(
-  [1000,          // initial availability probe
-   1000, 1100,    // size 262144: baseline 1000, peak 1100 -> 100
+  [1000, 1100,    // size 262144: baseline 1000, peak 1100 -> 100
    1000, 1300],   // size 524288: baseline 1000, peak 1300 -> 300
   async () => {
     const out = await measureSpaceProbe(fakeProbe, fakeGen, [262144, 524288], { deadline: Date.now() + 60000 });
