@@ -99,8 +99,9 @@ absolute cross-language speed never enters a verdict). Deterministic
 (cycle-counted) tracks get tight tolerance and exact verdicts; wall-clock
 tiers get medians, loose tolerance, and an honest "Inconclusive" below
 timing resolution rather than a forced guess. Engine battery
-(`web/lab-engine.test.mjs`) is 75/75 in CI; e2e coverage in
-`e2e/lab.spec.js` (Chromium).
+(`web/lab-engine.test.mjs`) is 86/86 in CI; e2e coverage in
+`e2e/lab.spec.js` (Chromium) -- JavaScript only; see the coverage-gap
+note in `docs/ROADMAP.md`'s L1 entry.
 
 - **Per-variant declared complexity bounds (#28).** Declared O/Omega bounds
   moved from one per-problem value to per-language, per-variant
@@ -154,18 +155,74 @@ timing resolution rather than a forced guess. Engine battery
   afterward — matching an independent developer's confirmed fix for the
   identical symptom on this exact SDK doing similar in-browser clang/LLVM
   work (cited in the PR). This eliminated the cascading failure.
-  - **Known issue, not yet resolved (#33):** the underlying Wasmer SDK
-    still crashes intermittently even with a fresh Worker per call —
-    correlated with input complexity, not random: not observed on 001
-    (Nth Fibonacci, scalar), observed occasionally on 002 (Two Sum,
+  - **Known issue, likely root-caused and fixed (pending live
+    confirmation):** direct measurement found a severe memory
+    amplification bug in the shared C JSON parser -- every string parsed
+    allocated a buffer sized to the entire remaining unparsed JSON, not
+    just that string, and those allocations are never freed. 112x
+    amplification measured on a realistic payload (44MB for 394KB of
+    input) before the fix, 1.0x after. The original correlation below
+    (not seen on 001, seen on 002) is now understood differently: 001
+    (Anagram Detection, fixed-size character-count scan) simply wasn't
+    large enough to trigger the same underlying problem until the
+    Complexity Lab's ladder was extended -- at the new, larger sizes it
+    reproduces on both problems, consistently rather than
+    intermittently, which is what actually pointed at a deterministic
+    memory bug instead of random SDK flakiness. Full detail:
+    `docs/ROADMAP.md`'s Bx-3 entry.
+  - **Known issue, not yet resolved (#33), separate from the above:**
+    the underlying Wasmer SDK still crashes intermittently even with a
+    fresh Worker per call -- correlated with input complexity, not
+    random: not observed on 001 (Anagram Detection, fixed-size
+    character-count scan), observed occasionally on 002 (Two Sum,
     array/hash-map-based). No longer cascades; a failed run doesn't affect
     other runs or languages. Diagnostic breadcrumb logging (source/case
     size + execution-stage tracking, in both the worker and its caller)
     is in place to correlate future occurrences; deliberately not masked
     with automatic retry. Full detail: `docs/ROADMAP.md`'s Bx-3 entry.
 
+## ✅ Complexity Lab (L3) — worker migration, verified in production
+
+Every runtime the Lab (and the plain Run button) can drive now executes off
+the main thread: JavaScript, TypeScript, Python, Ruby, PHP, WAT, Postgres,
+the retro CPU trio, C, and C++ -- a fresh worker spawned per call, not one
+reused across a session. This closes a real hang-exposure class: a single
+stuck call (runaway user code, or a genuine bug) used to be able to poison
+every subsequent call for the rest of the session, not just that one. C
+already had this (see the C runtime section above); C++ did not until this
+work, and hit the identical symptom for an unrelated reason -- a hand-rolled
+hash table in `optimized.cpp` with a fixed capacity infinite-looped once
+Analyze's larger sizes fed it more unique keys than it had room for, and the
+reused-worker bug turned that one bad call into "C++ stops responding for
+the rest of the session." Confirmed directly, not assumed: built a
+genuinely adversarial input (32768 unique values, no valid answer, forcing
+full processing) and measured the old code hang under a hard timeout before
+confirming the fix completes in milliseconds on the identical input.
+
+The Complexity Lab's size ladder extended from 5 points (up to n=1024) to 10
+(up to n=32768), grounded in a real, observed timing measurement rather
+than a guess: the original 4-point ladder took ~20s end to end on C; since
+every size point is already batched into a single compile-and-run call (not
+one compile per point), the fixed compile cost doesn't multiply with ladder
+length, so the full 10-point ladder was estimated at ~40s total --
+comfortably inside the 2-minute outer runtime-lock timeout. `maxSizes` is
+per-language (`web/lab-config.mjs`'s `LANG_OVERRIDES`) -- compiled languages
+are capped at all 10 points; PHP stays capped at 4, unrelated to this work.
+
 ## ✅ Tracks & infrastructure
 
+- **Worked-example policy reversed.** 001 (Anagram Detection) and 002
+  (Two Sum) no longer ship `practice` solved -- every problem now ships a
+  blank, fail-first stub uniformly, across every declared language for
+  each (17 for 001, 16 for 002). Real worked examples deferred to a
+  future phase, not dropped; see `docs/contribution-policy.md`. Full
+  correctness re-verified per language after the change, not assumed.
+- **CI/CD pipeline gating.** A required check that could be silently
+  satisfied by being skipped, and a deploy trigger with no awareness of
+  CI's result, both let a broken solution reach production once. Both
+  fixed and verified by deliberately breaking each gate on a real PR and
+  confirming it correctly refused, not just by reasoning about the YAML.
+  Full incident account: [docs/ci-cd.md](docs/ci-cd.md).
 - **Database track** — `db test` (ephemeral SQLite) and `db bench`
   (`EXPLAIN` query-plan diff) green on all three OSes.
 - **Frontend track** — assertion engine unit-verified in Node AND verified in
@@ -220,7 +277,26 @@ timing resolution rather than a forced guess. Engine battery
 - **Cases via stdin** (`MemFS.setStdinStr`), not a memfs file — sidesteps Binji's memfs
   file-backing bug; harness reads `std::cin`, native CLI pipes the file in.
 - **E2E**: problem 001 compiles+runs 7/7 in-browser (driver + through the UI, chromium);
-  native g++ across ubuntu/macos/windows.
+  native g++ across ubuntu/macos/windows. **Coverage gap:** 001 only -- 002
+  (the only problem with a brute-force variant, and the only one where
+  `optimized.cpp` does anything non-trivial) has zero C++ e2e coverage.
+- **Four real bugs found and fixed testing live, none caught by e2e**
+  (see the coverage gap above and `docs/ROADMAP.md`'s L1-e2e-analyze-js-only-gap):
+  (1) `optimized.cpp`'s hand-rolled hash table used `thread_local` storage,
+  which this `--no-threads` target's backend cannot lower at all -- crashed
+  clang's backend on every 002 attempt regardless of practice's content,
+  since `optimized.cpp` is always compiled alongside whatever's in the
+  editor. (2) Binji's `App.run()` rejects on any non-zero process exit, but
+  the harness's own convention (exit 1 = "some cases failed," a normal
+  outcome) was being misreported as a scary compile/runtime error for every
+  C++ problem, not just 001/002. (3) The reference panel never renamed a
+  revealed variant's function to `practice` before display/copy -- unlike C,
+  which already has `stripCRename()` for its own version of this problem --
+  so copying a revealed clean/optimized/brute-force solution into practice's
+  editor, the natural way to verify a reference actually works, failed to
+  compile. (4) `loadCpp()` reused one worker across an entire session
+  instead of spawning fresh per call (see the L3 section above) --
+  identical to a bug C already had and fixed.
 
 ### Follow-up — Bx-3b-2: modern-LLVM toolchain rebuild (tracked, not started)
 Rebuild clang/lld to wasm on LLVM 19/20 to drop the `Rc` shim and the `-std=c++17`

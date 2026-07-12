@@ -1,6 +1,12 @@
 # Glifex
 
+[![CI](https://github.com/Joey-Fuentes/glifex/actions/workflows/ci.yml/badge.svg)](https://github.com/Joey-Fuentes/glifex/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Live: glifex.dev](https://img.shields.io/badge/live-glifex.dev-3fb950.svg)](https://glifex.dev)
+
 Practice coding problems **blind**, in **many languages**, against **one shared set of test cases** — then benchmark your solutions with each language's real profiling tools. There's also a **database track** for inherently-SQL problems, tested against a throwaway Postgres instance. One command runs everything, on Linux, macOS, and Windows, straight from VS Code.
+
+[![Glifex playground screenshot](docs/screenshot.png)](https://glifex.dev)
 
 > **Ships with:** Python · JavaScript · TypeScript · Go · Java · Ruby · C# · C++ · C · Rust · PHP · Dart · Zig
 > **Assembly family:** x86-64 · ARM64 · WebAssembly Text (numeric problems, added per-problem)
@@ -51,7 +57,7 @@ Pick whichever path fits. All end at the same place: a green run.
 
 ### Path A — GitHub Codespaces (zero install)
 
-Click **Code → Codespaces → Create codespace**. Every toolchain is preinstalled in the browser. Then:
+Click **Code → Codespaces → Create codespace** and choose a **4-core (16 GB) machine or larger** — the 2-core box can't build the container ([why](docs/codespaces.md)). Every toolchain, plus `gh` (pre-authenticated), is preinstalled. Then:
 
 ```bash
 python3 glifex.py test 001-anagram-detection python
@@ -96,6 +102,8 @@ The pins track current LTS/stable: Node.js 24 (Active LTS), Java 25 (LTS), .NET 
 ### 2. Dev Container / Codespaces — guaranteed environment
 
 With Docker (or Codespaces), **Reopen in Container** gives every contributor a byte-identical Linux environment with all toolchains present — and Docker-in-Docker for the database track. This is the only path that *guarantees* rather than *reports*, and it's the smoothest on Windows.
+
+Full setup, machine-size requirements, and the `gh` PR flow: [docs/codespaces.md](docs/codespaces.md).
 
 ### 3. Native package managers — last resort
 
@@ -296,6 +304,8 @@ tool_version   = "rust 1.85"              # feeds .tool-versions
 
 Drop in the `.toml` and its harness template, and everything else picks it up automatically. **C++, Kotlin, and Swift** are planned on exactly this mechanism (C++ exercises the optional `compile` stage; Swift is first-class on Linux/macOS/WSL and second-class on native Windows). See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full harness contract.
 
+> **A plugin gets you the CLI tier, not the playground tier.** A `languages/*.toml` makes a language run *natively* under `glifex test` on whatever machine has its toolchain. Running that language **in the browser** is a separate, heavier piece of work: a WASM runtime must be built or vendored and wired into `web/runtimes.js` (see [`docs/browser-runtimes.md`](docs/browser-runtimes.md)). Until that exists, a newly added language is fully supported in the CLI and simply **CLI-only in the playground** -- disclosed honestly in the UI, never faked.
+
 ---
 
 ## Benchmarking
@@ -340,8 +350,20 @@ node web/build.mjs
 python3 -m http.server -d web 8080   # → http://localhost:8080
 ```
 
+**Browser support.** Any current evergreen browser works: Chrome/Edge, Firefox,
+and Safari, on desktop and on Android (verified on Android Chrome). The baseline
+requirement is WebAssembly -- JavaScript problems run with zero downloads, and the
+other in-browser runtimes (Python, Ruby, TypeScript, PHP, WAT, PostgreSQL, C, C++)
+lazy-load a vendored WASM runtime on first use. One runtime, the **C** toolchain,
+additionally needs `SharedArrayBuffer` and therefore cross-origin isolation; the
+page enables it via a service worker and does a one-time reload the first time you
+pick C (C++ needs neither). After a runtime's first use it is cached, so the
+playground keeps working **offline** -- offline behaves identically to hosted, and
+that equivalence is a machine-checked E2E test.
+
 See [`STATUS.md`](STATUS.md) for exactly what's verified vs written-pending-local-check,
 and [`docs/LAUNCH.md`](docs/LAUNCH.md) for the full step-by-step launch & verification walkthrough.
+The sequenced plan lives in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 
 
@@ -379,6 +401,15 @@ graphics needed for algorithm practice) for N cycles, then read the result from
 an agreed memory address. Lightweight CPU cores exist in both Python and JS, so
 it could eventually run in the playground too. Deliberately deferred until the
 emulator-harness pattern is designed properly — tracked as a future feature.
+
+## Contributing problems
+
+New algorithm problems require the **floor**: Python, JavaScript, C, and C++
+with passing references and blank practice stubs, plus a `manifest.toml`
+declaring languages, exclusions (with reasons), and worst-case complexity.
+`glifex verify <problem>` runs the exact gate CI enforces. Everything above
+the floor — more languages, more variants — is a welcome incremental PR.
+Full policy: [docs/contribution-policy.md](docs/contribution-policy.md).
 
 ## CI & quality gates
 
