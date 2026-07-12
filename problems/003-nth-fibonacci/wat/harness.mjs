@@ -13,7 +13,12 @@ const solve = instance.exports.solve;
 if (typeof solve !== "function") { console.error('no "solve" export'); process.exit(1); }
 let passed = 0;
 cases.forEach((c, i) => {
-  const got = solve(...Object.values(c.input));   // numeric args, positional
+  // WASM i64 returns marshal into JS as BigInt; JSON.stringify throws on
+  // BigInt, so normalize to Number before comparing. fib(n) returns i64
+  // (it overflows i32); every test value is far under 2^53, so Number is
+  // exact here. (This surfaced only when the CI matrix re-enabled WAT.)
+  const raw = solve(...Object.values(c.input));   // numeric args, positional
+  const got = typeof raw === "bigint" ? Number(raw) : raw;
   const ok = eq(got, c.expected);
   if (ok) passed++;
   console.log(`  [${ok ? "PASS" : "FAIL"}] case ${i}` + (ok ? "" : `  expected=${JSON.stringify(c.expected)} got=${JSON.stringify(got)}`));
