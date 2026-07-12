@@ -265,17 +265,41 @@ jobs:
 
   # ── Stage 5: security ────────────────────────────────────────────────
   security:
+    permissions:
+      security-events: write   # upload the Trivy SARIF to the Security tab
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Trivy — dependencies + secrets (blocking)
-        uses: aquasecurity/trivy-action@master
+      - name: Trivy report (all severities, non-blocking)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25   # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
-          severity: HIGH,CRITICAL
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"
+          scanners: vuln,secret
+          format: sarif
+          output: trivy.sarif
+      - name: Upload Trivy report to the Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+      - name: Trivy enforce (MEDIUM/HIGH/CRITICAL, blocking)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25   # v0.36.0
+        env:
+          # Reuse the vuln DB the report step already fetched -- no second
+          # download, so the two steps cost roughly one scan's worth of work.
+          TRIVY_SKIP_DB_UPDATE: true
+          TRIVY_SKIP_JAVA_DB_UPDATE: true
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: MEDIUM,HIGH,CRITICAL
           exit-code: "1"
           scanners: vuln,secret
+          skip-setup-trivy: true   # trivy already installed by the report step
 
   # ── Stage 6: CodeQL static analysis ──────────────────────────────────
   # Moved in from the old standalone codeql.yml: a SEPARATE workflow cannot
