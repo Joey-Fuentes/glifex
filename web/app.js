@@ -281,13 +281,20 @@ function fmtNs(ns) {
   return Math.round(ns) + " ns";
 }
 
+function escHtml(s) {
+  // Escape before interpolating error/exception text or user-controlled result
+  // data into innerHTML -- prevents "exception text reinterpreted as HTML"
+  // (CodeQL) and any stored-markup injection through case/row/assertion output.
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 function renderResults(out, res, opts = {}) {
-  if (out.error) { res.innerHTML = `<div class="summary bad">${out.error}</div>`; recordOutcome(false); return; }
+  if (out.error) { res.innerHTML = `<div class="summary bad">${escHtml(out.error)}</div>`; recordOutcome(false); return; }
   const passed = out.results.filter((r) => r.ok).length;
   const allPass = passed === out.results.length;
   let html = out.results.map((r) =>
     `<div class="case ${r.ok ? "pass" : "fail"}">[${r.ok ? "PASS" : "FAIL"}] case ${r.i}` +
-    (r.ok ? "" : `  expected=${JSON.stringify(r.expected)} ${r.error ? "error=" + r.error : "got=" + JSON.stringify(r.got)}`) +
+    (r.ok ? "" : `  expected=${escHtml(JSON.stringify(r.expected))} ${r.error ? "error=" + escHtml(r.error) : "got=" + escHtml(JSON.stringify(r.got))}`) +
     `</div>`).join("") +
     `<div class="summary ${allPass ? "ok" : "bad"}">${passed}/${out.results.length} passed</div>`;
   if (allPass && out.nsPerCase) {
@@ -352,8 +359,8 @@ function runFrontend(p, res) {
     const results = window.evaluateAssertions(doc, win, p.assertions);
     const passed = results.filter((r) => r.ok).length;
     res.innerHTML = results.map((r) =>
-      `<div class="case ${r.ok ? "pass" : "fail"}">[${r.ok ? "PASS" : "FAIL"}] ${r.label}` +
-      (r.ok ? "" : `  — ${r.detail}`) + `</div>`).join("") +
+      `<div class="case ${r.ok ? "pass" : "fail"}">[${r.ok ? "PASS" : "FAIL"}] ${escHtml(r.label)}` +
+      (r.ok ? "" : `  — ${escHtml(r.detail)}`) + `</div>`).join("") +
       `<div class="summary ${passed === results.length ? "ok" : "bad"}">${passed}/${results.length} assertions passed</div>`;
     recordOutcome(passed === results.length);
   };
@@ -375,7 +382,7 @@ async function runInner() {
     if (!db) {
       const err = window.Runtimes.error("postgres");
       if (err) {
-        res.innerHTML = `<div class="summary bad">In-browser Postgres failed to start: ${err} — details in the console (F12).</div>`;
+        res.innerHTML = `<div class="summary bad">In-browser Postgres failed to start: ${escHtml(err)} — details in the console (F12).</div>`;
         return;
       }
       res.innerHTML = `<div class="needs-runtime">The in-browser Postgres (PGlite) isn't vendored yet:
@@ -390,11 +397,11 @@ async function runInner() {
       const norm = (xs) => p.expected.ordered ? JSON.stringify(xs) : JSON.stringify(xs.map(String).sort());
       const ok = norm(rows) === norm(exp);
       res.innerHTML = `<div class="case ${ok ? "pass" : "fail"}">[${ok ? "PASS" : "FAIL"}] ${rows.length} rows (ordered=${!!p.expected.ordered})` +
-        (ok ? "" : `<br>expected=${JSON.stringify(exp)}<br>got=${JSON.stringify(rows)}`) + `</div>` +
+        (ok ? "" : `<br>expected=${escHtml(JSON.stringify(exp))}<br>got=${escHtml(JSON.stringify(rows))}`) + `</div>` +
         `<div class="summary ${ok ? "ok" : "bad"}">${ok ? "PASS" : "FAIL"}</div>`;
       recordOutcome(ok);
     } catch (e) {
-      res.innerHTML = `<div class="summary bad">query error: ${e.message}</div>`;
+      res.innerHTML = `<div class="summary bad">query error: ${escHtml(e.message)}</div>`;
       recordOutcome(false);
     }
     return;
@@ -424,7 +431,7 @@ async function runInner() {
   if (!runner || runner === "native") {
     const err = window.Runtimes.error(state.lang);
     if (err) {
-      res.innerHTML = `<div class="summary bad">The ${state.lang} runtime failed to start: ${err} — details in the console (F12).</div>`;
+      res.innerHTML = `<div class="summary bad">The ${escHtml(state.lang)} runtime failed to start: ${escHtml(err)} — details in the console (F12).</div>`;
       return;
     }
     res.innerHTML = `<div class="needs-runtime">The <b>${state.lang}</b> runtime isn't vendored.
@@ -438,7 +445,7 @@ async function runInner() {
   try {
     renderResults(await runner.run((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases, p.languages[state.lang]), res);
   } catch (e) {
-    res.innerHTML = `<div class="summary bad">runtime error: ${e.message}</div>`;
+    res.innerHTML = `<div class="summary bad">runtime error: ${escHtml(e.message)}</div>`;
     recordOutcome(false);
   }
 }
