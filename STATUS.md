@@ -329,9 +329,12 @@ Metric is instruction count (coarse) -- see TODO(cycle-accuracy) in the loaders.
 
 - Development is at Joey-Fuentes/glifex; the site is https://glifex.dev.
   Codespaces docs remain valid; current flow is local (Termux) + push.
-- CI diet: the 3-OS test matrix, security job, retro-smoke and codeql triggers are
-  TEMP-disabled (grep `TEMP(free-tier)` to re-enable by deleting marked lines).
-  Kept spine: lint -> corpus (staleness + integrity) -> playground -> e2e + pages.
+- CI: the 3-OS test matrix, security (Trivy), and codeql are RE-ENABLED and
+  now REQUIRED -- all three are in `ci-status-gate`'s `needs:`, so a failure in
+  any blocks merge (codeql was moved from its own workflow into a `ci.yml` job
+  so the gate could depend on it). Still TEMP-disabled: `retro-smoke` (and
+  `retro-exhaustive`, manual by design). Spine: lint -> corpus (staleness +
+  integrity) -> (matrix, security, codeql, playground -> e2e) -> gate + pages.
 - Vendor resilience: `actions/cache` on web/vendor (separate pages/ci keys -- the
   e2e flavor strips CodeMirror) + curl retries; deploys stop touching third-party
   CDNs after one good run (ends the get.wasmer.io / Binji 429 class).
