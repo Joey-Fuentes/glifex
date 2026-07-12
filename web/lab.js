@@ -343,7 +343,7 @@ const GlifexLab = (() => {
         && window.GlifexJsRuntime && window.GlifexJsRuntime.compileJavaScript) {
       const upperIdx = [];
       for (let i = 0; i < plan.length; i++) if (plan[i].mode === cfg.roles.upper) upperIdx.push(i);
-      const MAX_SPACE_SIZES = 6;
+      const MAX_SPACE_SIZES = 4;
       let picks = upperIdx;
       if (upperIdx.length > MAX_SPACE_SIZES) {
         const set = new Set();
@@ -351,9 +351,11 @@ const GlifexLab = (() => {
         picks = [...set];
       }
       try {
+        progress(panel, "Measuring memory (approximate; waits for GC, may take a few seconds)\u2026");
         const compiled = window.GlifexJsRuntime.compileJavaScript(source);
         if (compiled && !compiled.error && compiled.measureSpace) {
-          const sp = await compiled.measureSpace(picks.map((i) => cases[i]));
+          const deadline = Date.now() + 12000;   // hard budget: never let the slow API stall analyze
+          const sp = await compiled.measureSpace(picks.map((i) => cases[i]), deadline);
           if (sp) picks.forEach((i, k) => { if (sp[k] != null && repRows[0][i]) repRows[0][i].space = sp[k]; });
           const dbg = picks.map((i) => ({ mode: plan[i].mode, n: plan[i].n, bytes: repRows[0][i] && repRows[0][i].space }));
           if (dbg.some((d) => d.bytes != null)) console.debug("[glifex] JS space (approx) raw (n,bytes):", dbg);

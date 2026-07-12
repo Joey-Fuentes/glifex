@@ -22,7 +22,7 @@ function compileJavaScript(source) {
     new Function("module", "exports", source)(module, module.exports);
     const solve = typeof module.exports === "function" ? module.exports : module.exports.solve;
     if (typeof solve !== "function") throw new Error("no solve() exported");
-    return { measure: (cases, opts) => measureJsCases(solve, cases, opts), measureSpace: (cases) => measureJsSpace(solve, cases) };
+    return { measure: (cases, opts) => measureJsCases(solve, cases, opts), measureSpace: (cases, deadline) => measureJsSpace(solve, cases, deadline) };
   } catch (e) {
     return { error: `Compile error: ${e.message}` };
   }
@@ -143,15 +143,25 @@ function measureJsCases(solve, cases, opts) {
 // retained, and report the clamped delta. Deltas are measured fresh per size
 // and the result released between sizes, so they don't accumulate. See
 // docs/ROADMAP.md (L4) for the path toward a cleaner metric.
-async function measureJsSpace(solve, cases) {
+async function measureJsSpace(solve, cases, deadline) {
   if (typeof performance === "undefined" || typeof performance.measureUserAgentSpecificMemory !== "function") return null;
+  // The API waits for the next GC and may take up to ~20s per call, which would
+  // freeze the analyze UI. Cap each call, and stop the whole pass at `deadline`;
+  // we return whatever sizes we managed (>=2 still lets the judge run, fewer just
+  // means no space verdict). Better a partial/absent metric than a frozen Lab.
   const sample = async () => {
-    try { const r = await performance.measureUserAgentSpecificMemory(); return (r && typeof r.bytes === "number") ? r.bytes : null; }
-    catch (e) { return null; }   // present but not callable here (e.g. headless) -> treat as unavailable
+    let t;
+    try {
+      const timeout = new Promise((res) => { t = setTimeout(() => res(null), 5000); });
+      const r = await Promise.race([performance.measureUserAgentSpecificMemory(), timeout]);
+      return (r && typeof r.bytes === "number") ? r.bytes : null;
+    } catch (e) { return null; }
+    finally { clearTimeout(t); }
   };
   if ((await sample()) == null) return null;
   const space = new Array(cases.length).fill(null);
   for (let i = 0; i < cases.length; i++) {
+    if (deadline && Date.now() > deadline) break;   // budget spent -> keep what we have
     try {
       solve(cases[i].input);                 // warm-up (discarded)
       const before = await sample();
