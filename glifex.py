@@ -442,7 +442,7 @@ def cmd_verify(args):
         errors.append("test_cases.json missing")
 
     if not worked:
-        warnings.append("practice stubs must be BLANK for new problems (reviewer-checked; 001/002 are worked examples)")
+        warnings.append("practice stubs must be BLANK for new problems (reviewer-checked)")
 
     for w in warnings:
         print(f"  ! {w}")

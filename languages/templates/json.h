@@ -27,7 +27,24 @@ static void jws(void) { while (*jp && isspace((unsigned char)*jp)) jp++; }
 
 static char *jstr_(void) {
     jp++; /* opening quote */
-    char *buf = malloc(strlen(jp) + 1); int n = 0;
+    /* Find this string's actual length (source chars, an always-safe
+       upper bound on output length since escapes only ever shrink)
+       instead of malloc(strlen(jp) + 1), which previously sized the
+       buffer to the ENTIRE remaining unparsed JSON -- not just this
+       one string. That's fine for a single small string, but this
+       process's allocations are intentionally never freed (see file
+       header), so the waste compounds across every string field in
+       the input: a large multi-case payload could allocate many
+       times its own size before finishing. Must skip escape pairs
+       the same way the unescape loop below does, so an escaped quote
+       (\") isn't mistaken for the closing one. */
+    const char *start = jp;
+    size_t srclen = 0;
+    while (start[srclen] != '"') {
+        if (start[srclen] == '\\') srclen++;
+        srclen++;
+    }
+    char *buf = malloc(srclen + 1); int n = 0;
     while (*jp != '"') {
         char c = *jp++;
         if (c == '\\') { char e = *jp++; buf[n++] = e == 'n' ? '\n' : e == 't' ? '\t' : e; }

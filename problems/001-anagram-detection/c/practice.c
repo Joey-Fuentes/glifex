@@ -1,11 +1,8 @@
 #include "solution.h"
 
-static int cmpc(const void *a, const void *b) { return *(const char *)a - *(const char *)b; }
-
-JVal *practice(JVal *c) {
-    char *s = jstrdup(jget(c, "s")->str), *t = jstrdup(jget(c, "t")->str);
-    size_t ls = strlen(s), lt = strlen(t);
-    if (ls != lt) return jbool_(0);
-    qsort(s, ls, 1, cmpc); qsort(t, lt, 1, cmpc);
-    return jbool_(!strcmp(s, t));
+JVal *solve(JVal *c) {
+    char *s = jget(c, "s")->str;
+    char *t = jget(c, "t")->str;
+    /* Return true if s and t are anagrams of each other, false otherwise. */
+    return jbool_(0);
 }

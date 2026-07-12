@@ -1,6 +1,7 @@
+#define solve __glifex_ref_optimized
 #include "solution.h"
 
-JVal *optimized(JVal *c) {
+JVal *solve(JVal *c) {
     const char *s = jget(c, "s")->str, *t = jget(c, "t")->str;
     if (strlen(s) != strlen(t)) return jbool_(0);
     int count[256] = {0};

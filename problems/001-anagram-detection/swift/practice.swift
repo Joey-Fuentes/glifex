@@ -1,5 +1,8 @@
 import Foundation
 
 func practice(_ c: [String: Any]) -> Any {
-    return (c["s"] as! String).sorted() == (c["t"] as! String).sorted()
+    let s = c["s"] as! String
+    let t = c["t"] as! String
+    // Return true if s and t are anagrams of each other, false otherwise.
+    return false
 }

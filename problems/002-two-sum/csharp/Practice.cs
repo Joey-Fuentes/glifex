@@ -3,13 +3,8 @@ using System.Text.Json;
 class Practice : ISolution {
     public object Solve(Dictionary<string, object> c) {
         var target = ((JsonElement)c["target"]).GetInt64();
-        var seen = new Dictionary<long, int>();
-        int i = 0;
-        foreach (var el in ((JsonElement)c["nums"]).EnumerateArray()) {
-            long n = el.GetInt64();
-            if (seen.TryGetValue(target - n, out var j)) return new[] { j, i };
-            seen[n] = i; i++;
-        }
+        var nums = (JsonElement)c["nums"];
+        // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.
         return new int[0];
     }
 }

@@ -1,4 +1,4 @@
-/* The Glifex C contract: implement  JVal *<variant>(JVal *input);  */
+/* The Glifex C contract: implement  JVal *solve(JVal *input);  */
 #pragma once
 #include "json.h"
 

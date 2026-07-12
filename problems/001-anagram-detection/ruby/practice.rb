@@ -1,3 +1,5 @@
 def solve(c)
-  c["s"].chars.sort == c["t"].chars.sort
+  s, t = c["s"], c["t"]
+  # Return true if s and t are anagrams of each other, false otherwise.
+  false
 end

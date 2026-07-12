@@ -1,5 +1,10 @@
 {
-  "generatedAt": "2026-07-08T10:52:11.753Z",
+  "generatedAt": "2026-07-12T00:29:24.032Z",
+  "displayNames": {
+    "asm-6502": "6502 assembly",
+    "i8080": "Intel 8080 assembly",
+    "sm83": "Game Boy assembly"
+  },
   "problems": [
     {
       "id": "001-anagram-detection",
@@ -10,7 +15,7 @@
         "hash-map",
         "sorting"
       ],
-      "worked": true,
+      "worked": false,
       "title": "001 · Anagram Detection",
       "statement": "# 001 · Anagram Detection\n\n## Task\nGiven two strings `s` and `t`, return `true` if `t` is an anagram of `s`\n(same characters, same counts), else `false`.\n\n## Signature\n`solve(input) -> bool`  where `input = { \"s\": string, \"t\": string }`\n\n## Notes\nThis is a *worked example*: `practice.*` ships with a correct naive solution so\n`glifex test 001 <lang>` is green on a fresh clone. Compare it against the hidden\nreferences with `glifex reveal 001 <lang> optimized`. New problems created with\n`glifex new` start from blank stubs instead.\n",
       "cases": [
@@ -66,64 +71,274 @@
       ],
       "languages": {
         "c": {
-          "practice": "#include \"solution.h\"\n\nstatic int cmpc(const void *a, const void *b) { return *(const char *)a - *(const char *)b; }\n\nJVal *practice(JVal *c) {\n    char *s = jstrdup(jget(c, \"s\")->str), *t = jstrdup(jget(c, \"t\")->str);\n    size_t ls = strlen(s), lt = strlen(t);\n    if (ls != lt) return jbool_(0);\n    qsort(s, ls, 1, cmpc); qsort(t, lt, 1, cmpc);\n    return jbool_(!strcmp(s, t));\n}\n",
-          "clean": "#include \"solution.h\"\n\nstatic int cmpc(const void *a, const void *b) { return *(const char *)a - *(const char *)b; }\n\nJVal *clean(JVal *c) {\n    char *s = jstrdup(jget(c, \"s\")->str), *t = jstrdup(jget(c, \"t\")->str);\n    size_t ls = strlen(s), lt = strlen(t);\n    if (ls != lt) return jbool_(0);\n    qsort(s, ls, 1, cmpc); qsort(t, lt, 1, cmpc);\n    return jbool_(!strcmp(s, t));\n}\n",
-          "optimized": "#include \"solution.h\"\n\nJVal *optimized(JVal *c) {\n    const char *s = jget(c, \"s\")->str, *t = jget(c, \"t\")->str;\n    if (strlen(s) != strlen(t)) return jbool_(0);\n    int count[256] = {0};\n    for (const unsigned char *p = (const unsigned char *)s; *p; p++) count[*p]++;\n    for (const unsigned char *p = (const unsigned char *)t; *p; p++)\n        if (--count[*p] < 0) return jbool_(0);\n    return jbool_(1);\n}\n",
+          "practice": "#include \"solution.h\"\n\nJVal *solve(JVal *c) {\n    char *s = jget(c, \"s\")->str;\n    char *t = jget(c, \"t\")->str;\n    /* Return true if s and t are anagrams of each other, false otherwise. */\n    return jbool_(0);\n}\n",
+          "clean": "#define solve __glifex_ref_clean\n#include \"solution.h\"\n\nstatic int cmpc(const void *a, const void *b) { return *(const char *)a - *(const char *)b; }\n\nJVal *solve(JVal *c) {\n    char *s = jstrdup(jget(c, \"s\")->str), *t = jstrdup(jget(c, \"t\")->str);\n    size_t ls = strlen(s), lt = strlen(t);\n    if (ls != lt) return jbool_(0);\n    qsort(s, ls, 1, cmpc); qsort(t, lt, 1, cmpc);\n    return jbool_(!strcmp(s, t));\n}\n",
+          "optimized": "#define solve __glifex_ref_optimized\n#include \"solution.h\"\n\nJVal *solve(JVal *c) {\n    const char *s = jget(c, \"s\")->str, *t = jget(c, \"t\")->str;\n    if (strlen(s) != strlen(t)) return jbool_(0);\n    int count[256] = {0};\n    for (const unsigned char *p = (const unsigned char *)s; *p; p++) count[*p]++;\n    for (const unsigned char *p = (const unsigned char *)t; *p; p++)\n        if (--count[*p] < 0) return jbool_(0);\n    return jbool_(1);\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          },
           "support": {
-            "harness.c": "/* Generated harness — do not edit. Reads ../test_cases.json, dispatches on variant. */\n#define _POSIX_C_SOURCE 200809L  /* clock_gettime under strict -std=c11 */\n#include \"solution.h\"\n#include <time.h>\n\nJVal *practice(JVal *c);\nJVal *clean(JVal *c);\nJVal *optimized(JVal *c);\n\nstatic char *read_file(const char *path) {\n    FILE *f = fopen(path, \"rb\");\n    if (!f) { fprintf(stderr, \"cannot open %s\\n\", path); exit(2); }\n    fseek(f, 0, SEEK_END); long n = ftell(f); rewind(f);\n    char *buf = malloc(n + 1);\n    if (fread(buf, 1, n, f) != (size_t)n) { fprintf(stderr, \"read error\\n\"); exit(2); }\n    buf[n] = 0; fclose(f); return buf;\n}\n\nint main(int argc, char **argv) {\n    const char *variant = argc > 1 ? argv[1] : \"practice\";\n    int bench = argc > 2 && !strcmp(argv[2], \"--bench\");\n    JVal *cases = json_parse(read_file(\"../test_cases.json\"));\n    JVal *(*fn)(JVal *) = !strcmp(variant, \"practice\") ? practice\n                        : !strcmp(variant, \"clean\") ? clean : optimized;\n    if (bench) {\n        double best = 1e18;\n        for (int r = 0; r < 5; r++) {\n            struct timespec t0, t1;\n            clock_gettime(CLOCK_MONOTONIC, &t0);\n            for (int i = 0; i < cases->n; i++) fn(jget(cases->items[i], \"input\"));\n            clock_gettime(CLOCK_MONOTONIC, &t1);\n            double per = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / (cases->n > 0 ? cases->n : 1);\n            if (per < best) best = per;\n        }\n        printf(\"  %s: ~%lld ns/case (coarse)\\n\", variant, (long long)best);\n        return 0;\n    }\n    int passed = 0;\n    for (int i = 0; i < cases->n; i++) {\n        char *got = jdumps(fn(jget(cases->items[i], \"input\")));\n        char *exp = jdumps(jget(cases->items[i], \"expected\"));\n        int ok = !strcmp(got, exp);\n        passed += ok;\n        printf(\"  [%s] case %d\", ok ? \"PASS\" : \"FAIL\", i);\n        if (!ok) printf(\"  expected=%s got=%s\", exp, got);\n        printf(\"\\n\");\n    }\n    printf(\"%d/%d passed\\n\", passed, cases->n);\n    return passed == cases->n ? 0 : 1;\n}\n",
-            "json.h": "/* Minimal JSON parser (C has no stdlib JSON). Vendored, dependency-free.\n * Short-lived test process: allocations are intentionally not freed. */\n#pragma once\n#include <ctype.h>\n#include <math.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\ntypedef enum { J_NULL, J_BOOL, J_NUM, J_STR, J_ARR, J_OBJ } JType;\n\ntypedef struct JVal {\n    JType type;\n    int b;\n    double num;\n    char *str;\n    struct JVal **items;   /* arrays */\n    char **keys;           /* objects */\n    struct JVal **vals;\n    int n;\n} JVal;\n\nstatic const char *jp;\n\nstatic JVal *jnew(JType t) { JVal *v = calloc(1, sizeof(JVal)); v->type = t; return v; }\nstatic void jws(void) { while (*jp && isspace((unsigned char)*jp)) jp++; }\n\nstatic char *jstr_(void) {\n    jp++; /* opening quote */\n    char *buf = malloc(strlen(jp) + 1); int n = 0;\n    while (*jp != '\"') {\n        char c = *jp++;\n        if (c == '\\\\') { char e = *jp++; buf[n++] = e == 'n' ? '\\n' : e == 't' ? '\\t' : e; }\n        else buf[n++] = c;\n    }\n    jp++; buf[n] = 0; return buf;\n}\n\nstatic JVal *jvalue(void);\n\nstatic JVal *jvalue(void) {\n    jws();\n    if (*jp == '{') {\n        JVal *v = jnew(J_OBJ); jp++; jws();\n        if (*jp == '}') { jp++; return v; }\n        int cap = 8; v->keys = malloc(cap * sizeof(char *)); v->vals = malloc(cap * sizeof(JVal *));\n        while (1) {\n            jws(); char *k = jstr_(); jws(); jp++; /* ':' */\n            if (v->n == cap) { cap *= 2; v->keys = realloc(v->keys, cap * sizeof(char *)); v->vals = realloc(v->vals, cap * sizeof(JVal *)); }\n            v->keys[v->n] = k; v->vals[v->n] = jvalue(); v->n++;\n            jws(); if (*jp == ',') { jp++; continue; } jp++; break;\n        }\n        return v;\n    }\n    if (*jp == '[') {\n        JVal *v = jnew(J_ARR); jp++; jws();\n        if (*jp == ']') { jp++; return v; }\n        int cap = 8; v->items = malloc(cap * sizeof(JVal *));\n        while (1) {\n            if (v->n == cap) { cap *= 2; v->items = realloc(v->items, cap * sizeof(JVal *)); }\n            v->items[v->n++] = jvalue();\n            jws(); if (*jp == ',') { jp++; continue; } jp++; break;\n        }\n        return v;\n    }\n    if (*jp == '\"') { JVal *v = jnew(J_STR); v->str = jstr_(); return v; }\n    if (*jp == 't') { JVal *v = jnew(J_BOOL); v->b = 1; jp += 4; return v; }\n    if (*jp == 'f') { JVal *v = jnew(J_BOOL); v->b = 0; jp += 5; return v; }\n    if (*jp == 'n') { jp += 4; return jnew(J_NULL); }\n    JVal *v = jnew(J_NUM); char *end;\n    v->num = strtod(jp, &end); jp = end; return v;\n}\n\nstatic JVal *json_parse(const char *src) { jp = src; return jvalue(); }\n\nstatic JVal *jget(JVal *obj, const char *key) {\n    for (int i = 0; i < obj->n; i++)\n        if (!strcmp(obj->keys[i], key)) return obj->vals[i];\n    return NULL;\n}\n\n\n/* Portable string builder (replaces POSIX open_memstream; works on MinGW). */\ntypedef struct { char *buf; size_t len, cap; } SB;\nstatic void sb_put(SB *sb, const char *s) {\n    size_t n = strlen(s);\n    if (sb->len + n + 1 > sb->cap) {\n        sb->cap = (sb->cap ? sb->cap * 2 : 128) + n;\n        sb->buf = realloc(sb->buf, sb->cap);\n    }\n    memcpy(sb->buf + sb->len, s, n + 1); sb->len += n;\n}\n\nstatic void jdump_sb(JVal *v, SB *out) {\n    char tmp[64];\n    switch (v->type) {\n        case J_NULL: sb_put(out, \"null\"); break;\n        case J_BOOL: sb_put(out, v->b ? \"true\" : \"false\"); break;\n        case J_NUM: {\n            double ip;\n            if (modf(v->num, &ip) == 0.0) snprintf(tmp, sizeof tmp, \"%lld\", (long long)v->num);\n            else snprintf(tmp, sizeof tmp, \"%g\", v->num);\n            sb_put(out, tmp); break; }\n        case J_STR: sb_put(out, \"\\\"\"); sb_put(out, v->str); sb_put(out, \"\\\"\"); break;\n        case J_ARR: sb_put(out, \"[\");\n            for (int i = 0; i < v->n; i++) { if (i) sb_put(out, \",\"); jdump_sb(v->items[i], out); }\n            sb_put(out, \"]\"); break;\n        case J_OBJ: sb_put(out, \"{\");\n            for (int i = 0; i < v->n; i++) {\n                if (i) sb_put(out, \",\");\n                sb_put(out, \"\\\"\"); sb_put(out, v->keys[i]); sb_put(out, \"\\\":\");\n                jdump_sb(v->vals[i], out);\n            }\n            sb_put(out, \"}\"); break;\n    }\n}\n\nstatic char *jdumps(JVal *v) {\n    SB sb = {0};\n    sb_put(&sb, \"\");\n    jdump_sb(v, &sb);\n    return sb.buf;\n}\n\n/* Portable strdup (not in strict C11). */\nstatic char *jstrdup(const char *s) {\n    char *d = malloc(strlen(s) + 1); strcpy(d, s); return d;\n}\n",
-            "solution.h": "/* The Glifex C contract: implement  JVal *<variant>(JVal *input);  */\n#pragma once\n#include \"json.h\"\n\nstatic JVal *jbool_(int b) { JVal *v = jnew(J_BOOL); v->b = b; return v; }\nstatic JVal *jnum_(double n) { JVal *v = jnew(J_NUM); v->num = n; return v; }\nstatic JVal *jarr_(int n) { JVal *v = jnew(J_ARR); v->items = malloc((n > 0 ? n : 1) * sizeof(JVal *)); return v; }\nstatic void jpush_(JVal *arr, JVal *x) { arr->items[arr->n++] = x; }\n"
+            "harness.c": "/* Generated harness — do not edit. Reads ../test_cases.json, dispatches on variant. */\n#define _POSIX_C_SOURCE 200809L  /* clock_gettime under strict -std=c11 */\n#include \"solution.h\"\n#include <time.h>\n\n/* Practice slot: the same \"solve\" name every language in this Lab uses\n   -- see solution.h's own contract comment. clean.c/optimized.c ALSO\n   define \"solve\" (matching that same convention, so the reference panel\n   shows clean, copyable code) but rename their OWN symbol away from the\n   bare name via a `#define solve __glifex_ref_<variant>` line at the top\n   of each file, so all three can be compiled and linked together\n   without colliding -- practice.c's real, unrenamed \"solve\" is the only\n   one left with that name in the final binary. */\nJVal *solve(JVal *c);\nJVal *__glifex_ref_bruteforce(JVal *c) __attribute__((weak));\nJVal *__glifex_ref_clean(JVal *c);\nJVal *__glifex_ref_optimized(JVal *c);\n\nstatic char *read_file(const char *path) {\n    printf(\"[BEFORE-OPEN] %s\\n\", path); fflush(stdout);\n    FILE *f = fopen(path, \"rb\");\n    if (!f) { fprintf(stderr, \"cannot open %s\\n\", path); exit(2); }\n    printf(\"[AFTER-OPEN]\\n\"); fflush(stdout);\n    fseek(f, 0, SEEK_END); long n = ftell(f); rewind(f);\n    char *buf = malloc(n + 1);\n    if (fread(buf, 1, n, f) != (size_t)n) { fprintf(stderr, \"read error\\n\"); exit(2); }\n    buf[n] = 0; fclose(f);\n    printf(\"[AFTER-READ] len=%ld\\n\", n); fflush(stdout);\n    return buf;\n}\n\nint main(int argc, char **argv) {\n    printf(\"[MAIN-START]\\n\"); fflush(stdout);\n    const char *variant = argc > 1 ? argv[1] : \"practice\";\n    int bench = argc > 2 && !strcmp(argv[2], \"--bench\");\n    char *raw = read_file(\"../test_cases.json\");\n    JVal *cases = json_parse(raw);\n    printf(\"[AFTER-JSON-PARSE] n=%d\\n\", cases->n); fflush(stdout);\n    JVal *(*fn)(JVal *) = !strcmp(variant, \"practice\") ? solve\n                        : !strcmp(variant, \"brute-force\") ? __glifex_ref_bruteforce\n                        : !strcmp(variant, \"clean\") ? __glifex_ref_clean : __glifex_ref_optimized;\n    if (bench) {\n        double best = 1e18;\n        for (int r = 0; r < 5; r++) {\n            struct timespec t0, t1;\n            clock_gettime(CLOCK_MONOTONIC, &t0);\n            for (int i = 0; i < cases->n; i++) fn(jget(cases->items[i], \"input\"));\n            clock_gettime(CLOCK_MONOTONIC, &t1);\n            double per = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / (cases->n > 0 ? cases->n : 1);\n            if (per < best) best = per;\n        }\n        printf(\"  %s: ~%lld ns/case (coarse)\\n\", variant, (long long)best);\n        return 0;\n    }\n    int metrics = argc > 2 && !strcmp(argv[2], \"--metrics\");   /* L1-metrics-c */\n    int passed = 0;\n    for (int i = 0; i < cases->n; i++) {\n        JVal *in = jget(cases->items[i], \"input\");\n        /* Diagnostic breadcrumb: flushed immediately, before any work on\n           this case, so a crash mid-case still leaves a record of\n           exactly how far processing got (which case, and by cross-\n           referencing the Lab's ladder, roughly what input size) --\n           the alternative is a crash with no indication of where in a\n           30+-case Analyze run it happened. */\n        printf(\"[CASE-BEGIN] case %d\\n\", i); fflush(stdout);\n        char *got = jdumps(fn(in));\n        if (metrics) {\n            /* Complexity Lab: per-case cost, adaptively repeated past the\n               clock grain (solve is pure by the corpus contract); compile\n               and startup are excluded by construction. */\n            long long reps = 1, el = 0;\n            for (;;) {\n                struct timespec t0, t1;\n                clock_gettime(CLOCK_MONOTONIC, &t0);\n                for (long long r = 0; r < reps; r++) fn(in);\n                clock_gettime(CLOCK_MONOTONIC, &t1);\n                el = (t1.tv_sec - t0.tv_sec) * 1000000000LL + (t1.tv_nsec - t0.tv_nsec);\n                if (el >= 2000000LL || reps >= 1048576) break;\n                reps *= 2;\n            }\n            if (el > 0) printf(\"  [METRIC] case %d ns=%lld\\n\", i, el / reps);\n        }\n        char *exp = jdumps(jget(cases->items[i], \"expected\"));\n        int ok = !strcmp(got, exp);\n        passed += ok;\n        printf(\"  [%s] case %d\", ok ? \"PASS\" : \"FAIL\", i);\n        if (!ok) printf(\"  expected=%s got=%s\", exp, got);\n        printf(\"\\n\");\n    }\n    printf(\"%d/%d passed\\n\", passed, cases->n);\n    return passed == cases->n ? 0 : 1;\n}\n",
+            "json.h": "/* Minimal JSON parser (C has no stdlib JSON). Vendored, dependency-free.\n * Short-lived test process: allocations are intentionally not freed. */\n#pragma once\n#include <ctype.h>\n#include <math.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\ntypedef enum { J_NULL, J_BOOL, J_NUM, J_STR, J_ARR, J_OBJ } JType;\n\ntypedef struct JVal {\n    JType type;\n    int b;\n    double num;\n    char *str;\n    struct JVal **items;   /* arrays */\n    char **keys;           /* objects */\n    struct JVal **vals;\n    int n;\n} JVal;\n\nstatic const char *jp;\n\nstatic JVal *jnew(JType t) { JVal *v = calloc(1, sizeof(JVal)); v->type = t; return v; }\nstatic void jws(void) { while (*jp && isspace((unsigned char)*jp)) jp++; }\n\nstatic char *jstr_(void) {\n    jp++; /* opening quote */\n    /* Find this string's actual length (source chars, an always-safe\n       upper bound on output length since escapes only ever shrink)\n       instead of malloc(strlen(jp) + 1), which previously sized the\n       buffer to the ENTIRE remaining unparsed JSON -- not just this\n       one string. That's fine for a single small string, but this\n       process's allocations are intentionally never freed (see file\n       header), so the waste compounds across every string field in\n       the input: a large multi-case payload could allocate many\n       times its own size before finishing. Must skip escape pairs\n       the same way the unescape loop below does, so an escaped quote\n       (\\\") isn't mistaken for the closing one. */\n    const char *start = jp;\n    size_t srclen = 0;\n    while (start[srclen] != '\"') {\n        if (start[srclen] == '\\\\') srclen++;\n        srclen++;\n    }\n    char *buf = malloc(srclen + 1); int n = 0;\n    while (*jp != '\"') {\n        char c = *jp++;\n        if (c == '\\\\') { char e = *jp++; buf[n++] = e == 'n' ? '\\n' : e == 't' ? '\\t' : e; }\n        else buf[n++] = c;\n    }\n    jp++; buf[n] = 0; return buf;\n}\n\nstatic JVal *jvalue(void);\n\nstatic JVal *jvalue(void) {\n    jws();\n    if (*jp == '{') {\n        JVal *v = jnew(J_OBJ); jp++; jws();\n        if (*jp == '}') { jp++; return v; }\n        int cap = 8; v->keys = malloc(cap * sizeof(char *)); v->vals = malloc(cap * sizeof(JVal *));\n        while (1) {\n            jws(); char *k = jstr_(); jws(); jp++; /* ':' */\n            if (v->n == cap) { cap *= 2; v->keys = realloc(v->keys, cap * sizeof(char *)); v->vals = realloc(v->vals, cap * sizeof(JVal *)); }\n            v->keys[v->n] = k; v->vals[v->n] = jvalue(); v->n++;\n            jws(); if (*jp == ',') { jp++; continue; } jp++; break;\n        }\n        return v;\n    }\n    if (*jp == '[') {\n        JVal *v = jnew(J_ARR); jp++; jws();\n        if (*jp == ']') { jp++; return v; }\n        int cap = 8; v->items = malloc(cap * sizeof(JVal *));\n        while (1) {\n            if (v->n == cap) { cap *= 2; v->items = realloc(v->items, cap * sizeof(JVal *)); }\n            v->items[v->n++] = jvalue();\n            jws(); if (*jp == ',') { jp++; continue; } jp++; break;\n        }\n        return v;\n    }\n    if (*jp == '\"') { JVal *v = jnew(J_STR); v->str = jstr_(); return v; }\n    if (*jp == 't') { JVal *v = jnew(J_BOOL); v->b = 1; jp += 4; return v; }\n    if (*jp == 'f') { JVal *v = jnew(J_BOOL); v->b = 0; jp += 5; return v; }\n    if (*jp == 'n') { jp += 4; return jnew(J_NULL); }\n    JVal *v = jnew(J_NUM); char *end;\n    v->num = strtod(jp, &end); jp = end; return v;\n}\n\nstatic JVal *json_parse(const char *src) { jp = src; return jvalue(); }\n\nstatic JVal *jget(JVal *obj, const char *key) {\n    for (int i = 0; i < obj->n; i++)\n        if (!strcmp(obj->keys[i], key)) return obj->vals[i];\n    return NULL;\n}\n\n\n/* Portable string builder (replaces POSIX open_memstream; works on MinGW). */\ntypedef struct { char *buf; size_t len, cap; } SB;\nstatic void sb_put(SB *sb, const char *s) {\n    size_t n = strlen(s);\n    if (sb->len + n + 1 > sb->cap) {\n        sb->cap = (sb->cap ? sb->cap * 2 : 128) + n;\n        sb->buf = realloc(sb->buf, sb->cap);\n    }\n    memcpy(sb->buf + sb->len, s, n + 1); sb->len += n;\n}\n\nstatic void jdump_sb(JVal *v, SB *out) {\n    char tmp[64];\n    switch (v->type) {\n        case J_NULL: sb_put(out, \"null\"); break;\n        case J_BOOL: sb_put(out, v->b ? \"true\" : \"false\"); break;\n        case J_NUM: {\n            double ip;\n            if (modf(v->num, &ip) == 0.0) snprintf(tmp, sizeof tmp, \"%lld\", (long long)v->num);\n            else snprintf(tmp, sizeof tmp, \"%g\", v->num);\n            sb_put(out, tmp); break; }\n        case J_STR: sb_put(out, \"\\\"\"); sb_put(out, v->str); sb_put(out, \"\\\"\"); break;\n        case J_ARR: sb_put(out, \"[\");\n            for (int i = 0; i < v->n; i++) { if (i) sb_put(out, \",\"); jdump_sb(v->items[i], out); }\n            sb_put(out, \"]\"); break;\n        case J_OBJ: sb_put(out, \"{\");\n            for (int i = 0; i < v->n; i++) {\n                if (i) sb_put(out, \",\");\n                sb_put(out, \"\\\"\"); sb_put(out, v->keys[i]); sb_put(out, \"\\\":\");\n                jdump_sb(v->vals[i], out);\n            }\n            sb_put(out, \"}\"); break;\n    }\n}\n\nstatic char *jdumps(JVal *v) {\n    SB sb = {0};\n    sb_put(&sb, \"\");\n    jdump_sb(v, &sb);\n    return sb.buf;\n}\n\n/* Portable strdup (not in strict C11). */\nstatic char *jstrdup(const char *s) {\n    char *d = malloc(strlen(s) + 1); strcpy(d, s); return d;\n}\n",
+            "solution.h": "/* The Glifex C contract: implement  JVal *solve(JVal *input);  */\n#pragma once\n#include \"json.h\"\n\nstatic JVal *jbool_(int b) { JVal *v = jnew(J_BOOL); v->b = b; return v; }\nstatic JVal *jnum_(double n) { JVal *v = jnew(J_NUM); v->num = n; return v; }\nstatic JVal *jarr_(int n) { JVal *v = jnew(J_ARR); v->items = malloc((n > 0 ? n : 1) * sizeof(JVal *)); return v; }\nstatic void jpush_(JVal *arr, JVal *x) { arr->items[arr->n++] = x; }\n"
           }
         },
         "cpp": {
-          "practice": "#include \"solution.hpp\"\n#include <algorithm>\n\nValue practice(const Input& c) {\n    std::string s = c.obj.at(\"s\")->str, t = c.obj.at(\"t\")->str;\n    std::sort(s.begin(), s.end()); std::sort(t.begin(), t.end());\n    return jbool(s == t);\n}\n",
+          "practice": "#include \"solution.hpp\"\n\nValue practice(const Input& c) {\n    std::string s = c.obj.at(\"s\")->str, t = c.obj.at(\"t\")->str;\n    // Return true if s and t are anagrams of each other, false otherwise.\n    return jbool(false);\n}\n",
           "clean": "#include \"solution.hpp\"\n#include <algorithm>\n\nValue clean(const Input& c) {\n    std::string s = c.obj.at(\"s\")->str, t = c.obj.at(\"t\")->str;\n    std::sort(s.begin(), s.end()); std::sort(t.begin(), t.end());\n    return jbool(s == t);\n}\n",
           "optimized": "#include \"solution.hpp\"\n#include <array>\n\nValue optimized(const Input& c) {\n    const std::string& s = c.obj.at(\"s\")->str; const std::string& t = c.obj.at(\"t\")->str;\n    if (s.size() != t.size()) return jbool(false);\n    std::array<int, 256> count{};\n    for (unsigned char ch : s) count[ch]++;\n    for (unsigned char ch : t) if (--count[ch] < 0) return jbool(false);\n    return jbool(true);\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          },
           "support": {
-            "harness.cpp": "// Generated harness — do not edit. Reads test cases from stdin, dispatches on variant.\n#include \"solution.hpp\"\n#include <chrono>\n#include <iostream>\n#include <sstream>\n\nValue practice(const Input&);\nValue clean(const Input&);\nValue optimized(const Input&);\n\nint main(int argc, char** argv) {\n    std::string variant = argc > 1 ? argv[1] : \"practice\";\n    bool bench = argc > 2 && std::string(argv[2]) == \"--bench\";\n    std::stringstream buf; buf << std::cin.rdbuf();\n    auto cases = Json::parse(buf.str());\n    auto dispatch = [&](const Input& c) {\n        if (variant == \"practice\") return practice(c);\n        if (variant == \"clean\") return clean(c);\n        return optimized(c);\n    };\n    if (bench) {\n        double best = 1e18;\n        for (int r = 0; r < 5; r++) {\n            auto t0 = std::chrono::steady_clock::now();\n            for (auto& c : cases->arr) dispatch(*c->obj[\"input\"]);\n            double per = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count() / std::max<size_t>(1, cases->arr.size());\n            best = std::min(best, per);\n        }\n        std::cout << \"  \" << variant << \": ~\" << (long long)best << \" ns/case (coarse)\\n\";\n        return 0;\n    }\n    int passed = 0, n = (int)cases->arr.size();\n    for (int i = 0; i < n; i++) {\n        auto& c = cases->arr[i];\n        std::string got = dispatch(*c->obj[\"input\"])->dump();\n        std::string exp = c->obj[\"expected\"]->dump();\n        bool ok = got == exp;\n        passed += ok;\n        std::cout << \"  [\" << (ok ? \"PASS\" : \"FAIL\") << \"] case \" << i;\n        if (!ok) std::cout << \"  expected=\" << exp << \" got=\" << got;\n        std::cout << \"\\n\";\n    }\n    std::cout << passed << \"/\" << n << \" passed\\n\";\n    return passed == n ? 0 : 1;\n}\n",
+            "harness.cpp": "// Generated harness — do not edit. Reads test cases from stdin, dispatches on variant.\n#include \"solution.hpp\"\n#include <chrono>\n#include <iostream>\n#include <sstream>\n\nValue practice(const Input&);\nValue clean(const Input&);\nValue optimized(const Input&);\n__attribute__((weak)) Value bruteforce(const Input&);\n\nint main(int argc, char** argv) {\n    std::string variant = argc > 1 ? argv[1] : \"practice\";\n    bool bench = argc > 2 && std::string(argv[2]) == \"--bench\";\n    std::stringstream buf; buf << std::cin.rdbuf();\n    auto cases = Json::parse(buf.str());\n    auto dispatch = [&](const Input& c) {\n        if (variant == \"practice\") return practice(c);\n        if (variant == \"brute-force\") return bruteforce(c);\n        if (variant == \"clean\") return clean(c);\n        return optimized(c);\n    };\n    if (bench) {\n        double best = 1e18;\n        for (int r = 0; r < 5; r++) {\n            auto t0 = std::chrono::steady_clock::now();\n            for (auto& c : cases->arr) dispatch(*c->obj[\"input\"]);\n            double per = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count() / std::max<size_t>(1, cases->arr.size());\n            best = std::min(best, per);\n        }\n        std::cout << \"  \" << variant << \": ~\" << (long long)best << \" ns/case (coarse)\\n\";\n        return 0;\n    }\n    bool metrics = argc > 2 && std::string(argv[2]) == \"--metrics\";   // L1-metrics-cpp\n    int passed = 0, n = (int)cases->arr.size();\n    for (int i = 0; i < n; i++) {\n        auto& c = cases->arr[i];\n        // Diagnostic breadcrumb: flushed immediately, before any work on\n        // this case, so a crash mid-case still leaves a record of\n        // exactly how far processing got. Same reasoning as the C\n        // harness's identical marker.\n        std::cout << \"[CASE-BEGIN] case \" << i << \"\\n\" << std::flush;\n        std::string got = dispatch(*c->obj[\"input\"])->dump();\n        if (metrics) {\n            // Complexity Lab: per-case cost, adaptively repeated past the\n            // clock grain (solve is pure by the corpus contract). The result\n            // feeds the PASS/FAIL diff above, so -O2 cannot dead-code it.\n            long long reps = 1, el = 0;\n            for (;;) {\n                auto t0 = std::chrono::steady_clock::now();\n                for (long long r = 0; r < reps; r++) dispatch(*c->obj[\"input\"]);\n                el = (long long)std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count();\n                if (el >= 2000000LL || reps >= 1048576) break;\n                reps *= 2;\n            }\n            if (el > 0) std::cout << \"  [METRIC] case \" << i << \" ns=\" << (el / reps) << \"\\n\";\n        }\n        std::string exp = c->obj[\"expected\"]->dump();\n        bool ok = got == exp;\n        passed += ok;\n        std::cout << \"  [\" << (ok ? \"PASS\" : \"FAIL\") << \"] case \" << i;\n        if (!ok) std::cout << \"  expected=\" << exp << \" got=\" << got;\n        std::cout << \"\\n\";\n    }\n    std::cout << passed << \"/\" << n << \" passed\\n\";\n    return passed == n ? 0 : 1;\n}\n",
             "json.hpp": "// Minimal JSON parser (C++ stdlib has none). Vendored so the repo stays dependency-free.\n#pragma once\n#include <cmath>\n#include <cstring>\n#include <cctype>\n#include <map>\n#include <memory>\n#include <string>\n#include <vector>\n\nstruct JValue;\ntemplate<class T> struct Rc {   // shared_ptr semantics, NON-atomic refcount (single-threaded)\n  T* p_=nullptr; int* c_=nullptr;\n  Rc()=default; explicit Rc(T* q):p_(q),c_(new int(1)){}\n  Rc(const Rc& o):p_(o.p_),c_(o.c_){ if(c_) ++*c_; }\n  Rc(Rc&& o)noexcept:p_(o.p_),c_(o.c_){ o.p_=nullptr; o.c_=nullptr; }\n  Rc& operator=(Rc o)noexcept{ std::swap(p_,o.p_); std::swap(c_,o.c_); return *this; }\n  ~Rc(){ if(c_ && --*c_==0){ delete p_; delete c_; } }\n  T* operator->()const{return p_;} T& operator*()const{return *p_;}\n  explicit operator bool()const{return p_!=nullptr;}\n};\ntemplate<class T,class...A> Rc<T> make_rc(A&&...a){ return Rc<T>(new T(static_cast<A&&>(a)...)); }\nusing JPtr = Rc<JValue>;\nstruct JValue {\n    enum Type { NUL, BOOL, NUM, STR, ARR, OBJ } type = NUL;\n    bool b = false; double num = 0; std::string str;\n    std::vector<JPtr> arr; std::map<std::string, JPtr> obj;\n    std::string dump() const {\n        switch (type) {\n            case NUL: return \"null\";\n            case BOOL: return b ? \"true\" : \"false\";\n            case NUM: { double i; if (std::modf(num, &i) == 0.0) return std::to_string((long long)num); return std::to_string(num); }\n            case STR: return \"\\\"\" + str + \"\\\"\";\n            case ARR: { std::string s = \"[\"; for (size_t i = 0; i < arr.size(); i++) { if (i) s += \",\"; s += arr[i]->dump(); } return s + \"]\"; }\n            case OBJ: { std::string s = \"{\"; bool f = true; for (auto& [k, v] : obj) { if (!f) s += \",\"; f = false; s += \"\\\"\" + k + \"\\\":\" + v->dump(); } return s + \"}\"; }\n        }\n        return \"null\";\n    }\n};\n\nclass Json {\n    const std::string& s; size_t i = 0;\n    explicit Json(const std::string& src) : s(src) {}\n    void ws() { while (i < s.size() && isspace((unsigned char)s[i])) i++; }\n    JPtr value() {\n        ws(); char c = s[i]; auto v = make_rc<JValue>();\n        if (c == '{') { v->type = JValue::OBJ; i++; ws();\n            if (s[i] == '}') { i++; return v; }\n            while (true) { ws(); std::string k = str_(); ws(); i++; v->obj[k] = value(); ws();\n                if (s[i] == ',') { i++; continue; } i++; break; } return v; }\n        if (c == '[') { v->type = JValue::ARR; i++; ws();\n            if (s[i] == ']') { i++; return v; }\n            while (true) { v->arr.push_back(value()); ws();\n                if (s[i] == ',') { i++; continue; } i++; break; } return v; }\n        if (c == '\"') { v->type = JValue::STR; v->str = str_(); return v; }\n        if (c == 't') { v->type = JValue::BOOL; v->b = true; i += 4; return v; }\n        if (c == 'f') { v->type = JValue::BOOL; v->b = false; i += 5; return v; }\n        if (c == 'n') { i += 4; return v; }\n        v->type = JValue::NUM; size_t st = i;\n        while (i < s.size() && (isdigit((unsigned char)s[i]) || strchr(\"-+.eE\", s[i]))) i++;\n        v->num = strtod(s.substr(st, i - st).c_str(), nullptr); return v;\n    }\n    std::string str_() {\n        std::string out; i++;\n        while (s[i] != '\"') { char c = s[i++];\n            if (c == '\\\\') { char e = s[i++]; out += (e == 'n' ? '\\n' : e == 't' ? '\\t' : e); }\n            else out += c; }\n        i++; return out;\n    }\npublic:\n    static JPtr parse(const std::string& src) { Json j(src); return j.value(); }\n};\n",
             "solution.hpp": "// The Glifex C++ contract: implement Value <variant>(const Input&).\n#pragma once\n#include \"json.hpp\"\nusing Input = JValue;   // the \"input\" object from test_cases.json\nusing Value = JPtr;     // return a JValue (use helpers below)\n\ninline Value jbool(bool b) { auto v = make_rc<JValue>(); v->type = JValue::BOOL; v->b = b; return v; }\ninline Value jnum(double n) { auto v = make_rc<JValue>(); v->type = JValue::NUM; v->num = n; return v; }\ninline Value jarr(std::vector<Value> xs) { auto v = make_rc<JValue>(); v->type = JValue::ARR; v->arr = std::move(xs); return v; }\n"
           }
         },
         "csharp": {
-          "practice": "using System;\nusing System.Linq;\nusing System.Collections.Generic;\nclass Practice : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        var s = c[\"s\"].ToString().OrderBy(x => x);\n        var t = c[\"t\"].ToString().OrderBy(x => x);\n        return s.SequenceEqual(t);\n    }\n}\n",
+          "practice": "using System.Collections.Generic;\nclass Practice : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        var s = c[\"s\"].ToString();\n        var t = c[\"t\"].ToString();\n        // Return true if s and t are anagrams of each other, false otherwise.\n        return false;\n    }\n}\n",
           "clean": "using System;\nusing System.Linq;\nusing System.Collections.Generic;\nclass Clean : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        return c[\"s\"].ToString().OrderBy(x => x).SequenceEqual(c[\"t\"].ToString().OrderBy(x => x));\n    }\n}\n",
-          "optimized": "using System;\nusing System.Collections.Generic;\nclass Optimized : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        string s = c[\"s\"].ToString(), t = c[\"t\"].ToString();\n        if (s.Length != t.Length) return false;\n        var count = new Dictionary<char, int>();\n        foreach (var ch in s) count[ch] = count.GetValueOrDefault(ch) + 1;\n        foreach (var ch in t) {\n            if (!count.ContainsKey(ch) || count[ch] == 0) return false;\n            count[ch]--;\n        }\n        return true;\n    }\n}\n"
+          "optimized": "using System;\nusing System.Collections.Generic;\nclass Optimized : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        string s = c[\"s\"].ToString(), t = c[\"t\"].ToString();\n        if (s.Length != t.Length) return false;\n        var count = new Dictionary<char, int>();\n        foreach (var ch in s) count[ch] = count.GetValueOrDefault(ch) + 1;\n        foreach (var ch in t) {\n            if (!count.ContainsKey(ch) || count[ch] == 0) return false;\n            count[ch]--;\n        }\n        return true;\n    }\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          }
         },
         "go": {
-          "practice": "package main\n\nimport \"sort\"\n\nfunc sortStr(s string) string {\n\tr := []rune(s)\n\tsort.Slice(r, func(i, j int) bool { return r[i] < r[j] })\n\treturn string(r)\n}\n\nfunc practice(c map[string]any) any {\n\treturn sortStr(c[\"s\"].(string)) == sortStr(c[\"t\"].(string))\n}\n",
+          "practice": "package main\n\nfunc practice(c map[string]any) any {\n\ts := c[\"s\"].(string)\n\tt := c[\"t\"].(string)\n\t// Return true if s and t are anagrams of each other, false otherwise.\n\t_ = s\n\t_ = t\n\treturn false\n}\n",
           "clean": "package main\n\nfunc clean(c map[string]any) any {\n\treturn sortStr(c[\"s\"].(string)) == sortStr(c[\"t\"].(string))\n}\n",
-          "optimized": "package main\n\nfunc optimized(c map[string]any) any {\n\ts, t := c[\"s\"].(string), c[\"t\"].(string)\n\tif len(s) != len(t) {\n\t\treturn false\n\t}\n\tcount := map[rune]int{}\n\tfor _, ch := range s {\n\t\tcount[ch]++\n\t}\n\tfor _, ch := range t {\n\t\tcount[ch]--\n\t\tif count[ch] < 0 {\n\t\t\treturn false\n\t\t}\n\t}\n\treturn true\n}\n"
+          "optimized": "package main\n\nfunc optimized(c map[string]any) any {\n\ts, t := c[\"s\"].(string), c[\"t\"].(string)\n\tif len(s) != len(t) {\n\t\treturn false\n\t}\n\tcount := map[rune]int{}\n\tfor _, ch := range s {\n\t\tcount[ch]++\n\t}\n\tfor _, ch := range t {\n\t\tcount[ch]--\n\t\tif count[ch] < 0 {\n\t\t\treturn false\n\t\t}\n\t}\n\treturn true\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          }
         },
         "java": {
-          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String, Object> c) {\n        char[] a = ((String) c.get(\"s\")).toCharArray();\n        char[] b = ((String) c.get(\"t\")).toCharArray();\n        Arrays.sort(a); Arrays.sort(b);\n        return Arrays.equals(a, b);\n    }\n}\n",
+          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String, Object> c) {\n        String s = (String) c.get(\"s\");\n        String t = (String) c.get(\"t\");\n        // Return true if s and t are anagrams of each other, false otherwise.\n        return false;\n    }\n}\n",
           "clean": "import java.util.*;\npublic class Clean implements Solution {\n    public Object solve(Map<String, Object> c) {\n        char[] a = ((String) c.get(\"s\")).toCharArray();\n        char[] b = ((String) c.get(\"t\")).toCharArray();\n        Arrays.sort(a); Arrays.sort(b);\n        return Arrays.equals(a, b);\n    }\n}\n",
-          "optimized": "import java.util.*;\npublic class Optimized implements Solution {\n    public Object solve(Map<String, Object> c) {\n        String s = (String) c.get(\"s\"), t = (String) c.get(\"t\");\n        if (s.length() != t.length()) return false;\n        int[] count = new int[128];\n        for (char ch : s.toCharArray()) count[ch]++;\n        for (char ch : t.toCharArray()) if (--count[ch] < 0) return false;\n        return true;\n    }\n}\n"
+          "optimized": "import java.util.*;\npublic class Optimized implements Solution {\n    public Object solve(Map<String, Object> c) {\n        String s = (String) c.get(\"s\"), t = (String) c.get(\"t\");\n        if (s.length() != t.length()) return false;\n        int[] count = new int[128];\n        for (char ch : s.toCharArray()) count[ch]++;\n        for (char ch : t.toCharArray()) if (--count[ch] < 0) return false;\n        return true;\n    }\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          }
         },
         "javascript": {
-          "practice": "module.exports = function solve(c) {\n  return [...c.s].sort().join(\"\") === [...c.t].sort().join(\"\");\n};\n",
+          "practice": "module.exports = function solve(c) {\n  const s = c.s, t = c.t;\n  // Return true if s and t are anagrams of each other, false otherwise.\n  return false;\n};\n",
           "clean": "module.exports = function solve(c) {\n  return [...c.s].sort().join(\"\") === [...c.t].sort().join(\"\");\n};\n",
-          "optimized": "module.exports = function solve(c) {\n  if (c.s.length !== c.t.length) return false;\n  const count = {};\n  for (const ch of c.s) count[ch] = (count[ch] || 0) + 1;\n  for (const ch of c.t) { if (!count[ch]) return false; count[ch]--; }\n  return true;\n};\n"
+          "optimized": "module.exports = function solve(c) {\n  if (c.s.length !== c.t.length) return false;\n  const count = {};\n  for (const ch of c.s) count[ch] = (count[ch] || 0) + 1;\n  for (const ch of c.t) { if (!count[ch]) return false; count[ch]--; }\n  return true;\n};\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          }
         },
         "php": {
-          "practice": "<?php\nfunction solve(array $c): bool {\n    $s = str_split($c['s']); $t = str_split($c['t']);\n    sort($s); sort($t);\n    return $s === $t;\n}\n",
+          "practice": "<?php\nfunction solve(array $c): bool {\n    $s = $c['s']; $t = $c['t'];\n    // Return true if s and t are anagrams of each other, false otherwise.\n    return false;\n}\n",
           "clean": "<?php\nfunction solve(array $c): bool {\n    $s = str_split($c['s']); $t = str_split($c['t']);\n    sort($s); sort($t);\n    return $s === $t;\n}\n",
-          "optimized": "<?php\nfunction solve(array $c): bool {\n    if (strlen($c['s']) !== strlen($c['t'])) return false;\n    return count_chars($c['s'], 1) === count_chars($c['t'], 1);\n}\n"
+          "optimized": "<?php\nfunction solve(array $c): bool {\n    if (strlen($c['s']) !== strlen($c['t'])) return false;\n    return count_chars($c['s'], 1) === count_chars($c['t'], 1);\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          }
         },
         "python": {
-          "practice": "def solve(case):\n    return sorted(case[\"s\"]) == sorted(case[\"t\"])\n",
+          "practice": "def solve(c):\n    s, t = c[\"s\"], c[\"t\"]\n    # Return True if s and t are anagrams of each other, False otherwise.\n    return False\n",
           "clean": "def solve(case):\n    return sorted(case[\"s\"]) == sorted(case[\"t\"])\n",
-          "optimized": "from collections import Counter\ndef solve(case):\n    return Counter(case[\"s\"]) == Counter(case[\"t\"])\n"
+          "optimized": "from collections import Counter\ndef solve(case):\n    return Counter(case[\"s\"]) == Counter(case[\"t\"])\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          }
         },
         "ruby": {
-          "practice": "def solve(c)\n  c[\"s\"].chars.sort == c[\"t\"].chars.sort\nend\n",
+          "practice": "def solve(c)\n  s, t = c[\"s\"], c[\"t\"]\n  # Return true if s and t are anagrams of each other, false otherwise.\n  false\nend\n",
           "clean": "def solve(c)\n  c[\"s\"].chars.sort == c[\"t\"].chars.sort\nend\n",
-          "optimized": "def solve(c)\n  c[\"s\"].chars.tally == c[\"t\"].chars.tally\nend\n"
+          "optimized": "def solve(c)\n  c[\"s\"].chars.tally == c[\"t\"].chars.tally\nend\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          }
         },
         "typescript": {
-          "practice": "export function solve(c: any): boolean {\n  return [...c.s].sort().join(\"\") === [...c.t].sort().join(\"\");\n}\n",
+          "practice": "export function solve(c: { s: string; t: string }): boolean {\n  const s = c.s, t = c.t;\n  // Return true if s and t are anagrams of each other, false otherwise.\n  return false;\n}\n",
           "clean": "export function solve(c: any): boolean {\n  return [...c.s].sort().join(\"\") === [...c.t].sort().join(\"\");\n}\n",
-          "optimized": "export function solve(c: any): boolean {\n  if (c.s.length !== c.t.length) return false;\n  const count: Record<string, number> = {};\n  for (const ch of c.s) count[ch] = (count[ch] || 0) + 1;\n  for (const ch of c.t) { if (!count[ch]) return false; count[ch]--; }\n  return true;\n}\n"
+          "optimized": "export function solve(c: any): boolean {\n  if (c.s.length !== c.t.length) return false;\n  const count: Record<string, number> = {};\n  for (const ch of c.s) count[ch] = (count[ch] || 0) + 1;\n  for (const ch of c.t) { if (!count[ch]) return false; count[ch]--; }\n  return true;\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          }
         }
       }
     },
@@ -135,7 +350,7 @@
         "arrays",
         "hash-map"
       ],
-      "worked": true,
+      "worked": false,
       "title": "002 · Two Sum",
       "statement": "# 002 · Two Sum\n\n## Task\nGiven `nums` and a `target`, return the indices `[i, j]` (i < j) of the two\nnumbers adding to `target`. Exactly one solution exists.\n\n## Signature\n`solve(input) -> [int, int]`  where `input = { \"nums\": int[], \"target\": int }`\n",
       "cases": [
@@ -229,69 +444,348 @@
       ],
       "languages": {
         "c": {
-          "practice": "#include \"solution.h\"\n\nJVal *practice(JVal *c) {\n    JVal *nums = jget(c, \"nums\");\n    double target = jget(c, \"target\")->num;\n    for (int i = 0; i < nums->n; i++)\n        for (int j = i + 1; j < nums->n; j++)\n            if (nums->items[i]->num + nums->items[j]->num == target) {\n                JVal *r = jarr_(2); jpush_(r, jnum_(i)); jpush_(r, jnum_(j)); return r;\n            }\n    return jarr_(0);\n}\n",
-          "clean": "#include \"solution.h\"\n\nJVal *clean(JVal *c) {\n    JVal *nums = jget(c, \"nums\");\n    double target = jget(c, \"target\")->num;\n    for (int i = 0; i < nums->n; i++)\n        for (int j = i + 1; j < nums->n; j++)\n            if (nums->items[i]->num + nums->items[j]->num == target) {\n                JVal *r = jarr_(2); jpush_(r, jnum_(i)); jpush_(r, jnum_(j)); return r;\n            }\n    return jarr_(0);\n}\n",
-          "optimized": "#include \"solution.h\"\n\n/* O(n) with a tiny open-addressing hash map on the stack. */\nJVal *optimized(JVal *c) {\n    JVal *nums = jget(c, \"nums\");\n    double target = jget(c, \"target\")->num;\n    enum { CAP = 1024 };\n    double keys[CAP]; int idxs[CAP], used[CAP];\n    memset(used, 0, sizeof(used));\n    for (int i = 0; i < nums->n; i++) {\n        double need = target - nums->items[i]->num;\n        unsigned h = (unsigned)((long long)need * 2654435761u) % CAP;\n        while (used[h]) {\n            if (keys[h] == need) {\n                JVal *r = jarr_(2); jpush_(r, jnum_(idxs[h])); jpush_(r, jnum_(i)); return r;\n            }\n            h = (h + 1) % CAP;\n        }\n        double k = nums->items[i]->num;\n        unsigned h2 = (unsigned)((long long)k * 2654435761u) % CAP;\n        while (used[h2] && keys[h2] != k) h2 = (h2 + 1) % CAP;\n        keys[h2] = k; idxs[h2] = i; used[h2] = 1;\n    }\n    return jarr_(0);\n}\n",
+          "practice": "#include \"solution.h\"\n\nJVal *solve(JVal *c) {\n    JVal *nums = jget(c, \"nums\");\n    double target = jget(c, \"target\")->num;\n    /* Return the indices [i, j] (i < j) of the two numbers in nums that add up to target. */\n    return jarr_(0);\n}\n",
+          "clean": "#define solve __glifex_ref_clean\n#include \"solution.h\"\n\n/* O(n): a simple hash table (open addressing, linear probing) mapping\n   each seen number to its index. Table size is computed from the\n   actual input (next power of 2 above 2n, keeping load factor under\n   50% for any n) rather than a fixed constant -- a fixed CAP\n   previously caused an infinite loop once more unique keys needed\n   inserting than the table had room for (trivially reached once the\n   Complexity Lab's ladder grew past a few thousand): the insertion\n   loop searches for an empty slot that no longer exists and cycles\n   forever. See optimized.c for a more heavily-tuned version. */\nJVal *solve(JVal *c) {\n    JVal *nums = jget(c, \"nums\");\n    double target = jget(c, \"target\")->num;\n\n    int n = nums->n;\n    int cap = 16;\n    while (cap < n * 2) cap <<= 1;\n    double *keys = malloc(cap * sizeof(double));\n    int *indices = malloc(cap * sizeof(int));\n    int *occupied = calloc(cap, sizeof(int));\n\n    for (int i = 0; i < n; i++) {\n        double need = target - nums->items[i]->num;\n\n        /* Look for `need` already in the table. */\n        unsigned slot = (unsigned)((long long)need) % cap;\n        while (occupied[slot]) {\n            if (keys[slot] == need) {\n                JVal *r = jarr_(2);\n                jpush_(r, jnum_(indices[slot]));\n                jpush_(r, jnum_(i));\n                return r;\n            }\n            slot = (slot + 1) % cap;\n        }\n\n        /* Not found -- insert this number for future lookups. */\n        double v = nums->items[i]->num;\n        slot = (unsigned)((long long)v) % cap;\n        while (occupied[slot] && keys[slot] != v) slot = (slot + 1) % cap;\n        keys[slot] = v;\n        indices[slot] = i;\n        occupied[slot] = 1;\n    }\n    return jarr_(0);\n}\n",
+          "optimized": "#define solve __glifex_ref_optimized\n#include \"solution.h\"\n\n/* O(n) with a hand-rolled, dynamically-sized open-addressing hash\n   map -- see clean.c's comment for why CAP became dynamic; the same\n   reasoning applies here, just with the multiplicative hash this\n   variant already used. */\nJVal *solve(JVal *c) {\n    JVal *nums = jget(c, \"nums\");\n    double target = jget(c, \"target\")->num;\n    int n = nums->n;\n    int cap = 16;\n    while (cap < n * 2) cap <<= 1;\n    double *keys = malloc(cap * sizeof(double));\n    int *idxs = malloc(cap * sizeof(int));\n    int *used = calloc(cap, sizeof(int));\n    for (int i = 0; i < n; i++) {\n        double need = target - nums->items[i]->num;\n        unsigned h = (unsigned)((long long)need * 2654435761u) % cap;\n        while (used[h]) {\n            if (keys[h] == need) {\n                JVal *r = jarr_(2); jpush_(r, jnum_(idxs[h])); jpush_(r, jnum_(i)); return r;\n            }\n            h = (h + 1) % cap;\n        }\n        double k = nums->items[i]->num;\n        unsigned h2 = (unsigned)((long long)k * 2654435761u) % cap;\n        while (used[h2] && keys[h2] != k) h2 = (h2 + 1) % cap;\n        keys[h2] = k; idxs[h2] = i; used[h2] = 1;\n    }\n    return jarr_(0);\n}\n",
+          "brute-force": "#define solve __glifex_ref_bruteforce\n#include \"solution.h\"\n\n/* O(n^2): check every pair. The \"obvious\" first approach. */\nJVal *solve(JVal *c) {\n    JVal *nums = jget(c, \"nums\");\n    double target = jget(c, \"target\")->num;\n    for (int i = 0; i < nums->n; i++)\n        for (int j = i + 1; j < nums->n; j++)\n            if (nums->items[i]->num + nums->items[j]->num == target) {\n                JVal *r = jarr_(2); jpush_(r, jnum_(i)); jpush_(r, jnum_(j)); return r;\n            }\n    return jarr_(0);\n}\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop brute force -- the pedagogical baseline (this was previously, incorrectly, sitting in clean.c)"
+            }
+          },
           "support": {
-            "harness.c": "/* Generated harness — do not edit. Reads ../test_cases.json, dispatches on variant. */\n#define _POSIX_C_SOURCE 200809L  /* clock_gettime under strict -std=c11 */\n#include \"solution.h\"\n#include <time.h>\n\nJVal *practice(JVal *c);\nJVal *clean(JVal *c);\nJVal *optimized(JVal *c);\n\nstatic char *read_file(const char *path) {\n    FILE *f = fopen(path, \"rb\");\n    if (!f) { fprintf(stderr, \"cannot open %s\\n\", path); exit(2); }\n    fseek(f, 0, SEEK_END); long n = ftell(f); rewind(f);\n    char *buf = malloc(n + 1);\n    if (fread(buf, 1, n, f) != (size_t)n) { fprintf(stderr, \"read error\\n\"); exit(2); }\n    buf[n] = 0; fclose(f); return buf;\n}\n\nint main(int argc, char **argv) {\n    const char *variant = argc > 1 ? argv[1] : \"practice\";\n    int bench = argc > 2 && !strcmp(argv[2], \"--bench\");\n    JVal *cases = json_parse(read_file(\"../test_cases.json\"));\n    JVal *(*fn)(JVal *) = !strcmp(variant, \"practice\") ? practice\n                        : !strcmp(variant, \"clean\") ? clean : optimized;\n    if (bench) {\n        double best = 1e18;\n        for (int r = 0; r < 5; r++) {\n            struct timespec t0, t1;\n            clock_gettime(CLOCK_MONOTONIC, &t0);\n            for (int i = 0; i < cases->n; i++) fn(jget(cases->items[i], \"input\"));\n            clock_gettime(CLOCK_MONOTONIC, &t1);\n            double per = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / (cases->n > 0 ? cases->n : 1);\n            if (per < best) best = per;\n        }\n        printf(\"  %s: ~%lld ns/case (coarse)\\n\", variant, (long long)best);\n        return 0;\n    }\n    int passed = 0;\n    for (int i = 0; i < cases->n; i++) {\n        char *got = jdumps(fn(jget(cases->items[i], \"input\")));\n        char *exp = jdumps(jget(cases->items[i], \"expected\"));\n        int ok = !strcmp(got, exp);\n        passed += ok;\n        printf(\"  [%s] case %d\", ok ? \"PASS\" : \"FAIL\", i);\n        if (!ok) printf(\"  expected=%s got=%s\", exp, got);\n        printf(\"\\n\");\n    }\n    printf(\"%d/%d passed\\n\", passed, cases->n);\n    return passed == cases->n ? 0 : 1;\n}\n",
-            "json.h": "/* Minimal JSON parser (C has no stdlib JSON). Vendored, dependency-free.\n * Short-lived test process: allocations are intentionally not freed. */\n#pragma once\n#include <ctype.h>\n#include <math.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\ntypedef enum { J_NULL, J_BOOL, J_NUM, J_STR, J_ARR, J_OBJ } JType;\n\ntypedef struct JVal {\n    JType type;\n    int b;\n    double num;\n    char *str;\n    struct JVal **items;   /* arrays */\n    char **keys;           /* objects */\n    struct JVal **vals;\n    int n;\n} JVal;\n\nstatic const char *jp;\n\nstatic JVal *jnew(JType t) { JVal *v = calloc(1, sizeof(JVal)); v->type = t; return v; }\nstatic void jws(void) { while (*jp && isspace((unsigned char)*jp)) jp++; }\n\nstatic char *jstr_(void) {\n    jp++; /* opening quote */\n    char *buf = malloc(strlen(jp) + 1); int n = 0;\n    while (*jp != '\"') {\n        char c = *jp++;\n        if (c == '\\\\') { char e = *jp++; buf[n++] = e == 'n' ? '\\n' : e == 't' ? '\\t' : e; }\n        else buf[n++] = c;\n    }\n    jp++; buf[n] = 0; return buf;\n}\n\nstatic JVal *jvalue(void);\n\nstatic JVal *jvalue(void) {\n    jws();\n    if (*jp == '{') {\n        JVal *v = jnew(J_OBJ); jp++; jws();\n        if (*jp == '}') { jp++; return v; }\n        int cap = 8; v->keys = malloc(cap * sizeof(char *)); v->vals = malloc(cap * sizeof(JVal *));\n        while (1) {\n            jws(); char *k = jstr_(); jws(); jp++; /* ':' */\n            if (v->n == cap) { cap *= 2; v->keys = realloc(v->keys, cap * sizeof(char *)); v->vals = realloc(v->vals, cap * sizeof(JVal *)); }\n            v->keys[v->n] = k; v->vals[v->n] = jvalue(); v->n++;\n            jws(); if (*jp == ',') { jp++; continue; } jp++; break;\n        }\n        return v;\n    }\n    if (*jp == '[') {\n        JVal *v = jnew(J_ARR); jp++; jws();\n        if (*jp == ']') { jp++; return v; }\n        int cap = 8; v->items = malloc(cap * sizeof(JVal *));\n        while (1) {\n            if (v->n == cap) { cap *= 2; v->items = realloc(v->items, cap * sizeof(JVal *)); }\n            v->items[v->n++] = jvalue();\n            jws(); if (*jp == ',') { jp++; continue; } jp++; break;\n        }\n        return v;\n    }\n    if (*jp == '\"') { JVal *v = jnew(J_STR); v->str = jstr_(); return v; }\n    if (*jp == 't') { JVal *v = jnew(J_BOOL); v->b = 1; jp += 4; return v; }\n    if (*jp == 'f') { JVal *v = jnew(J_BOOL); v->b = 0; jp += 5; return v; }\n    if (*jp == 'n') { jp += 4; return jnew(J_NULL); }\n    JVal *v = jnew(J_NUM); char *end;\n    v->num = strtod(jp, &end); jp = end; return v;\n}\n\nstatic JVal *json_parse(const char *src) { jp = src; return jvalue(); }\n\nstatic JVal *jget(JVal *obj, const char *key) {\n    for (int i = 0; i < obj->n; i++)\n        if (!strcmp(obj->keys[i], key)) return obj->vals[i];\n    return NULL;\n}\n\n\n/* Portable string builder (replaces POSIX open_memstream; works on MinGW). */\ntypedef struct { char *buf; size_t len, cap; } SB;\nstatic void sb_put(SB *sb, const char *s) {\n    size_t n = strlen(s);\n    if (sb->len + n + 1 > sb->cap) {\n        sb->cap = (sb->cap ? sb->cap * 2 : 128) + n;\n        sb->buf = realloc(sb->buf, sb->cap);\n    }\n    memcpy(sb->buf + sb->len, s, n + 1); sb->len += n;\n}\n\nstatic void jdump_sb(JVal *v, SB *out) {\n    char tmp[64];\n    switch (v->type) {\n        case J_NULL: sb_put(out, \"null\"); break;\n        case J_BOOL: sb_put(out, v->b ? \"true\" : \"false\"); break;\n        case J_NUM: {\n            double ip;\n            if (modf(v->num, &ip) == 0.0) snprintf(tmp, sizeof tmp, \"%lld\", (long long)v->num);\n            else snprintf(tmp, sizeof tmp, \"%g\", v->num);\n            sb_put(out, tmp); break; }\n        case J_STR: sb_put(out, \"\\\"\"); sb_put(out, v->str); sb_put(out, \"\\\"\"); break;\n        case J_ARR: sb_put(out, \"[\");\n            for (int i = 0; i < v->n; i++) { if (i) sb_put(out, \",\"); jdump_sb(v->items[i], out); }\n            sb_put(out, \"]\"); break;\n        case J_OBJ: sb_put(out, \"{\");\n            for (int i = 0; i < v->n; i++) {\n                if (i) sb_put(out, \",\");\n                sb_put(out, \"\\\"\"); sb_put(out, v->keys[i]); sb_put(out, \"\\\":\");\n                jdump_sb(v->vals[i], out);\n            }\n            sb_put(out, \"}\"); break;\n    }\n}\n\nstatic char *jdumps(JVal *v) {\n    SB sb = {0};\n    sb_put(&sb, \"\");\n    jdump_sb(v, &sb);\n    return sb.buf;\n}\n\n/* Portable strdup (not in strict C11). */\nstatic char *jstrdup(const char *s) {\n    char *d = malloc(strlen(s) + 1); strcpy(d, s); return d;\n}\n",
-            "solution.h": "/* The Glifex C contract: implement  JVal *<variant>(JVal *input);  */\n#pragma once\n#include \"json.h\"\n\nstatic JVal *jbool_(int b) { JVal *v = jnew(J_BOOL); v->b = b; return v; }\nstatic JVal *jnum_(double n) { JVal *v = jnew(J_NUM); v->num = n; return v; }\nstatic JVal *jarr_(int n) { JVal *v = jnew(J_ARR); v->items = malloc((n > 0 ? n : 1) * sizeof(JVal *)); return v; }\nstatic void jpush_(JVal *arr, JVal *x) { arr->items[arr->n++] = x; }\n"
+            "harness.c": "/* Generated harness — do not edit. Reads ../test_cases.json, dispatches on variant. */\n#define _POSIX_C_SOURCE 200809L  /* clock_gettime under strict -std=c11 */\n#include \"solution.h\"\n#include <time.h>\n\n/* Practice slot: the same \"solve\" name every language in this Lab uses\n   -- see solution.h's own contract comment. clean.c/optimized.c ALSO\n   define \"solve\" (matching that same convention, so the reference panel\n   shows clean, copyable code) but rename their OWN symbol away from the\n   bare name via a `#define solve __glifex_ref_<variant>` line at the top\n   of each file, so all three can be compiled and linked together\n   without colliding -- practice.c's real, unrenamed \"solve\" is the only\n   one left with that name in the final binary. */\nJVal *solve(JVal *c);\nJVal *__glifex_ref_bruteforce(JVal *c) __attribute__((weak));\nJVal *__glifex_ref_clean(JVal *c);\nJVal *__glifex_ref_optimized(JVal *c);\n\nstatic char *read_file(const char *path) {\n    printf(\"[BEFORE-OPEN] %s\\n\", path); fflush(stdout);\n    FILE *f = fopen(path, \"rb\");\n    if (!f) { fprintf(stderr, \"cannot open %s\\n\", path); exit(2); }\n    printf(\"[AFTER-OPEN]\\n\"); fflush(stdout);\n    fseek(f, 0, SEEK_END); long n = ftell(f); rewind(f);\n    char *buf = malloc(n + 1);\n    if (fread(buf, 1, n, f) != (size_t)n) { fprintf(stderr, \"read error\\n\"); exit(2); }\n    buf[n] = 0; fclose(f);\n    printf(\"[AFTER-READ] len=%ld\\n\", n); fflush(stdout);\n    return buf;\n}\n\nint main(int argc, char **argv) {\n    printf(\"[MAIN-START]\\n\"); fflush(stdout);\n    const char *variant = argc > 1 ? argv[1] : \"practice\";\n    int bench = argc > 2 && !strcmp(argv[2], \"--bench\");\n    char *raw = read_file(\"../test_cases.json\");\n    JVal *cases = json_parse(raw);\n    printf(\"[AFTER-JSON-PARSE] n=%d\\n\", cases->n); fflush(stdout);\n    JVal *(*fn)(JVal *) = !strcmp(variant, \"practice\") ? solve\n                        : !strcmp(variant, \"brute-force\") ? __glifex_ref_bruteforce\n                        : !strcmp(variant, \"clean\") ? __glifex_ref_clean : __glifex_ref_optimized;\n    if (bench) {\n        double best = 1e18;\n        for (int r = 0; r < 5; r++) {\n            struct timespec t0, t1;\n            clock_gettime(CLOCK_MONOTONIC, &t0);\n            for (int i = 0; i < cases->n; i++) fn(jget(cases->items[i], \"input\"));\n            clock_gettime(CLOCK_MONOTONIC, &t1);\n            double per = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / (cases->n > 0 ? cases->n : 1);\n            if (per < best) best = per;\n        }\n        printf(\"  %s: ~%lld ns/case (coarse)\\n\", variant, (long long)best);\n        return 0;\n    }\n    int metrics = argc > 2 && !strcmp(argv[2], \"--metrics\");   /* L1-metrics-c */\n    int passed = 0;\n    for (int i = 0; i < cases->n; i++) {\n        JVal *in = jget(cases->items[i], \"input\");\n        /* Diagnostic breadcrumb: flushed immediately, before any work on\n           this case, so a crash mid-case still leaves a record of\n           exactly how far processing got (which case, and by cross-\n           referencing the Lab's ladder, roughly what input size) --\n           the alternative is a crash with no indication of where in a\n           30+-case Analyze run it happened. */\n        printf(\"[CASE-BEGIN] case %d\\n\", i); fflush(stdout);\n        char *got = jdumps(fn(in));\n        if (metrics) {\n            /* Complexity Lab: per-case cost, adaptively repeated past the\n               clock grain (solve is pure by the corpus contract); compile\n               and startup are excluded by construction. */\n            long long reps = 1, el = 0;\n            for (;;) {\n                struct timespec t0, t1;\n                clock_gettime(CLOCK_MONOTONIC, &t0);\n                for (long long r = 0; r < reps; r++) fn(in);\n                clock_gettime(CLOCK_MONOTONIC, &t1);\n                el = (t1.tv_sec - t0.tv_sec) * 1000000000LL + (t1.tv_nsec - t0.tv_nsec);\n                if (el >= 2000000LL || reps >= 1048576) break;\n                reps *= 2;\n            }\n            if (el > 0) printf(\"  [METRIC] case %d ns=%lld\\n\", i, el / reps);\n        }\n        char *exp = jdumps(jget(cases->items[i], \"expected\"));\n        int ok = !strcmp(got, exp);\n        passed += ok;\n        printf(\"  [%s] case %d\", ok ? \"PASS\" : \"FAIL\", i);\n        if (!ok) printf(\"  expected=%s got=%s\", exp, got);\n        printf(\"\\n\");\n    }\n    printf(\"%d/%d passed\\n\", passed, cases->n);\n    return passed == cases->n ? 0 : 1;\n}\n",
+            "json.h": "/* Minimal JSON parser (C has no stdlib JSON). Vendored, dependency-free.\n * Short-lived test process: allocations are intentionally not freed. */\n#pragma once\n#include <ctype.h>\n#include <math.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\ntypedef enum { J_NULL, J_BOOL, J_NUM, J_STR, J_ARR, J_OBJ } JType;\n\ntypedef struct JVal {\n    JType type;\n    int b;\n    double num;\n    char *str;\n    struct JVal **items;   /* arrays */\n    char **keys;           /* objects */\n    struct JVal **vals;\n    int n;\n} JVal;\n\nstatic const char *jp;\n\nstatic JVal *jnew(JType t) { JVal *v = calloc(1, sizeof(JVal)); v->type = t; return v; }\nstatic void jws(void) { while (*jp && isspace((unsigned char)*jp)) jp++; }\n\nstatic char *jstr_(void) {\n    jp++; /* opening quote */\n    /* Find this string's actual length (source chars, an always-safe\n       upper bound on output length since escapes only ever shrink)\n       instead of malloc(strlen(jp) + 1), which previously sized the\n       buffer to the ENTIRE remaining unparsed JSON -- not just this\n       one string. That's fine for a single small string, but this\n       process's allocations are intentionally never freed (see file\n       header), so the waste compounds across every string field in\n       the input: a large multi-case payload could allocate many\n       times its own size before finishing. Must skip escape pairs\n       the same way the unescape loop below does, so an escaped quote\n       (\\\") isn't mistaken for the closing one. */\n    const char *start = jp;\n    size_t srclen = 0;\n    while (start[srclen] != '\"') {\n        if (start[srclen] == '\\\\') srclen++;\n        srclen++;\n    }\n    char *buf = malloc(srclen + 1); int n = 0;\n    while (*jp != '\"') {\n        char c = *jp++;\n        if (c == '\\\\') { char e = *jp++; buf[n++] = e == 'n' ? '\\n' : e == 't' ? '\\t' : e; }\n        else buf[n++] = c;\n    }\n    jp++; buf[n] = 0; return buf;\n}\n\nstatic JVal *jvalue(void);\n\nstatic JVal *jvalue(void) {\n    jws();\n    if (*jp == '{') {\n        JVal *v = jnew(J_OBJ); jp++; jws();\n        if (*jp == '}') { jp++; return v; }\n        int cap = 8; v->keys = malloc(cap * sizeof(char *)); v->vals = malloc(cap * sizeof(JVal *));\n        while (1) {\n            jws(); char *k = jstr_(); jws(); jp++; /* ':' */\n            if (v->n == cap) { cap *= 2; v->keys = realloc(v->keys, cap * sizeof(char *)); v->vals = realloc(v->vals, cap * sizeof(JVal *)); }\n            v->keys[v->n] = k; v->vals[v->n] = jvalue(); v->n++;\n            jws(); if (*jp == ',') { jp++; continue; } jp++; break;\n        }\n        return v;\n    }\n    if (*jp == '[') {\n        JVal *v = jnew(J_ARR); jp++; jws();\n        if (*jp == ']') { jp++; return v; }\n        int cap = 8; v->items = malloc(cap * sizeof(JVal *));\n        while (1) {\n            if (v->n == cap) { cap *= 2; v->items = realloc(v->items, cap * sizeof(JVal *)); }\n            v->items[v->n++] = jvalue();\n            jws(); if (*jp == ',') { jp++; continue; } jp++; break;\n        }\n        return v;\n    }\n    if (*jp == '\"') { JVal *v = jnew(J_STR); v->str = jstr_(); return v; }\n    if (*jp == 't') { JVal *v = jnew(J_BOOL); v->b = 1; jp += 4; return v; }\n    if (*jp == 'f') { JVal *v = jnew(J_BOOL); v->b = 0; jp += 5; return v; }\n    if (*jp == 'n') { jp += 4; return jnew(J_NULL); }\n    JVal *v = jnew(J_NUM); char *end;\n    v->num = strtod(jp, &end); jp = end; return v;\n}\n\nstatic JVal *json_parse(const char *src) { jp = src; return jvalue(); }\n\nstatic JVal *jget(JVal *obj, const char *key) {\n    for (int i = 0; i < obj->n; i++)\n        if (!strcmp(obj->keys[i], key)) return obj->vals[i];\n    return NULL;\n}\n\n\n/* Portable string builder (replaces POSIX open_memstream; works on MinGW). */\ntypedef struct { char *buf; size_t len, cap; } SB;\nstatic void sb_put(SB *sb, const char *s) {\n    size_t n = strlen(s);\n    if (sb->len + n + 1 > sb->cap) {\n        sb->cap = (sb->cap ? sb->cap * 2 : 128) + n;\n        sb->buf = realloc(sb->buf, sb->cap);\n    }\n    memcpy(sb->buf + sb->len, s, n + 1); sb->len += n;\n}\n\nstatic void jdump_sb(JVal *v, SB *out) {\n    char tmp[64];\n    switch (v->type) {\n        case J_NULL: sb_put(out, \"null\"); break;\n        case J_BOOL: sb_put(out, v->b ? \"true\" : \"false\"); break;\n        case J_NUM: {\n            double ip;\n            if (modf(v->num, &ip) == 0.0) snprintf(tmp, sizeof tmp, \"%lld\", (long long)v->num);\n            else snprintf(tmp, sizeof tmp, \"%g\", v->num);\n            sb_put(out, tmp); break; }\n        case J_STR: sb_put(out, \"\\\"\"); sb_put(out, v->str); sb_put(out, \"\\\"\"); break;\n        case J_ARR: sb_put(out, \"[\");\n            for (int i = 0; i < v->n; i++) { if (i) sb_put(out, \",\"); jdump_sb(v->items[i], out); }\n            sb_put(out, \"]\"); break;\n        case J_OBJ: sb_put(out, \"{\");\n            for (int i = 0; i < v->n; i++) {\n                if (i) sb_put(out, \",\");\n                sb_put(out, \"\\\"\"); sb_put(out, v->keys[i]); sb_put(out, \"\\\":\");\n                jdump_sb(v->vals[i], out);\n            }\n            sb_put(out, \"}\"); break;\n    }\n}\n\nstatic char *jdumps(JVal *v) {\n    SB sb = {0};\n    sb_put(&sb, \"\");\n    jdump_sb(v, &sb);\n    return sb.buf;\n}\n\n/* Portable strdup (not in strict C11). */\nstatic char *jstrdup(const char *s) {\n    char *d = malloc(strlen(s) + 1); strcpy(d, s); return d;\n}\n",
+            "solution.h": "/* The Glifex C contract: implement  JVal *solve(JVal *input);  */\n#pragma once\n#include \"json.h\"\n\nstatic JVal *jbool_(int b) { JVal *v = jnew(J_BOOL); v->b = b; return v; }\nstatic JVal *jnum_(double n) { JVal *v = jnew(J_NUM); v->num = n; return v; }\nstatic JVal *jarr_(int n) { JVal *v = jnew(J_ARR); v->items = malloc((n > 0 ? n : 1) * sizeof(JVal *)); return v; }\nstatic void jpush_(JVal *arr, JVal *x) { arr->items[arr->n++] = x; }\n"
           }
         },
         "cpp": {
-          "practice": "#include \"solution.hpp\"\n#include <unordered_map>\n\nValue practice(const Input& c) {\n    auto& nums = c.obj.at(\"nums\")->arr;\n    double target = c.obj.at(\"target\")->num;\n    std::unordered_map<double, int> seen;\n    for (int i = 0; i < (int)nums.size(); i++) {\n        double need = target - nums[i]->num;\n        if (auto it = seen.find(need); it != seen.end())\n            return jarr({jnum(it->second), jnum(i)});\n        seen[nums[i]->num] = i;\n    }\n    return jarr({});\n}\n",
+          "practice": "#include \"solution.hpp\"\n\nValue practice(const Input& c) {\n    auto& nums = c.obj.at(\"nums\")->arr;\n    double target = c.obj.at(\"target\")->num;\n    // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n    return jarr({});\n}\n",
           "clean": "#include \"solution.hpp\"\n#include <unordered_map>\n\nValue clean(const Input& c) {\n    auto& nums = c.obj.at(\"nums\")->arr;\n    double target = c.obj.at(\"target\")->num;\n    std::unordered_map<double, int> seen;\n    for (int i = 0; i < (int)nums.size(); i++) {\n        double need = target - nums[i]->num;\n        if (auto it = seen.find(need); it != seen.end())\n            return jarr({jnum(it->second), jnum(i)});\n        seen[nums[i]->num] = i;\n    }\n    return jarr({});\n}\n",
-          "optimized": "#include \"solution.hpp\"\n#include <unordered_map>\n\nValue optimized(const Input& c) {\n    auto& nums = c.obj.at(\"nums\")->arr;\n    double target = c.obj.at(\"target\")->num;\n    std::unordered_map<double, int> seen;\n    for (int i = 0; i < (int)nums.size(); i++) {\n        double need = target - nums[i]->num;\n        if (auto it = seen.find(need); it != seen.end())\n            return jarr({jnum(it->second), jnum(i)});\n        seen[nums[i]->num] = i;\n    }\n    return jarr({});\n}\n",
+          "optimized": "#include \"solution.hpp\"\n#include <vector>\n\n// Optimized: same O(n) time as clean.cpp, but a hand-rolled\n// open-addressing table instead of std::unordered_map -- avoids\n// per-INSERTION heap allocation and std::hash's generality overhead.\n// Same technique as the C track's optimized.c.\n//\n// Table size is computed from the actual input (next power of 2 above\n// 2n, keeping load factor under 50% for any n) rather than a fixed\n// constant -- a fixed CAP previously caused an infinite loop once\n// more unique keys needed inserting than the table had room for\n// (trivially reached once the Complexity Lab's ladder grew past a\n// few thousand): the insertion loop searches for an empty slot that\n// no longer exists and cycles forever. One vector allocation per\n// call, sized correctly up front, is still far cheaper than\n// unordered_map's per-insertion allocations -- the technique's whole\n// point -- while being correct at any input size.\nValue optimized(const Input& c) {\n    auto& nums = c.obj.at(\"nums\")->arr;\n    double target = c.obj.at(\"target\")->num;\n\n    int n = (int)nums.size();\n    int cap = 16;\n    while (cap < n * 2) cap <<= 1;\n\n    std::vector<double> keys(cap);\n    std::vector<int> idxs(cap);\n    std::vector<bool> used(cap, false);\n\n    for (int i = 0; i < n; i++) {\n        double need = target - nums[i]->num;\n        unsigned h = (unsigned)((long long)need * 2654435761u) % cap;\n        while (used[h]) {\n            if (keys[h] == need) return jarr({jnum(idxs[h]), jnum(i)});\n            h = (h + 1) % cap;\n        }\n        double k = nums[i]->num;\n        unsigned h2 = (unsigned)((long long)k * 2654435761u) % cap;\n        while (used[h2] && keys[h2] != k) h2 = (h2 + 1) % cap;\n        keys[h2] = k; idxs[h2] = i; used[h2] = true;\n    }\n    return jarr({});\n}\n",
+          "brute-force": "#include \"solution.hpp\"\n\n// O(n^2): check every pair. The \"obvious\" first approach.\nValue bruteforce(const Input& c) {\n    auto& nums = c.obj.at(\"nums\")->arr;\n    double target = c.obj.at(\"target\")->num;\n    for (int i = 0; i < (int)nums.size(); i++) {\n        for (int j = i + 1; j < (int)nums.size(); j++) {\n            if (nums[i]->num + nums[j]->num == target)\n                return jarr({jnum(i), jnum(j)});\n        }\n    }\n    return jarr({});\n}\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop baseline -- the pedagogical starting point clean.cpp/optimized.cpp improve on"
+            }
+          },
           "support": {
-            "harness.cpp": "// Generated harness — do not edit. Reads test cases from stdin, dispatches on variant.\n#include \"solution.hpp\"\n#include <chrono>\n#include <iostream>\n#include <sstream>\n\nValue practice(const Input&);\nValue clean(const Input&);\nValue optimized(const Input&);\n\nint main(int argc, char** argv) {\n    std::string variant = argc > 1 ? argv[1] : \"practice\";\n    bool bench = argc > 2 && std::string(argv[2]) == \"--bench\";\n    std::stringstream buf; buf << std::cin.rdbuf();\n    auto cases = Json::parse(buf.str());\n    auto dispatch = [&](const Input& c) {\n        if (variant == \"practice\") return practice(c);\n        if (variant == \"clean\") return clean(c);\n        return optimized(c);\n    };\n    if (bench) {\n        double best = 1e18;\n        for (int r = 0; r < 5; r++) {\n            auto t0 = std::chrono::steady_clock::now();\n            for (auto& c : cases->arr) dispatch(*c->obj[\"input\"]);\n            double per = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count() / std::max<size_t>(1, cases->arr.size());\n            best = std::min(best, per);\n        }\n        std::cout << \"  \" << variant << \": ~\" << (long long)best << \" ns/case (coarse)\\n\";\n        return 0;\n    }\n    int passed = 0, n = (int)cases->arr.size();\n    for (int i = 0; i < n; i++) {\n        auto& c = cases->arr[i];\n        std::string got = dispatch(*c->obj[\"input\"])->dump();\n        std::string exp = c->obj[\"expected\"]->dump();\n        bool ok = got == exp;\n        passed += ok;\n        std::cout << \"  [\" << (ok ? \"PASS\" : \"FAIL\") << \"] case \" << i;\n        if (!ok) std::cout << \"  expected=\" << exp << \" got=\" << got;\n        std::cout << \"\\n\";\n    }\n    std::cout << passed << \"/\" << n << \" passed\\n\";\n    return passed == n ? 0 : 1;\n}\n",
+            "harness.cpp": "// Generated harness — do not edit. Reads test cases from stdin, dispatches on variant.\n#include \"solution.hpp\"\n#include <chrono>\n#include <iostream>\n#include <sstream>\n\nValue practice(const Input&);\nValue clean(const Input&);\nValue optimized(const Input&);\n__attribute__((weak)) Value bruteforce(const Input&);\n\nint main(int argc, char** argv) {\n    std::string variant = argc > 1 ? argv[1] : \"practice\";\n    bool bench = argc > 2 && std::string(argv[2]) == \"--bench\";\n    std::stringstream buf; buf << std::cin.rdbuf();\n    auto cases = Json::parse(buf.str());\n    auto dispatch = [&](const Input& c) {\n        if (variant == \"practice\") return practice(c);\n        if (variant == \"brute-force\") return bruteforce(c);\n        if (variant == \"clean\") return clean(c);\n        return optimized(c);\n    };\n    if (bench) {\n        double best = 1e18;\n        for (int r = 0; r < 5; r++) {\n            auto t0 = std::chrono::steady_clock::now();\n            for (auto& c : cases->arr) dispatch(*c->obj[\"input\"]);\n            double per = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count() / std::max<size_t>(1, cases->arr.size());\n            best = std::min(best, per);\n        }\n        std::cout << \"  \" << variant << \": ~\" << (long long)best << \" ns/case (coarse)\\n\";\n        return 0;\n    }\n    bool metrics = argc > 2 && std::string(argv[2]) == \"--metrics\";   // L1-metrics-cpp\n    int passed = 0, n = (int)cases->arr.size();\n    for (int i = 0; i < n; i++) {\n        auto& c = cases->arr[i];\n        // Diagnostic breadcrumb: flushed immediately, before any work on\n        // this case, so a crash mid-case still leaves a record of\n        // exactly how far processing got. Same reasoning as the C\n        // harness's identical marker.\n        std::cout << \"[CASE-BEGIN] case \" << i << \"\\n\" << std::flush;\n        std::string got = dispatch(*c->obj[\"input\"])->dump();\n        if (metrics) {\n            // Complexity Lab: per-case cost, adaptively repeated past the\n            // clock grain (solve is pure by the corpus contract). The result\n            // feeds the PASS/FAIL diff above, so -O2 cannot dead-code it.\n            long long reps = 1, el = 0;\n            for (;;) {\n                auto t0 = std::chrono::steady_clock::now();\n                for (long long r = 0; r < reps; r++) dispatch(*c->obj[\"input\"]);\n                el = (long long)std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count();\n                if (el >= 2000000LL || reps >= 1048576) break;\n                reps *= 2;\n            }\n            if (el > 0) std::cout << \"  [METRIC] case \" << i << \" ns=\" << (el / reps) << \"\\n\";\n        }\n        std::string exp = c->obj[\"expected\"]->dump();\n        bool ok = got == exp;\n        passed += ok;\n        std::cout << \"  [\" << (ok ? \"PASS\" : \"FAIL\") << \"] case \" << i;\n        if (!ok) std::cout << \"  expected=\" << exp << \" got=\" << got;\n        std::cout << \"\\n\";\n    }\n    std::cout << passed << \"/\" << n << \" passed\\n\";\n    return passed == n ? 0 : 1;\n}\n",
             "json.hpp": "// Minimal JSON parser (C++ stdlib has none). Vendored so the repo stays dependency-free.\n#pragma once\n#include <cmath>\n#include <cstring>\n#include <cctype>\n#include <map>\n#include <memory>\n#include <string>\n#include <vector>\n\nstruct JValue;\ntemplate<class T> struct Rc {   // shared_ptr semantics, NON-atomic refcount (single-threaded)\n  T* p_=nullptr; int* c_=nullptr;\n  Rc()=default; explicit Rc(T* q):p_(q),c_(new int(1)){}\n  Rc(const Rc& o):p_(o.p_),c_(o.c_){ if(c_) ++*c_; }\n  Rc(Rc&& o)noexcept:p_(o.p_),c_(o.c_){ o.p_=nullptr; o.c_=nullptr; }\n  Rc& operator=(Rc o)noexcept{ std::swap(p_,o.p_); std::swap(c_,o.c_); return *this; }\n  ~Rc(){ if(c_ && --*c_==0){ delete p_; delete c_; } }\n  T* operator->()const{return p_;} T& operator*()const{return *p_;}\n  explicit operator bool()const{return p_!=nullptr;}\n};\ntemplate<class T,class...A> Rc<T> make_rc(A&&...a){ return Rc<T>(new T(static_cast<A&&>(a)...)); }\nusing JPtr = Rc<JValue>;\nstruct JValue {\n    enum Type { NUL, BOOL, NUM, STR, ARR, OBJ } type = NUL;\n    bool b = false; double num = 0; std::string str;\n    std::vector<JPtr> arr; std::map<std::string, JPtr> obj;\n    std::string dump() const {\n        switch (type) {\n            case NUL: return \"null\";\n            case BOOL: return b ? \"true\" : \"false\";\n            case NUM: { double i; if (std::modf(num, &i) == 0.0) return std::to_string((long long)num); return std::to_string(num); }\n            case STR: return \"\\\"\" + str + \"\\\"\";\n            case ARR: { std::string s = \"[\"; for (size_t i = 0; i < arr.size(); i++) { if (i) s += \",\"; s += arr[i]->dump(); } return s + \"]\"; }\n            case OBJ: { std::string s = \"{\"; bool f = true; for (auto& [k, v] : obj) { if (!f) s += \",\"; f = false; s += \"\\\"\" + k + \"\\\":\" + v->dump(); } return s + \"}\"; }\n        }\n        return \"null\";\n    }\n};\n\nclass Json {\n    const std::string& s; size_t i = 0;\n    explicit Json(const std::string& src) : s(src) {}\n    void ws() { while (i < s.size() && isspace((unsigned char)s[i])) i++; }\n    JPtr value() {\n        ws(); char c = s[i]; auto v = make_rc<JValue>();\n        if (c == '{') { v->type = JValue::OBJ; i++; ws();\n            if (s[i] == '}') { i++; return v; }\n            while (true) { ws(); std::string k = str_(); ws(); i++; v->obj[k] = value(); ws();\n                if (s[i] == ',') { i++; continue; } i++; break; } return v; }\n        if (c == '[') { v->type = JValue::ARR; i++; ws();\n            if (s[i] == ']') { i++; return v; }\n            while (true) { v->arr.push_back(value()); ws();\n                if (s[i] == ',') { i++; continue; } i++; break; } return v; }\n        if (c == '\"') { v->type = JValue::STR; v->str = str_(); return v; }\n        if (c == 't') { v->type = JValue::BOOL; v->b = true; i += 4; return v; }\n        if (c == 'f') { v->type = JValue::BOOL; v->b = false; i += 5; return v; }\n        if (c == 'n') { i += 4; return v; }\n        v->type = JValue::NUM; size_t st = i;\n        while (i < s.size() && (isdigit((unsigned char)s[i]) || strchr(\"-+.eE\", s[i]))) i++;\n        v->num = strtod(s.substr(st, i - st).c_str(), nullptr); return v;\n    }\n    std::string str_() {\n        std::string out; i++;\n        while (s[i] != '\"') { char c = s[i++];\n            if (c == '\\\\') { char e = s[i++]; out += (e == 'n' ? '\\n' : e == 't' ? '\\t' : e); }\n            else out += c; }\n        i++; return out;\n    }\npublic:\n    static JPtr parse(const std::string& src) { Json j(src); return j.value(); }\n};\n",
             "solution.hpp": "// The Glifex C++ contract: implement Value <variant>(const Input&).\n#pragma once\n#include \"json.hpp\"\nusing Input = JValue;   // the \"input\" object from test_cases.json\nusing Value = JPtr;     // return a JValue (use helpers below)\n\ninline Value jbool(bool b) { auto v = make_rc<JValue>(); v->type = JValue::BOOL; v->b = b; return v; }\ninline Value jnum(double n) { auto v = make_rc<JValue>(); v->type = JValue::NUM; v->num = n; return v; }\ninline Value jarr(std::vector<Value> xs) { auto v = make_rc<JValue>(); v->type = JValue::ARR; v->arr = std::move(xs); return v; }\n"
           }
         },
         "csharp": {
-          "practice": "using System.Collections.Generic;\nusing System.Text.Json;\nclass Practice : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        var target = ((JsonElement)c[\"target\"]).GetInt64();\n        var seen = new Dictionary<long, int>();\n        int i = 0;\n        foreach (var el in ((JsonElement)c[\"nums\"]).EnumerateArray()) {\n            long n = el.GetInt64();\n            if (seen.TryGetValue(target - n, out var j)) return new[] { j, i };\n            seen[n] = i; i++;\n        }\n        return new int[0];\n    }\n}\n",
+          "practice": "using System.Collections.Generic;\nusing System.Text.Json;\nclass Practice : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        var target = ((JsonElement)c[\"target\"]).GetInt64();\n        var nums = (JsonElement)c[\"nums\"];\n        // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n        return new int[0];\n    }\n}\n",
           "clean": "using System.Collections.Generic;\nusing System.Text.Json;\nclass Clean : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        var target = ((JsonElement)c[\"target\"]).GetInt64();\n        var seen = new Dictionary<long, int>();\n        int i = 0;\n        foreach (var el in ((JsonElement)c[\"nums\"]).EnumerateArray()) {\n            long n = el.GetInt64();\n            if (seen.TryGetValue(target - n, out var j)) return new[] { j, i };\n            seen[n] = i; i++;\n        }\n        return new int[0];\n    }\n}\n",
-          "optimized": "using System.Collections.Generic;\nusing System.Text.Json;\nclass Optimized : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        var target = ((JsonElement)c[\"target\"]).GetInt64();\n        var seen = new Dictionary<long, int>();\n        int i = 0;\n        foreach (var el in ((JsonElement)c[\"nums\"]).EnumerateArray()) {\n            long n = el.GetInt64();\n            if (seen.TryGetValue(target - n, out var j)) return new[] { j, i };\n            seen[n] = i; i++;\n        }\n        return new int[0];\n    }\n}\n"
+          "optimized": "using System.Collections.Generic;\nusing System.Text.Json;\nclass Optimized : ISolution {\n    public object Solve(Dictionary<string, object> c) {\n        var target = ((JsonElement)c[\"target\"]).GetInt64();\n        var seen = new Dictionary<long, int>();\n        int i = 0;\n        foreach (var el in ((JsonElement)c[\"nums\"]).EnumerateArray()) {\n            long n = el.GetInt64();\n            if (seen.TryGetValue(target - n, out var j)) return new[] { j, i };\n            seen[n] = i; i++;\n        }\n        return new int[0];\n    }\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            }
+          }
         },
         "go": {
-          "practice": "package main\n\nfunc practice(c map[string]any) any {\n\tnums := c[\"nums\"].([]any)\n\ttarget := c[\"target\"].(float64)\n\tseen := map[float64]int{}\n\tfor i, v := range nums {\n\t\tn := v.(float64)\n\t\tif j, ok := seen[target-n]; ok {\n\t\t\treturn []int{j, i}\n\t\t}\n\t\tseen[n] = i\n\t}\n\treturn []int{}\n}\n",
+          "practice": "package main\n\nfunc practice(c map[string]any) any {\n\tnums := c[\"nums\"].([]any)\n\ttarget := c[\"target\"].(float64)\n\t// Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n\t_ = nums\n\t_ = target\n\treturn []int{}\n}\n",
           "clean": "package main\n\nfunc clean(c map[string]any) any {\n\tnums := c[\"nums\"].([]any)\n\ttarget := c[\"target\"].(float64)\n\tseen := map[float64]int{}\n\tfor i, v := range nums {\n\t\tn := v.(float64)\n\t\tif j, ok := seen[target-n]; ok {\n\t\t\treturn []int{j, i}\n\t\t}\n\t\tseen[n] = i\n\t}\n\treturn []int{}\n}\n",
-          "optimized": "package main\n\nfunc optimized(c map[string]any) any {\n\tnums := c[\"nums\"].([]any)\n\ttarget := c[\"target\"].(float64)\n\tseen := map[float64]int{}\n\tfor i, v := range nums {\n\t\tn := v.(float64)\n\t\tif j, ok := seen[target-n]; ok {\n\t\t\treturn []int{j, i}\n\t\t}\n\t\tseen[n] = i\n\t}\n\treturn []int{}\n}\n"
+          "optimized": "package main\n\nfunc optimized(c map[string]any) any {\n\tnums := c[\"nums\"].([]any)\n\ttarget := c[\"target\"].(float64)\n\tseen := map[float64]int{}\n\tfor i, v := range nums {\n\t\tn := v.(float64)\n\t\tif j, ok := seen[target-n]; ok {\n\t\t\treturn []int{j, i}\n\t\t}\n\t\tseen[n] = i\n\t}\n\treturn []int{}\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            }
+          }
         },
         "java": {
-          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        Map<Long, Integer> seen = new HashMap<>();\n        for (int i = 0; i < nums.size(); i++) {\n            long n = ((Number) nums.get(i)).longValue();\n            if (seen.containsKey(target - n)) return List.of(seen.get(target - n), i);\n            seen.put(n, i);\n        }\n        return List.of();\n    }\n}\n",
+          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n        return List.of();\n    }\n}\n",
           "clean": "import java.util.*;\npublic class Clean implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        Map<Long, Integer> seen = new HashMap<>();\n        for (int i = 0; i < nums.size(); i++) {\n            long n = ((Number) nums.get(i)).longValue();\n            if (seen.containsKey(target - n)) return List.of(seen.get(target - n), i);\n            seen.put(n, i);\n        }\n        return List.of();\n    }\n}\n",
-          "optimized": "import java.util.*;\npublic class Optimized implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        Map<Long, Integer> seen = new HashMap<>();\n        for (int i = 0; i < nums.size(); i++) {\n            long n = ((Number) nums.get(i)).longValue();\n            if (seen.containsKey(target - n)) return List.of(seen.get(target - n), i);\n            seen.put(n, i);\n        }\n        return List.of();\n    }\n}\n"
+          "optimized": "import java.util.*;\npublic class Optimized implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        Map<Long, Integer> seen = new HashMap<>();\n        for (int i = 0; i < nums.size(); i++) {\n            long n = ((Number) nums.get(i)).longValue();\n            if (seen.containsKey(target - n)) return List.of(seen.get(target - n), i);\n            seen.put(n, i);\n        }\n        return List.of();\n    }\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            }
+          }
         },
         "javascript": {
-          "practice": "module.exports = function solve(c) {\n  const seen = {};\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (need in seen) return [seen[need], i];\n    seen[c.nums[i]] = i;\n  }\n  return null;\n};\n",
+          "practice": "module.exports = function solve(c) {\n  const nums = c.nums, target = c.target;\n  // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n  return [];\n};\n",
           "clean": "module.exports = function solve(c) {\n  const seen = new Map();\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (seen.has(need)) return [seen.get(need), i];\n    seen.set(c.nums[i], i);\n  }\n  return [];\n};\n",
-          "optimized": "module.exports = function solve(c) {\n  const seen = new Map();\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (seen.has(need)) return [seen.get(need), i];\n    seen.set(c.nums[i], i);\n  }\n  return [];\n};\n"
+          "optimized": "// Optimized: same O(n) hash-map approach as clean.js, but a single\n// Map.get() lookup per element instead of has()+get() (two lookups\n// for the same key on every hit). Benchmarked: ~1.3x faster at\n// n=1000, converging to ~1.02x at n=500000 -- never slower, most\n// of the win at the sizes this Lab's ladder actually tests.\nmodule.exports = function solve(c) {\n  const seen = new Map();\n  const nums = c.nums, n = nums.length;\n  for (let i = 0; i < n; i++) {\n    const need = c.target - nums[i];\n    const idx = seen.get(need);\n    if (idx !== undefined) return [idx, i];\n    seen.set(nums[i], i);\n  }\n  return [];\n};\n\n",
+          "brute-force": "// Brute force: check every pair. The \"obvious\" first approach --\n// O(n^2) time, O(1) space.\nmodule.exports = function solve(c) {\n  const nums = c.nums;\n  for (let i = 0; i < nums.length; i++) {\n    for (let j = i + 1; j < nums.length; j++) {\n      if (nums[i] + nums[j] === c.target) return [i, j];\n    }\n  }\n  return [];\n};\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop baseline -- the pedagogical starting point clean.js/optimized.js improve on"
+            }
+          }
         },
         "php": {
-          "practice": "<?php\nfunction solve(array $c): array {\n    $seen = [];\n    foreach ($c['nums'] as $i => $n) {\n        $need = $c['target'] - $n;\n        if (isset($seen[$need])) return [$seen[$need], $i];\n        $seen[$n] = $i;\n    }\n    return [];\n}\n",
+          "practice": "<?php\nfunction solve(array $c): array {\n    $nums = $c['nums']; $target = $c['target'];\n    // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n    return [];\n}\n",
           "clean": "<?php\nfunction solve(array $c): array {\n    $seen = [];\n    foreach ($c['nums'] as $i => $n) {\n        $need = $c['target'] - $n;\n        if (isset($seen[$need])) return [$seen[$need], $i];\n        $seen[$n] = $i;\n    }\n    return [];\n}\n",
-          "optimized": "<?php\nfunction solve(array $c): array {\n    $seen = [];\n    foreach ($c['nums'] as $i => $n) {\n        $need = $c['target'] - $n;\n        if (isset($seen[$need])) return [$seen[$need], $i];\n        $seen[$n] = $i;\n    }\n    return [];\n}\n"
+          "optimized": "<?php\n// Optimized: same O(n) hash-map approach as clean.php, but a single\n// null-coalescing lookup per element instead of isset()+[] (two\n// lookups for the same key on every hit) -- same pattern as\n// optimized.js/optimized.py/optimized.rb.\nfunction solve(array $c): array {\n    $seen = [];\n    $nums = $c['nums'];\n    $n = count($nums);\n    for ($i = 0; $i < $n; $i++) {\n        $need = $c['target'] - $nums[$i];\n        $idx = $seen[$need] ?? null;\n        if ($idx !== null) return [$idx, $i];\n        $seen[$nums[$i]] = $i;\n    }\n    return [];\n}\n\n",
+          "brute-force": "<?php\n// Brute force: check every pair. The \"obvious\" first approach --\n// O(n^2) time, O(1) space.\nfunction solve(array $c): array {\n    $nums = $c['nums'];\n    $n = count($nums);\n    for ($i = 0; $i < $n; $i++) {\n        for ($j = $i + 1; $j < $n; $j++) {\n            if ($nums[$i] + $nums[$j] === $c['target']) return [$i, $j];\n        }\n    }\n    return [];\n}\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop baseline -- the pedagogical starting point clean.php/optimized.php improve on"
+            }
+          }
         },
         "python": {
-          "practice": "def solve(case):\n    seen = {}\n    for i, n in enumerate(case[\"nums\"]):\n        if case[\"target\"] - n in seen:\n            return [seen[case[\"target\"] - n], i]\n        seen[n] = i\n    return None\n",
+          "practice": "def solve(case):\n    nums, target = case[\"nums\"], case[\"target\"]\n    # Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n    return []\n",
           "clean": "def solve(c):\n    seen = {}\n    for i, n in enumerate(c[\"nums\"]):\n        if c[\"target\"] - n in seen:\n            return [seen[c[\"target\"] - n], i]\n        seen[n] = i\n    return []\n",
-          "optimized": "def solve(c):\n    seen = {}\n    for i, n in enumerate(c[\"nums\"]):\n        if c[\"target\"] - n in seen:\n            return [seen[c[\"target\"] - n], i]\n        seen[n] = i\n    return []\n"
+          "optimized": "# Optimized: same O(n) hash-map approach as clean.py, but a single\n# dict.get() lookup per element instead of `in` + `[]` (two lookups\n# for the same key on every hit). Benchmarked: ~2.8x faster at\n# n=1000, a small (~3-4%) regression at n>=100000 -- net win at the\n# sizes this Lab's ladder actually tests.\ndef solve(c):\n    seen = {}\n    nums = c[\"nums\"]\n    for i in range(len(nums)):\n        need = c[\"target\"] - nums[i]\n        idx = seen.get(need)\n        if idx is not None:\n            return [idx, i]\n        seen[nums[i]] = i\n    return []\n\n",
+          "brute-force": "# Brute force: check every pair. The \"obvious\" first approach --\n# O(n^2) time, O(1) space.\ndef solve(c):\n    nums = c[\"nums\"]\n    for i in range(len(nums)):\n        for j in range(i + 1, len(nums)):\n            if nums[i] + nums[j] == c[\"target\"]:\n                return [i, j]\n    return []\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop baseline -- the pedagogical starting point clean.py/optimized.py improve on"
+            }
+          }
         },
         "ruby": {
-          "practice": "def solve(c)\n  seen = {}\n  c[\"nums\"].each_with_index do |n, i|\n    need = c[\"target\"] - n\n    return [seen[need], i] if seen.key?(need)\n    seen[n] = i\n  end\n  []\nend\n",
+          "practice": "def solve(c)\n  nums, target = c[\"nums\"], c[\"target\"]\n  # Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n  []\nend\n",
           "clean": "def solve(c)\n  seen = {}\n  c[\"nums\"].each_with_index do |n, i|\n    need = c[\"target\"] - n\n    return [seen[need], i] if seen.key?(need)\n    seen[n] = i\n  end\n  []\nend\n",
-          "optimized": "def solve(c)\n  seen = {}\n  c[\"nums\"].each_with_index do |n, i|\n    need = c[\"target\"] - n\n    return [seen[need], i] if seen.key?(need)\n    seen[n] = i\n  end\n  []\nend\n"
+          "optimized": "# Optimized: same O(n) hash-map approach as clean.rb, but a single\n# hash lookup per element instead of key?+[] (two lookups for the\n# same key on every hit) -- same pattern, same measured win, as\n# optimized.js/optimized.py (see those files' comments). Ruby's\n# Hash#[] already returns nil (not an exception) for a missing key,\n# so this is a single lookup either way -- `if idx` is safe here\n# even for index 0, since only nil/false are falsy in Ruby.\ndef solve(c)\n  seen = {}\n  nums = c[\"nums\"]\n  (0...nums.length).each do |i|\n    need = c[\"target\"] - nums[i]\n    idx = seen[need]\n    return [idx, i] if idx\n    seen[nums[i]] = i\n  end\n  []\nend\n\n",
+          "brute-force": "# Brute force: check every pair. The \"obvious\" first approach --\n# O(n^2) time, O(1) space.\ndef solve(c)\n  nums = c[\"nums\"]\n  (0...nums.length).each do |i|\n    (i + 1...nums.length).each do |j|\n      return [i, j] if nums[i] + nums[j] == c[\"target\"]\n    end\n  end\n  []\nend\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop baseline -- the pedagogical starting point clean.rb/optimized.rb improve on"
+            }
+          }
         },
         "typescript": {
-          "practice": "export function solve(c: any): number[] | null {\n  const seen: Record<number, number> = {};\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (need in seen) return [seen[need], i];\n    seen[c.nums[i]] = i;\n  }\n  return null;\n}\n",
+          "practice": "export function solve(c: { nums: number[]; target: number }): number[] {\n  const nums = c.nums, target = c.target;\n  // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n  return [];\n}\n",
           "clean": "export function solve(c: { nums: number[]; target: number }): number[] {\n  const seen = new Map<number, number>();\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (seen.has(need)) return [seen.get(need)!, i];\n    seen.set(c.nums[i], i);\n  }\n  return [];\n}\n",
-          "optimized": "export function solve(c: { nums: number[]; target: number }): number[] {\n  const seen = new Map<number, number>();\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (seen.has(need)) return [seen.get(need)!, i];\n    seen.set(c.nums[i], i);\n  }\n  return [];\n}\n"
+          "optimized": "// Optimized: same O(n) hash-map approach as clean.ts, but a single\n// Map.get() lookup per element instead of has()+get() -- same\n// benchmarked win as optimized.js (see that file's comment).\nexport function solve(c: { nums: number[]; target: number }): number[] {\n  const seen = new Map<number, number>();\n  const nums = c.nums, n = nums.length;\n  for (let i = 0; i < n; i++) {\n    const need = c.target - nums[i];\n    const idx = seen.get(need);\n    if (idx !== undefined) return [idx, i];\n    seen.set(nums[i], i);\n  }\n  return [];\n}\n\n",
+          "brute-force": "// Brute force: check every pair. The \"obvious\" first approach --\n// O(n^2) time, O(1) space.\nexport function solve(c: { nums: number[]; target: number }): number[] {\n  const nums = c.nums;\n  for (let i = 0; i < nums.length; i++) {\n    for (let j = i + 1; j < nums.length; j++) {\n      if (nums[i] + nums[j] === c.target) return [i, j];\n    }\n  }\n  return [];\n}\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop baseline -- the pedagogical starting point clean.ts/optimized.ts improve on"
+            }
+          }
         },
         "wat": {
-          "practice": ";; two-sum in WebAssembly Text. Contract (host marshals JSON):\n;;   solve(ptr: i32, len: i32, target: f64) -> i64   ;; (i << 32) | j, or -1\n(module\n  (memory (export \"memory\") 1)\n  (func (export \"solve\") (param $ptr i32) (param $len i32) (param $target f64) (result i64)\n    (local $i i32) (local $j i32) (local $a i32) (local $b i32)\n    (block $done\n      (loop $outer\n        (br_if $done (i32.ge_s (local.get $i) (local.get $len)))\n        (local.set $a (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $i) (i32.const 2)))))\n        (local.set $j (i32.add (local.get $i) (i32.const 1)))\n        (loop $inner\n          (if (i32.lt_s (local.get $j) (local.get $len))\n            (then\n              (local.set $b (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $j) (i32.const 2)))))\n              (if (f64.eq (f64.add (f64.convert_i32_s (local.get $a)) (f64.convert_i32_s (local.get $b))) (local.get $target))\n                (then\n                  (return (i64.or\n                    (i64.shl (i64.extend_i32_u (local.get $i)) (i64.const 32))\n                    (i64.extend_i32_u (local.get $j))))))\n              (local.set $j (i32.add (local.get $j) (i32.const 1)))\n              (br $inner))))\n        (local.set $i (i32.add (local.get $i) (i32.const 1)))\n        (br $outer)))\n    (i64.const -1)))\n",
-          "clean": ";; two-sum in WebAssembly Text. Contract (host marshals JSON):\n;;   solve(ptr: i32, len: i32, target: f64) -> i64   ;; (i << 32) | j, or -1\n(module\n  (memory (export \"memory\") 1)\n  (func (export \"solve\") (param $ptr i32) (param $len i32) (param $target f64) (result i64)\n    (local $i i32) (local $j i32) (local $a i32) (local $b i32)\n    (block $done\n      (loop $outer\n        (br_if $done (i32.ge_s (local.get $i) (local.get $len)))\n        (local.set $a (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $i) (i32.const 2)))))\n        (local.set $j (i32.add (local.get $i) (i32.const 1)))\n        (loop $inner\n          (if (i32.lt_s (local.get $j) (local.get $len))\n            (then\n              (local.set $b (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $j) (i32.const 2)))))\n              (if (f64.eq (f64.add (f64.convert_i32_s (local.get $a)) (f64.convert_i32_s (local.get $b))) (local.get $target))\n                (then\n                  (return (i64.or\n                    (i64.shl (i64.extend_i32_u (local.get $i)) (i64.const 32))\n                    (i64.extend_i32_u (local.get $j))))))\n              (local.set $j (i32.add (local.get $j) (i32.const 1)))\n              (br $inner))))\n        (local.set $i (i32.add (local.get $i) (i32.const 1)))\n        (br $outer)))\n    (i64.const -1)))\n",
-          "optimized": ";; two-sum in WebAssembly Text. Contract (host marshals JSON):\n;;   solve(ptr: i32, len: i32, target: f64) -> i64   ;; (i << 32) | j, or -1\n(module\n  (memory (export \"memory\") 1)\n  (func (export \"solve\") (param $ptr i32) (param $len i32) (param $target f64) (result i64)\n    (local $i i32) (local $j i32) (local $a i32) (local $b i32)\n    (block $done\n      (loop $outer\n        (br_if $done (i32.ge_s (local.get $i) (local.get $len)))\n        (local.set $a (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $i) (i32.const 2)))))\n        (local.set $j (i32.add (local.get $i) (i32.const 1)))\n        (loop $inner\n          (if (i32.lt_s (local.get $j) (local.get $len))\n            (then\n              (local.set $b (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $j) (i32.const 2)))))\n              (if (f64.eq (f64.add (f64.convert_i32_s (local.get $a)) (f64.convert_i32_s (local.get $b))) (local.get $target))\n                (then\n                  (return (i64.or\n                    (i64.shl (i64.extend_i32_u (local.get $i)) (i64.const 32))\n                    (i64.extend_i32_u (local.get $j))))))\n              (local.set $j (i32.add (local.get $j) (i32.const 1)))\n              (br $inner))))\n        (local.set $i (i32.add (local.get $i) (i32.const 1)))\n        (br $outer)))\n    (i64.const -1)))\n"
+          "practice": ";; two-sum in WebAssembly Text. Contract (host marshals JSON):\n;;   solve(ptr: i32, len: i32, target: f64) -> (i32, i32)   ;; [i, j], or [-1, -1] if not found\n;;\n;; Return the indices [i, j] (i < j) of the two numbers in the array at\n;; ptr/len that add up to target. This stub always returns [-1, -1]\n;; (not found).\n;;\n;; Memory is imported, not declared here, for consistency with the\n;; other three solutions in this problem (clean/optimized/brute-force)\n;; even though this stub doesn't currently read $ptr at all -- keeping\n;; a separate, disconnected declared memory here would be a trap for\n;; whoever edits this file next: the host (web/wat-worker.js) always\n;; marshals the input array into ITS OWN memory object, not whatever a\n;; module declares for itself, so a future edit that starts reading\n;; $ptr would silently read garbage unless this already imports the\n;; same memory the host is writing into.\n(module\n  (import \"env\" \"memory\" (memory 0))\n  (func (export \"solve\") (param $ptr i32) (param $len i32) (param $target f64) (result i32 i32)\n    (i32.const -1) (i32.const -1)))\n",
+          "clean": ";; two-sum in WebAssembly Text: O(n) hash table, single combined\n;; lookup+insert loop. WAT has no built-in map/dict type. Contract (host\n;; marshals JSON):\n;;   solve(ptr: i32, len: i32, target: f64) -> (i32, i32)   ;; [i, j], or [-1, -1] if not found\n;;\n;; Memory is imported, not declared here: the host (web/wat-worker.js)\n;; creates and sizes it based on the actual cases about to run, before\n;; instantiating this module. This solution carries no assumption about\n;; how large n might ever get -- earlier versions declared a fixed\n;; memory size and a fixed hash table capacity (first 1024 slots, later\n;; 65536), both sized to whatever the Analyze ladder's max happened to\n;; be at the time, and both broke (silently or as a hang) once that\n;; assumption stopped holding. Table capacity below is instead computed\n;; from $len at the start of every call: the smallest power of 2, at\n;; least 16, that's >= 2*len -- correct for any n, not just \"big\n;; enough for today's ladder\". web/wat-worker.js's own requiredPages()\n;; independently computes this exact same number to size memory\n;; correctly ahead of time, without either side needing to know about\n;; the other's implementation.\n;;\n;; Design: the hash table is placed dynamically right after the\n;; marshaled input array (hash_ptr = round-up-to-4(ptr + len*4)).\n;; Each element's lookup and insert are FUSED into one probe loop: probe\n;; along the complement's hash chain; if a slot matches, return; if an\n;; EMPTY slot is reached, that proves the complement isn't present, so\n;; insert the CURRENT value at ITS OWN freshly-probed location (a\n;; separate chain, starting at hash(val) -- this is a real, valid open-\n;; addressing insert, not a shortcut that skips proper probing).\n;;\n;; The whole table is explicitly cleared to -1 at the start of every\n;; call rather than using a generation counter -- simpler to read, and\n;; validated NOT to distort the O(n) measurement in practice: real WASM\n;; stores are fast enough that this fixed cost doesn't dominate at\n;; these sizes (confirmed with real timing data through the Lab's own\n;; judge() classifier: consistent, not refuted).\n(module\n  (import \"env\" \"memory\" (memory 0))\n  (func (export \"solve\") (param $ptr i32) (param $len i32) (param $target f64) (result i32 i32)\n    (local $i i32)\n    (local $val i32)\n    (local $comp i32)\n\n    (local $hash_ptr i32)\n    (local $slot i32)\n    (local $slot_ptr i32)\n    (local $hash_val i32)\n    (local $cap i32)\n    (local $mask i32)\n\n    (local.set $cap (i32.const 16))\n    (block $cap_done\n      (loop $cap_loop\n        (br_if $cap_done (i32.ge_s (local.get $cap) (i32.shl (local.get $len) (i32.const 1))))\n        (local.set $cap (i32.shl (local.get $cap) (i32.const 1)))\n        (br $cap_loop)\n      )\n    )\n    (local.set $mask (i32.sub (local.get $cap) (i32.const 1)))\n\n    (local.set $hash_ptr\n      (i32.and\n        (i32.add (i32.add (local.get $ptr) (i32.shl (local.get $len) (i32.const 2))) (i32.const 3))\n        (i32.const -4)\n      )\n    )\n\n    (local.set $i (i32.const 0))\n    (block $clear_done\n      (loop $clear_loop\n        (br_if $clear_done (i32.ge_s (local.get $i) (local.get $cap)))\n        (i32.store (i32.add (local.get $hash_ptr) (i32.shl (local.get $i) (i32.const 2))) (i32.const -1))\n        (local.set $i (i32.add (local.get $i) (i32.const 1)))\n        (br $clear_loop)\n      )\n    )\n\n    (local.set $i (i32.const 0))\n    (block $done\n      (loop $outer\n        (br_if $done (i32.ge_s (local.get $i) (local.get $len)))\n\n        (local.set $val (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $i) (i32.const 2)))))\n        (local.set $comp (i32.sub (i32.trunc_f64_s (local.get $target)) (local.get $val)))\n        (local.set $slot (i32.and (local.get $comp) (local.get $mask)))\n\n        (block $inner_break\n          (loop $inner\n            (local.set $slot_ptr (i32.add (local.get $hash_ptr) (i32.shl (local.get $slot) (i32.const 2))))\n            (local.set $hash_val (i32.load (local.get $slot_ptr)))\n\n            (if (i32.eq (local.get $hash_val) (i32.const -1))\n              (then\n                (local.set $slot (i32.and (local.get $val) (local.get $mask)))\n                (loop $find_empty\n                  (local.set $slot_ptr (i32.add (local.get $hash_ptr) (i32.shl (local.get $slot) (i32.const 2))))\n                  (if (i32.eq (i32.load (local.get $slot_ptr)) (i32.const -1))\n                    (then\n                      (i32.store (local.get $slot_ptr) (local.get $i))\n                      (br $inner_break)))\n                  (local.set $slot (i32.and (i32.add (local.get $slot) (i32.const 1)) (local.get $mask)))\n                  (br $find_empty)\n                )\n              )\n            )\n\n            (if (i32.eq (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $hash_val) (i32.const 2)))) (local.get $comp))\n              (then\n                (return (local.get $hash_val) (local.get $i))))\n\n            (local.set $slot (i32.and (i32.add (local.get $slot) (i32.const 1)) (local.get $mask)))\n            (br $inner)\n          )\n        )\n\n        (local.set $i (i32.add (local.get $i) (i32.const 1)))\n        (br $outer)\n      )\n    )\n\n    (i32.const -1) (i32.const -1)\n  )\n)\n",
+          "optimized": ";; two-sum in WebAssembly Text: O(n) hash table. A DIFFERENT algorithmic\n;; approach from clean.wat, not just a micro-optimized version of it --\n;; genuinely faster, measured consistently across every timing round\n;; taken during design (~15-20% faster than clean.wat at n=1024). Two\n;; real differences:\n;;   1. A generation counter ($gen) replaces the explicit clear-to-(-1)\n;;      loop clean.wat runs at the start of every call. Each slot stores\n;;      which $gen it was last written in; a slot only counts as\n;;      occupied if that matches the CURRENT $gen, so bumping $gen once\n;;      per call is the entire \"reset\" -- avoids clean.wat's fixed\n;;      per-call clearing cost (which was checked and found NOT to\n;;      distort the O(n) measurement at these sizes, but avoiding it\n;;      entirely is still strictly less work).\n;;   2. Table capacity, like clean.wat, is now computed dynamically from\n;;      $len at the start of every call rather than a fixed number --\n;;      see this problem's clean.wat for the fuller reasoning on why:\n;;      earlier fixed sizes (2048, later 65536) were both just bigger\n;;      versions of the same \"assume how large n could ever get\"\n;;      mistake, and both eventually broke once that assumption stopped\n;;      holding.\n;; Memory is imported, not declared here (same reasoning as clean.wat):\n;; the host (web/wat-worker.js) creates and sizes it based on the\n;; actual cases about to run, using the exact same capacity formula\n;; this file computes for itself, so sizing is precise without either\n;; side needing to know about the other's implementation.\n;; $table_start is computed dynamically, right after the marshaled\n;; input array (round-up-to-4(ptr + len*4)), matching clean.wat's own\n;; approach -- an EARLIER version of this file hardcoded it at a fixed\n;; byte offset, which was a real, silent memory-corruption bug once the\n;; input array itself grew past that offset (the array and the table\n;; would then overlap) -- fixed by computing the table's location from\n;; the actual input size instead of assuming it.\n;; $base is ALSO tracked incrementally per probe (+12 per advance,\n;; wrapping at the table end) instead of recomputing slot*12 via a fresh\n;; multiplication each time -- a smaller, separate optimization, also\n;; validated with its own interleaved timing rounds. (A different,\n;; earlier attempt -- combining a version+value check into one i64\n;; load+compare per probe -- was tried FIRST and measured SLOWER in\n;; practice despite doing fewer memory accesses in theory; not shipped.\n;; Worth knowing: theoretical instruction-count savings don't always\n;; translate into real wall-clock wins once i64-on-a-32-bit-substrate\n;; overhead is accounted for.) Contract (host marshals JSON):\n;;   solve(ptr: i32, len: i32, target: f64) -> (i32, i32)   ;; [i, j], or [-1, -1] if not found\n(module\n  (import \"env\" \"memory\" (memory 0))\n  (global $gen (mut i32) (i32.const 0))\n  (func (export \"solve\") (param $ptr i32) (param $len i32) (param $target f64) (result i32 i32)\n    (local $i i32) (local $a i32) (local $need i32) (local $slot i32) (local $base i32) (local $foundIdx i32)\n    (local $table_start i32) (local $table_end i32) (local $cap i32) (local $mask i32)\n    (global.set $gen (i32.add (global.get $gen) (i32.const 1)))\n\n    (local.set $cap (i32.const 16))\n    (block $cap_done\n      (loop $cap_loop\n        (br_if $cap_done (i32.ge_s (local.get $cap) (i32.shl (local.get $len) (i32.const 1))))\n        (local.set $cap (i32.shl (local.get $cap) (i32.const 1)))\n        (br $cap_loop)\n      )\n    )\n    (local.set $mask (i32.sub (local.get $cap) (i32.const 1)))\n\n    (local.set $table_start\n      (i32.and\n        (i32.add (i32.add (local.get $ptr) (i32.shl (local.get $len) (i32.const 2))) (i32.const 3))\n        (i32.const -4)\n      )\n    )\n    (local.set $table_end (i32.add (local.get $table_start) (i32.mul (local.get $cap) (i32.const 12))))\n    (block $outer_done\n      (loop $outer\n        (br_if $outer_done (i32.ge_s (local.get $i) (local.get $len)))\n        (local.set $a (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $i) (i32.const 2)))))\n        (local.set $need (i32.trunc_f64_s (f64.sub (local.get $target) (f64.convert_i32_s (local.get $a)))))\n        ;; -- lookup $need --\n        (local.set $slot (i32.and (i32.mul (local.get $need) (i32.const -1640531535)) (local.get $mask)))\n        (local.set $foundIdx (i32.const -1))\n        (local.set $base (i32.add (local.get $table_start) (i32.mul (local.get $slot) (i32.const 12))))\n        (block $lookup_done\n          (loop $lookup\n            (br_if $lookup_done (i32.ne (i32.load (local.get $base)) (global.get $gen)))\n            (if (i32.eq (i32.load (i32.add (local.get $base) (i32.const 4))) (local.get $need))\n              (then\n                (local.set $foundIdx (i32.load (i32.add (local.get $base) (i32.const 8))))\n                (br $lookup_done)))\n            ;; base += 12, wrapping to $table_start if it runs past $table_end\n            (local.set $base (i32.add (local.get $base) (i32.const 12)))\n            (if (i32.ge_s (local.get $base) (local.get $table_end))\n              (then (local.set $base (local.get $table_start))))\n            (br $lookup)))\n        (if (i32.ge_s (local.get $foundIdx) (i32.const 0))\n          (then (return (local.get $foundIdx) (local.get $i))))\n        ;; -- insert $a --\n        (local.set $slot (i32.and (i32.mul (local.get $a) (i32.const -1640531535)) (local.get $mask)))\n        (local.set $base (i32.add (local.get $table_start) (i32.mul (local.get $slot) (i32.const 12))))\n        (block $insert_done\n          (loop $insert\n            (br_if $insert_done (i32.ne (i32.load (local.get $base)) (global.get $gen)))\n            (local.set $base (i32.add (local.get $base) (i32.const 12)))\n            (if (i32.ge_s (local.get $base) (local.get $table_end))\n              (then (local.set $base (local.get $table_start))))\n            (br $insert)))\n        (i32.store (local.get $base) (global.get $gen))\n        (i32.store (i32.add (local.get $base) (i32.const 4)) (local.get $a))\n        (i32.store (i32.add (local.get $base) (i32.const 8)) (local.get $i))\n        (local.set $i (i32.add (local.get $i) (i32.const 1)))\n        (br $outer)))\n    (i32.const -1) (i32.const -1)))\n",
+          "brute-force": ";; two-sum in WebAssembly Text: O(n^2) nested-loop brute force -- the\n;; baseline every other approach here improves on. For each i, scans\n;; every j > i checking nums[i] + nums[j] == target. Contract (host\n;; marshals JSON):\n;;   solve(ptr: i32, len: i32, target: f64) -> (i32, i32)   ;; [i, j], or [-1, -1] if not found\n;;\n;; Memory is imported, not declared here: the host (web/wat-worker.js)\n;; sizes it based on the actual cases about to run. No hash table here,\n;; so no capacity concern beyond the input array itself -- but a fixed\n;; declared size here would still carry the same embedded \"how big\n;; could n get\" assumption every other solution in this problem used to\n;; have (and that assumption was the actual root cause the last time\n;; this broke), so this stays consistent with clean.wat/optimized.wat's\n;; approach even though this file itself has nothing more complex to\n;; get right.\n(module\n  (import \"env\" \"memory\" (memory 0))\n  (func (export \"solve\") (param $ptr i32) (param $len i32) (param $target f64) (result i32 i32)\n    (local $i i32) (local $j i32) (local $a i32) (local $b i32)\n    (local.set $i (i32.const 0))\n    (block $done\n      (loop $outer\n        (br_if $done (i32.ge_s (local.get $i) (local.get $len)))\n        (local.set $a (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $i) (i32.const 2)))))\n        (local.set $j (i32.add (local.get $i) (i32.const 1)))\n        (block $break_inner\n          (loop $inner\n            (br_if $break_inner (i32.ge_s (local.get $j) (local.get $len)))\n            (local.set $b (i32.load (i32.add (local.get $ptr) (i32.shl (local.get $j) (i32.const 2)))))\n            (if (f64.eq (f64.add (f64.convert_i32_s (local.get $a)) (f64.convert_i32_s (local.get $b))) (local.get $target))\n              (then\n                (return (local.get $i) (local.get $j))))\n            (local.set $j (i32.add (local.get $j) (i32.const 1)))\n            (br $inner)))\n        (local.set $i (i32.add (local.get $i) (i32.const 1)))\n        (br $outer)))\n    (i32.const -1) (i32.const -1)))\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "open-addressing hash table in linear memory, fused lookup+insert loop, explicit full-table clear each call (see clean.wat's header comment for the design and why the clear was checked not to distort the O(n) measurement in practice)"
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "a different hash-table design from clean.wat, not just a micro-optimized copy -- generation counter instead of an explicit clear, 2048 slots (headroom above clean.wat's exact-fit 1024) -- measured ~15-20% faster across multiple interleaved timing rounds, see optimized.wat's header comment"
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop baseline -- the pedagogical starting point every other WAT approach here improves on"
+            }
+          }
         }
       }
     },
@@ -360,32 +854,210 @@
         "asm-6502": {
           "practice": "; nth Fibonacci -- 6502 assembly (customasm syntax)\n;\n; Contract:\n;   * runs at $0600 on a flat 64KB RAM\n;   * input  n is a byte at $10\n;   * output fib(n) is 16-BIT: store the LOW byte at $12 and the HIGH byte\n;     at $13 (little-endian). fib(20) = 6765 = $1A6D -> $12=$6D, $13=$1A.\n;   * end the program with BRK\n;   * documented opcodes only; decimal mode (SED) is not supported yet\n;   * zero page $00..$0F is free scratch space\n;\n; Hint: chain 16-bit adds with the carry flag -- CLC, then ADC the low bytes,\n; then ADC the high bytes (the carry rolls over automatically).\n; Write plain 6502 -- the standard instruction set is already available.\n\n        ldx $10          ; X = n\n        ; TODO: compute fib(n) as 16-bit and store lo->$12, hi->$13\n        lda #0\n        sta $12\n        sta $13\n        brk\n",
           "clean": "; nth Fibonacci -- 6502 assembly, reference (clean)\n;\n; Keeps two 16-bit numbers in zero page and iterates n times:\n;   a ($00 lo / $01 hi) = fib(i)      b ($02 lo / $03 hi) = fib(i+1)\n; Each step computes t = a + b in 16 bits, then slides the window:\n; a <- b, b <- t. After n steps, a = fib(n).\n;\n; The 16-bit add is the classic 6502 idiom: the CPU adds one byte at a\n; time, and the CARRY flag chains the bytes together --\n;   CLC             clear carry before the low add\n;   LDA lo1 / ADC lo2   low bytes (sets carry on overflow past 255)\n;   LDA hi1 / ADC hi2   high bytes + that carry, automatically\n;\n; Result is stored little-endian: low byte -> $12, high byte -> $13.\n\n        lda #0\n        sta $00          ; a.lo = 0   (fib(0))\n        sta $01          ; a.hi = 0\n        sta $03          ; b.hi = 0\n        lda #1\n        sta $02          ; b.lo = 1   (fib(1))\n        ldx $10          ; X = n (loop counter)\n\nloop:   cpx #0\n        beq done         ; counted down to zero -> a holds fib(n)\n\n        clc              ; --- t = a + b, 16-bit carry-chained ---\n        lda $00\n        adc $02\n        sta $04          ; t.lo = a.lo + b.lo          (carry set?)\n        lda $01\n        adc $03\n        sta $05          ; t.hi = a.hi + b.hi + carry\n\n        lda $02          ; --- slide the window: a <- b ---\n        sta $00\n        lda $03\n        sta $01\n        lda $04          ; --- b <- t ---\n        sta $02\n        lda $05\n        sta $03\n\n        dex\n        jmp loop\n\ndone:   lda $00\n        sta $12          ; result low byte  -> $12\n        lda $01\n        sta $13          ; result high byte -> $13\n        brk\n",
-          "optimized": "; nth Fibonacci -- 6502 assembly, reference (optimized)\n; Same O(n) carry-chained algorithm as clean; trims memory traffic by\n; carrying one leg of the window-slide through registers (A/Y) instead of\n; bouncing every byte through zero page. Result: lo -> $12, hi -> $13.\n\n        lda #0\n        sta $00          ; a.lo\n        sta $01          ; a.hi\n        sta $03          ; b.hi\n        lda #1\n        sta $02          ; b.lo\n        ldx $10          ; X = n\n\nloop:   cpx #0\n        beq done\n        clc\n        lda $00\n        adc $02          ; A = t.lo\n        tay              ; Y caches t.lo (skip one zp store/load)\n        lda $01\n        adc $03          ; A = t.hi (carry chained)\n        pha              ; stack caches t.hi\n        lda $02          ; a <- b\n        sta $00\n        lda $03\n        sta $01\n        sty $02          ; b.lo <- t.lo (from Y)\n        pla\n        sta $03          ; b.hi <- t.hi (from stack)\n        dex\n        jmp loop\n\ndone:   lda $00\n        sta $12\n        lda $01\n        sta $13\n        brk\n"
+          "optimized": "; nth Fibonacci -- 6502 assembly, reference (optimized)\n; Same O(n) carry-chained algorithm as clean; trims memory traffic by\n; carrying one leg of the window-slide through registers (A/Y) instead of\n; bouncing every byte through zero page. Result: lo -> $12, hi -> $13.\n\n        lda #0\n        sta $00          ; a.lo\n        sta $01          ; a.hi\n        sta $03          ; b.hi\n        lda #1\n        sta $02          ; b.lo\n        ldx $10          ; X = n\n\nloop:   cpx #0\n        beq done\n        clc\n        lda $00\n        adc $02          ; A = t.lo\n        tay              ; Y caches t.lo (skip one zp store/load)\n        lda $01\n        adc $03          ; A = t.hi (carry chained)\n        pha              ; stack caches t.hi\n        lda $02          ; a <- b\n        sta $00\n        lda $03\n        sta $01\n        sty $02          ; b.lo <- t.lo (from Y)\n        pla\n        sta $03          ; b.hi <- t.hi (from stack)\n        dex\n        jmp loop\n\ndone:   lda $00\n        sta $12\n        lda $01\n        sta $13\n        brk\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            }
+          }
+        },
+        "i8080": {
+          "practice": "; nth Fibonacci -- Intel 8080 assembly (customasm syntax, Intel mnemonics)\n;\n; Contract:\n;   * runs at 0x0100 (the classic CP/M entry) on flat 64KB RAM\n;     (no peripherals -- just the CPU; validated cycle-exact against the\n;     CP/M diagnostic ROMs, timed at the 2.000 MHz reference clock)\n;   * input  n is a byte at 0xC000\n;   * output fib(n) is 16-BIT: low byte -> 0xC010, high byte -> 0xC011\n;   * end the program with HLT\n;\n; Hint: DAD adds a register pair into HL in one 10-cycle instruction, and\n; XCHG swaps HL<->DE in 4 -- the fib window-slide is TWO instructions.\n; Lowercase Intel mnemonics (mov, mvi, lxi, dad, ...), 0x-prefixed hex.\n\n    lda 0xC000        ; A = n\n    ; TODO: compute fib(n); store low byte -> 0xC010, high byte -> 0xC011\n    mvi a, 0\n    sta 0xC010\n    sta 0xC011\n    hlt\n",
+          "clean": "; nth Fibonacci -- Intel 8080 assembly, reference (clean)\n;\n; The 8080's DAD instruction adds a register pair into HL (16-bit, 10 cycles),\n; and XCHG swaps HL<->DE in 4 cycles. Together they make the fib window-slide\n; (a, b) <- (b, a+b) exactly TWO instructions -- compare the SM83's five\n; (PUSH / ADD / LD / LD / POP):\n;   XCHG              HL <-> DE      (HL = b, DE = a)\n;   DAD D             HL = a + b\n; Invariant: after k slides, DE = fib(k) and HL = fib(k+1) -- so the answer\n; is read from DE. Loop body: XCHG(4) + DAD(10) + DCR(5) + JNZ(10) = 29\n; cycles per step at 2.000 MHz. (Note: 8080 conditional JMPs cost 10 taken\n; OR not-taken -- unlike conditional CALL/RET, which are 17/11 and 11/5.)\n;\n; Result: low byte -> 0xC010, high byte -> 0xC011 (little-endian).\n\n    lxi d, 0          ; DE = fib(0) = 0\n    lxi h, 1          ; HL = fib(1) = 1\n    lda 0xC000        ; A = n\n    ora a             ; sets Z if n == 0 (fib(0) is already in DE)\n    jz done\n    mov b, a          ; B is the loop counter\n\nloop:\n    xchg              ; HL = b, DE = a\n    dad d             ; HL = a + b       (DE = fib(k), HL = fib(k+1))\n    dcr b\n    jnz loop\n\ndone:\n    mov a, e\n    sta 0xC010        ; result low byte\n    mov a, d\n    sta 0xC011        ; result high byte\n    hlt\n",
+          "optimized": "; nth Fibonacci -- Intel 8080 assembly, reference (optimized)\n;\n; The clean loop's fib step is already minimal (XCHG + DAD = 14 cycles); what\n; can be trimmed is loop overhead (DCR + JNZ = 15 cycles per step!). This\n; version unrolls 2x: odd n peels one step, then each iteration does TWO fib\n; steps with ONE DCR/JNZ. Per step: clean 29 cycles -> unrolled 21.5.\n; For fib(20): 580 -> 430 loop cycles, measurable in the deterministic\n; cycle counter at the 2.000 MHz reference clock.\n;\n; The 8080 has no shift instructions -- n/2 is done with RAR (rotate right\n; through carry) after ORA A clears CY: A = n>>1, CY = n odd?\n;\n; Invariant as in clean: after k slides DE = fib(k); result read from DE.\n\n    lxi d, 0          ; DE = fib(0) = 0\n    lxi h, 1          ; HL = fib(1) = 1\n    lda 0xC000        ; A = n\n    ora a             ; Z if n == 0; also clears CY for the RAR below\n    jz done\n    rar               ; A = n/2, CY = n odd?\n    jnc even\n    xchg              ; --- peel one step for odd n ---\n    dad d\neven:\n    ora a             ; n/2 == 0? (n was 1 -> the peeled step was all of it)\n    jz done\n\nloop:\n    xchg              ; --- step 1 ---\n    dad d\n    xchg              ; --- step 2 ---\n    dad d\n    dcr a             ; one DCR/JNZ per TWO steps\n    jnz loop\n\ndone:\n    mov a, e\n    sta 0xC010        ; result low byte\n    mov a, d\n    sta 0xC011        ; result high byte\n    hlt\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            }
+          }
         },
         "javascript": {
           "practice": "module.exports = function solve(c) {\n  const n = c.n;\n  // Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n  return 0;\n};\n",
-          "clean": null,
-          "optimized": null
+          "clean": "// L1-fib-clean: reference solution -- the Lab's correctness oracle for this\n// problem (previously absent; see manifest.toml history / ROADMAP).\nmodule.exports = function solve(c) {\n  const n = c.n;\n  let a = 0, b = 1;\n  for (let i = 0; i < n; i++) {\n    const t = a + b;\n    a = b;\n    b = t;\n  }\n  return a;\n};\n",
+          "optimized": "// L1-fib-optimized: same O(n) window-slide as clean; unrolled 2x so the\n// loop body advances two Fibonacci steps per iteration-counter check --\n// mirrors the 8080 optimized.s's peel-odd-n + unrolled-pair trick, expressed\n// in JS terms (a genuine constant-factor win, same complexity class --\n// matches the manifest's declared O(n) for the optimized variant).\nmodule.exports = function solve(c) {\n  let a = 0, b = 1, i = c.n;\n  if (i & 1) { const t = a + b; a = b; b = t; i--; }\n  for (; i > 0; i -= 2) {\n    const t = a + b;\n    b = t + b;\n    a = t;\n  }\n  return a;\n};\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            }
+          }
         },
         "python": {
           "practice": "def solve(case):\n    n = case[\"n\"]\n    # Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n    return 0\n",
-          "clean": null,
-          "optimized": null
+          "clean": "def solve(c):\n    n = c[\"n\"]\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n",
+          "optimized": "# Same O(n) window-slide as clean.py; unrolled 2x so the loop body advances\n# two Fibonacci steps per iteration-counter check -- mirrors the 8080\n# optimized.s's peel-odd-n + unrolled-pair trick (see that file's comments\n# for the full derivation), a genuine constant-factor win that stays in\n# the manifest's declared O(n) class.\ndef solve(c):\n    n = c[\"n\"]\n    a, b = 0, 1\n    if n & 1:\n        a, b = b, a + b\n        n -= 1\n    while n > 0:\n        t = a + b\n        b = t + b\n        a = t\n        n -= 2\n    return a\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            }
+          }
         },
         "ruby": {
           "practice": "def solve(input)\n  n = input[\"n\"]\n  # Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n  0\nend\n",
-          "clean": null,
-          "optimized": null
+          "clean": "def solve(c)\n  n = c[\"n\"]\n  a, b = 0, 1\n  n.times { a, b = b, a + b }\n  a\nend\n",
+          "optimized": "# Same O(n) window-slide as clean.rb; unrolled 2x so the loop body advances\n# two Fibonacci steps per iteration-counter check -- mirrors the 8080\n# optimized.s's peel-odd-n + unrolled-pair trick (see that file's comments\n# for the full derivation), a genuine constant-factor win that stays in\n# the manifest's declared O(n) class.\ndef solve(c)\n  n = c[\"n\"]\n  a, b = 0, 1\n  if n.odd?\n    a, b = b, a + b\n    n -= 1\n  end\n  while n > 0\n    t = a + b\n    b = t + b\n    a = t\n    n -= 2\n  end\n  a\nend\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            }
+          }
+        },
+        "sm83": {
+          "practice": "; nth Fibonacci -- Game Boy assembly (SM83, customasm syntax)\n;\n; Contract:\n;   * runs at $0100 (the Game Boy cartridge entry) on flat 64KB RAM\n;     (no Game Boy hardware -- no PPU/timers/interrupts; just the CPU)\n;   * input  n is a byte at $C000\n;   * output fib(n) is 16-BIT: low byte -> $C010, high byte -> $C011\n;   * end the program with HALT\n;\n; Hint: unlike the 6502, the SM83 has native 16-bit adds -- keep fib's pair\n; in HL and DE and use ADD HL,DE. Uppercase mnemonics (LD, ADD, JR ...).\n\n    LD A,[$C000]      ; A = n\n    ; TODO: compute fib(n); store low byte -> $C010, high byte -> $C011\n    LD A,0\n    LD [$C010],A\n    LD [$C011],A\n    HALT\n",
+          "clean": "; nth Fibonacci -- Game Boy assembly (SM83), reference (clean)\n;\n; The SM83 has real 16-bit register pairs, so unlike the 6502 there is no\n; hand-rolled carry chaining: HL holds fib(i), DE holds fib(i+1), and\n; ADD HL,DE computes their 16-bit sum in ONE instruction.\n;\n; Each step slides the window (a, b) <- (b, a+b):\n;   PUSH DE           save b\n;   ADD HL,DE         HL = a + b\n;   LD D,H / LD E,L   DE = a + b     (new b)\n;   POP HL            HL = old b     (new a)\n;\n; Result: low byte -> $C010, high byte -> $C011 (little-endian).\n\n    LD HL,0           ; a = fib(0) = 0\n    LD DE,1           ; b = fib(1) = 1\n    LD A,[$C000]      ; A = n\n    LD B,A            ; B is the loop counter\n    OR A              ; sets Z if n == 0\n    JR Z,done\n\nloop:\n    PUSH DE           ; save b\n    ADD HL,DE         ; HL = a + b   (16-bit, one instruction)\n    LD D,H\n    LD E,L            ; DE = a + b   (b' = a + b)\n    POP HL            ; HL = old b   (a' = b)\n    DEC B\n    JR NZ,loop\n\ndone:\n    LD A,L\n    LD [$C010],A      ; result low byte\n    LD A,H\n    LD [$C011],A      ; result high byte\n    HALT\n",
+          "optimized": "; nth Fibonacci -- Game Boy assembly (SM83), reference (optimized)\n; The clean loop is already near-minimal on the SM83 (ADD only targets HL, so\n; the window-slide can't be eliminated). What CAN be trimmed is branch\n; overhead: this version unrolls the loop 2x -- odd n peels one step, then\n; each iteration does TWO fib steps with ONE loop branch. For fib(20):\n; 10 branches instead of 20. Result: lo -> $C010, hi -> $C011.\n\n    LD HL,0           ; a = 0\n    LD DE,1           ; b = 1\n    LD A,[$C000]      ; A = n\n    OR A\n    JR Z,done         ; fib(0) = 0\n    SRL A             ; A = n/2, carry = n odd?\n    JR NC,evenN\n    PUSH DE           ; --- peel one step for odd n ---\n    ADD HL,DE\n    LD D,H\n    LD E,L\n    POP HL\nevenN:\n    OR A              ; n/2 == 0? (n was 1 -> peeled step was all of it)\n    JR Z,done\n\nloop:\n    PUSH DE           ; --- step 1 ---\n    ADD HL,DE\n    LD D,H\n    LD E,L\n    POP HL\n    PUSH DE           ; --- step 2 ---\n    ADD HL,DE\n    LD D,H\n    LD E,L\n    POP HL\n    DEC A             ; one branch per TWO steps\n    JR NZ,loop\n\ndone:\n    LD A,L\n    LD [$C010],A\n    LD A,H\n    LD [$C011],A\n    HALT\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            }
+          }
         },
         "typescript": {
           "practice": "export function solve(c: { n: number }): number {\n  const n = c.n;\n  // Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n  return 0;\n}\n",
-          "clean": null,
-          "optimized": null
+          "clean": "export function solve(c: { n: number }): number {\n  let a = 0, b = 1;\n  for (let i = 0; i < c.n; i++) { const t = a + b; a = b; b = t; }\n  return a;\n}\n",
+          "optimized": "// Same O(n) window-slide as clean.ts; unrolled 2x so the loop body advances\n// two Fibonacci steps per iteration-counter check -- mirrors the 8080\n// optimized.s's peel-odd-n + unrolled-pair trick (see that file's comments\n// for the full derivation), a genuine constant-factor win that stays in\n// the manifest's declared O(n) class.\nexport function solve(c: { n: number }): number {\n  let a = 0, b = 1, n = c.n;\n  if (n & 1) { const t = a + b; a = b; b = t; n--; }\n  for (; n > 0; n -= 2) {\n    const t = a + b;\n    b = t + b;\n    a = t;\n  }\n  return a;\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            }
+          }
         },
         "wat": {
           "practice": "(module\n  ;; Export `solve(n)` returning the nth Fibonacci number (i32).\n  ;; fib(0)=0, fib(1)=1, fib(2)=1, fib(3)=2, ...   WAT is numeric-only.\n  (func (export \"solve\") (param $n i32) (result i32)\n    ;; your code here\n    (i32.const 0)))\n",
-          "clean": "(module\n  ;; nth Fibonacci, iterative.  solve(n) -> fib(n).  fib(0)=0, fib(1)=1, fib(2)=1, ...\n  (func (export \"solve\") (param $n i32) (result i32)\n    (local $a i32) (local $b i32) (local $t i32)\n    (local.set $a (i32.const 0))\n    (local.set $b (i32.const 1))\n    (block $done\n      (loop $loop\n        (br_if $done (i32.eqz (local.get $n)))\n        (local.set $t (i32.add (local.get $a) (local.get $b)))\n        (local.set $a (local.get $b))\n        (local.set $b (local.get $t))\n        (local.set $n (i32.sub (local.get $n) (i32.const 1)))\n        (br $loop)))\n    (local.get $a)))\n",
-          "optimized": "(module\n  ;; nth Fibonacci, iterative.  solve(n) -> fib(n).  fib(0)=0, fib(1)=1, fib(2)=1, ...\n  (func (export \"solve\") (param $n i32) (result i32)\n    (local $a i32) (local $b i32) (local $t i32)\n    (local.set $a (i32.const 0))\n    (local.set $b (i32.const 1))\n    (block $done\n      (loop $loop\n        (br_if $done (i32.eqz (local.get $n)))\n        (local.set $t (i32.add (local.get $a) (local.get $b)))\n        (local.set $a (local.get $b))\n        (local.set $b (local.get $t))\n        (local.set $n (i32.sub (local.get $n) (i32.const 1)))\n        (br $loop)))\n    (local.get $a)))\n"
+          "clean": "(module\n  ;; nth Fibonacci, iterative.  solve(n) -> fib(n).  fib(0)=0, fib(1)=1, fib(2)=1, ...\n  ;; Accumulators are i64, not i32: fib(47) = 2971215073 overflows a signed\n  ;; 32-bit int (max 2147483647), which forced an awkward, narrow wall-tier\n  ;; ladder [12,46] for complexity testing -- and even within that range,\n  ;; WAT's near-native execution speed left too little absolute signal\n  ;; above fixed overhead to reliably classify growth (confirmed directly:\n  ;; measurements consistently looked like flat O(1) even though the\n  ;; algorithm is genuinely O(n)). i64 pushes the overflow point out to\n  ;; fib(93); the loop counter $n stays i32 (n<=93 fits trivially), only\n  ;; the Fibonacci values themselves widen. In practice the Lab still\n  ;; caps n at 78 to match the JS oracle's own exact-double ceiling (see\n  ;; lab-config.mjs) -- i64 buys headroom up to what the oracle can\n  ;; actually validate, not further.\n  (func (export \"solve\") (param $n i32) (result i64)\n    (local $a i64) (local $b i64) (local $t i64)\n    (local.set $a (i64.const 0))\n    (local.set $b (i64.const 1))\n    (block $done\n      (loop $loop\n        (br_if $done (i32.eqz (local.get $n)))\n        (local.set $t (i64.add (local.get $a) (local.get $b)))\n        (local.set $a (local.get $b))\n        (local.set $b (local.get $t))\n        (local.set $n (i32.sub (local.get $n) (i32.const 1)))\n        (br $loop)))\n    (local.get $a)))\n",
+          "optimized": ";; Same O(n) window-slide as clean.wat, i64 accumulators for the same\n;; reason (see clean.wat's comments); unrolled 2x so the loop body\n;; advances two Fibonacci steps per iteration-counter check -- mirrors\n;; the 8080 optimized.s's peel-odd-n + unrolled-pair trick, a genuine\n;; constant-factor win that stays in the manifest's declared O(n) class.\n(module\n  (func (export \"solve\") (param $n i32) (result i64)\n    (local $a i64) (local $b i64) (local $t i64)\n    (local.set $a (i64.const 0))\n    (local.set $b (i64.const 1))\n    (if (i32.and (local.get $n) (i32.const 1))\n      (then\n        (local.set $t (i64.add (local.get $a) (local.get $b)))\n        (local.set $a (local.get $b))\n        (local.set $b (local.get $t))\n        (local.set $n (i32.sub (local.get $n) (i32.const 1)))))\n    (block $done\n      (loop $loop\n        (br_if $done (i32.le_s (local.get $n) (i32.const 0)))\n        (local.set $t (i64.add (local.get $a) (local.get $b)))\n        (local.set $b (i64.add (local.get $t) (local.get $b)))\n        (local.set $a (local.get $t))\n        (local.set $n (i32.sub (local.get $n) (i32.const 2)))\n        (br $loop)))\n    (local.get $a)))\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            }
+          }
         }
       }
     },

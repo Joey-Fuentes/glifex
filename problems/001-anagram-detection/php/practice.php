@@ -1,6 +1,6 @@
 <?php
 function solve(array $c): bool {
-    $s = str_split($c['s']); $t = str_split($c['t']);
-    sort($s); sort($t);
-    return $s === $t;
+    $s = $c['s']; $t = $c['t'];
+    // Return true if s and t are anagrams of each other, false otherwise.
+    return false;
 }

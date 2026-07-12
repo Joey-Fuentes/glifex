@@ -1,9 +1,15 @@
+// Optimized: same O(n) hash-map approach as clean.ts, but a single
+// Map.get() lookup per element instead of has()+get() -- same
+// benchmarked win as optimized.js (see that file's comment).
 export function solve(c: { nums: number[]; target: number }): number[] {
   const seen = new Map<number, number>();
-  for (let i = 0; i < c.nums.length; i++) {
-    const need = c.target - c.nums[i];
-    if (seen.has(need)) return [seen.get(need)!, i];
-    seen.set(c.nums[i], i);
+  const nums = c.nums, n = nums.length;
+  for (let i = 0; i < n; i++) {
+    const need = c.target - nums[i];
+    const idx = seen.get(need);
+    if (idx !== undefined) return [idx, i];
+    seen.set(nums[i], i);
   }
   return [];
 }
+

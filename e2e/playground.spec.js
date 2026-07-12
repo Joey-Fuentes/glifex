@@ -21,10 +21,19 @@ test("playground loads and lists problems", async ({ page }) => {
   await expect(page.locator("#problem-title")).not.toHaveText("Loading…");
 });
 
-test("running the shipped JavaScript practice solution passes all cases", async ({ page }) => {
+test("running the shipped JavaScript clean solution passes all cases", async ({ page }) => {
   await page.goto("/");
   await page.locator("#problem-list li").first().click();
   await page.locator("#lang-select").selectOption("javascript");
+  // practice ships as a blank stub (worked_example policy reversal) -- fill
+  // in the real, shipped `clean` solution, so this test proves the
+  // playground engine itself works, not that practice happens to be solved.
+  const source = await page.evaluate(async () => {
+    const corpus = await (await fetch("problems.generated.json")).json();
+    const p = corpus.problems[0];
+    return p.languages.javascript.clean;
+  });
+  await page.locator("#editor").fill(source);
   await page.locator("#run-btn").click();
   await expect(page.locator(".summary")).toHaveClass(/ok/);
 });
@@ -42,10 +51,22 @@ test("OFFLINE: the playground still runs after the network is cut", async ({ pag
   await page.goto("/");
   await expect(page.locator("#problem-list li").first()).toBeVisible();
 
+  // practice ships as a blank stub (worked_example policy reversal) -- fetch
+  // the real, shipped `clean` solution WHILE STILL ONLINE (this test's claim
+  // is "the playground still runs offline," not "problems.generated.json is
+  // itself service-worker cached" -- fetching before cutting the network
+  // keeps those two concerns separate).
+  const source = await page.evaluate(async () => {
+    const corpus = await (await fetch("problems.generated.json")).json();
+    const p = corpus.problems[0];
+    return p.languages.javascript.clean;
+  });
+
   // …then sever the network entirely.
   await context.setOffline(true);
 
   await page.locator("#lang-select").selectOption("javascript");
+  await page.locator("#editor").fill(source);
   await page.locator("#run-btn").click();
   await expect(page.locator(".summary")).toHaveClass(/ok/);
 

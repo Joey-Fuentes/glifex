@@ -1,0 +1,13 @@
+name = "sm83"
+display = "Game Boy assembly"
+extension = "s"
+practice_file = "practice.s"
+family = "assembly"
+arch = "sm83"
+scaffold = false           # numeric-only, CPU-core contract; added per-problem
+detect = "customasm --version"
+install_hint = "cargo install customasm  (Rust); browser tier vendors customasm.wasm + first-party SM83 core"
+# CLI path: assemble with customasm; browser tier runs web/retro/cpuSm83.mjs.
+test_cmd = "customasm {variant}.s -f binary -o .glifex.bin && node harness.mjs {variant}"
+run_cmd = "customasm {variant}.s -f binary -o .glifex.bin && node harness.mjs {variant}"
+tool_version = "customasm 0.14"

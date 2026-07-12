@@ -91,7 +91,7 @@ button.ghost.active { color: var(--accent); border-color: var(--accent); }
 .reference-panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
 .ref-tabs { display: flex; gap: .4rem; align-items: center; padding: .4rem .6rem; border-bottom: 1px solid var(--line); }
 .ref-tabs .editor-label { position: static; border: 0; background: none; padding: 0 .4rem 0 0; }
-#reference-code { margin: 0; padding: .9rem 1rem; font-family: var(--mono); font-size: .84rem; line-height: 1.6; overflow: auto; max-height: 320px; }
+#reference-code { margin: 0; padding: .9rem 1rem; font-family: var(--mono); font-size: .84rem; line-height: 1.6; overflow: auto; max-height: 320px; display: block; width: 100%; box-sizing: border-box; border: 0; resize: none; background: transparent; color: inherit; white-space: pre; outline: none; }
 .CodeMirror { height: auto; min-height: 260px; background: var(--panel-2); color: var(--fg); font-family: var(--mono); font-size: .86rem; }
 .CodeMirror-gutters { background: var(--panel); border-right: 1px solid var(--line); }
 .CodeMirror-linenumber { color: var(--muted); }
@@ -174,4 +174,33 @@ button.ghost.active { color: var(--accent); border-color: var(--accent); }
 .failed-mark { color: var(--fail); margin-right: .35rem; font-weight: 700; }
 .running { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-size: .85rem; }
 .spinner { width: 14px; height: 14px; flex: none; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: glifex-spin .7s linear infinite; }
-@keyframes glifex-spin { to { transform: rotate(360deg); } }
+@keyframes glifex-spin { to { transform: rotate(360deg); } }\n\n/* refresh button: quiet normally, loud when a newer deploy is available */\n#refresh-btn.update { color: var(--ok, #7ee787); border-color: currentColor; font-weight: 600; }\n
+/* L1 Complexity Lab */
+.lab { margin-top: .2rem; }
+.lab-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: .9rem 1rem 1rem; }
+.lab-head { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.lab-head h2 { font-size: .95rem; margin: 0; }
+.lab-sub { font-family: var(--mono); font-size: .68rem; color: var(--muted); }
+.lab-verdict { font-family: var(--mono); font-size: .8rem; font-weight: 600; border-radius: 8px; padding: .5rem .65rem; margin-bottom: .35rem; line-height: 1.45; }
+.lab-verdict.ok { color: var(--accent-2); background: rgba(126,231,135,.08); border: 1px solid rgba(126,231,135,.22); }
+.lab-verdict.bad { color: var(--fail); background: rgba(255,123,114,.08); border: 1px solid rgba(255,123,114,.28); }
+.lab-verdict.warn { color: #e3b341; background: rgba(227,179,65,.08); border: 1px solid rgba(227,179,65,.28); }
+.lab-verdict.theta { color: var(--accent); background: rgba(110,168,254,.08); border: 1px solid rgba(110,168,254,.28); }
+.lab-verdict.dim { color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); font-weight: 500; }
+.lab-note { color: var(--muted); font-size: .78rem; line-height: 1.55; margin: .5rem 0; }
+.lab-fig { margin: .7rem 0; }
+.lab-fig svg { display: block; width: 100%; height: auto; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+.lab-fig figcaption { font-size: .7rem; color: var(--muted); margin-top: .35rem; line-height: 1.6; }
+.lab-k { display: inline-block; width: 13px; height: 3px; border-radius: 2px; vertical-align: middle; margin: 0 .25rem 0 .5rem; }
+.lab-k-dash { background: repeating-linear-gradient(90deg, #8b949e 0 3px, transparent 3px 6px); }
+.lab-sec { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: .9rem 0 .4rem; font-weight: 600; display: flex; gap: .35rem; align-items: center; }
+.lab-tablewrap { overflow-x: auto; }
+.lab-table { border-collapse: collapse; font-family: var(--mono); font-size: .72rem; width: 100%; }
+.lab-table th, .lab-table td { text-align: right; padding: .28rem .5rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.lab-table th { color: var(--muted); font-weight: 500; }
+.lab-table th:first-child, .lab-table td:first-child { text-align: left; }
+.lab-table .declared { color: var(--fg); background: rgba(110,168,254,.07); }
+.lab-table td.hit { color: var(--accent-2); }
+.lab-table td.miss { color: var(--fail); }
+.lab-table tr.dropped td { color: var(--muted); opacity: .55; }
+.lab-prov { font-family: var(--mono); font-size: .66rem; color: var(--muted); margin-top: .8rem; border-top: 1px dashed var(--line); padding-top: .5rem; line-height: 1.7; }

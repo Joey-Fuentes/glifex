@@ -81,6 +81,76 @@ never a required check: merge ability must not depend on third-party SaaS uptime
 Secrets are caught pre-commit (gitleaks) and by GitHub push protection — CI
 scanning is the backstop; on a public repo, a secret reaching CI is already burned.
 
+## Decision 9 — A required check must itself be required, and must actually be reported
+
+A red `playground` job still deployed once: its downstream `e2e` job (`needs:
+[playground]`) was skipped rather than failed, and GitHub's branch protection
+treats a **skipped** required check as satisfying it, not blocking it — only a
+genuinely failed one blocks a merge. Fixed with a single `ci-status-gate` job
+that depends on every real job, runs unconditionally (`if: always()`), and
+explicitly fails unless every dependency's result is `success` — required
+status checks point at *this* job, not at any individual leg. A second,
+independent gap let it through anyway: Deploy Pages triggered on `push:
+{branches: [main]}` with zero awareness of whether CI had passed at all: fixed
+by switching to a `workflow_run` trigger gated on `conclusion == 'success'`,
+checking out the exact commit CI tested rather than assuming `main` hasn't
+moved. Verified by deliberately breaking each gate on a real PR and confirming
+merge/deploy correctly refused, not just by reasoning about the YAML. Full
+incident account, every gotcha (including a required-check name silently not
+matching what the job actually reports, which reintroduces the same failure
+mode from a different angle), and the verification methodology: [CI/CD
+pipeline](ci-cd.md).
+
+## Decision 10 — Worker isolation is a pattern, and a merge can silently undo it
+
+A runtime that executes potentially slow or unbounded code belongs in a Web
+Worker with an enforced timeout, not the main thread -- otherwise a hang
+freezes the entire tab with no way to recover short of force-closing it. This
+was independently fixed, in sequence, for TypeScript (#40), Ruby (#41), PHP
+(#42), Python (#43), and Postgres (#44) -- the "L3" work referenced throughout
+`web/*-worker.js`. Each fix moved compile+execute into a dedicated
+`<runtime>-worker.js`, with `load<Runtime>()` in `runtimes.js` reduced to a
+thin wrapper around the shared `window.callWorker()` helper.
+
+By the time PR #44 merged, four of those five fixes had been **silently
+reverted** -- not by anyone editing them back, but by a cascading merge
+pattern: each PR's branch was evidently cut before the previous one merged, so
+merging it reintroduced that previous loader's pre-fix, main-thread version
+while adding its own fix on top. Confirmed by direct git archaeology, not
+inferred: `f51e641` (Ruby, #41) reverts TypeScript's #40 fix; `c43fd68` (PHP,
+#42) reverts Ruby's own #41 fix; `ebf14f8` (Postgres, #44) reverts Python's #43
+fix. `778d697` (Python, #43) reverts PHP's #42 fix too. Postgres alone
+survived, only because no later L3-shaped PR came after it to repeat the
+pattern. At time of writing, `loadTypeScript()`, `loadPython()`, `loadRuby()`,
+and `loadPhp()` all execute directly on the main thread again -- confirmed
+directly for Ruby with a real Playwright click on Analyze, instrumented with a
+`requestAnimationFrame` heartbeat measuring actual main-thread responsiveness
+(not just "did it eventually return"): 88-89% of the run, consistently across
+5 repeated measurements, was one unbroken block where the page could not
+render a frame or process any input.
+
+This is a narrower fix than it looks: `web/ts-worker.js`, `ruby-worker.js`,
+`php-worker.js`, and `python-worker.js` were never deleted. Byte-for-byte
+diffed against the commit each was originally reviewed and merged at -- all
+four are still fully intact, just orphaned. Restoring the four `load<Runtime>`
+functions to their known-good, already-reviewed shape is what's needed, not a
+rewrite.
+
+Worth being precise about why CI didn't catch this, since a test aimed
+squarely at this failure mode already exists: `e2e/runtimes.spec.js`'s own
+header states its purpose as making sure "a regression in runtimes.js's
+loaders fails CI instead of sailing through untested," and it runs
+TypeScript/Python/Ruby/PHP through a real Run click every time. But its only
+assertion is that `.summary` ends up with class `ok` -- pure output
+correctness. A solve() call returns the identical, correct answer whether it
+runs on the main thread or inside a Worker; the test has no way to see the
+difference. Confirmed directly, not just read: the equivalent of this exact
+test was run manually against this exact regressed code, for Ruby and
+TypeScript, multiple times this session -- every run passed clean. A future
+regression test for this needs to assert *how* the answer was produced (e.g.
+that a `Worker` was actually constructed, or that the main thread stayed
+responsive during the run), not just that the answer was right.
+
 ## Invariants
 
 Decisions above are choices; these are the load-bearing rules a change must not
@@ -117,6 +187,20 @@ quietly break. If a diff violates one of these, it is wrong even if CI is green.
    `?v=<sha>` and self-versions the service-worker cache, because the SW serves
    each asset one generation stale and independently. Do not reintroduce
    unversioned asset URLs.
+9. **A runtime that executes potentially slow or unbounded code must run in a
+   Worker with an enforced timeout.** See Decision 10 for the full account of
+   how four of these got silently reverted by a cascading merge pattern, and
+   why `e2e/runtimes.spec.js` didn't catch it. Currently non-compliant:
+   **typescript, python, ruby, php** -- all execute on the main thread despite
+   already-reviewed, already-merged Worker versions sitting intact and
+   orphaned at `web/{ts,python,ruby,php}-worker.js`. Compliant: wat, c, cpp,
+   postgres. Restoring a `load<Runtime>()` to reference its existing worker
+   file is a revert to known-good code, not new work -- treat it accordingly
+   (low-risk, should not need the scrutiny a fresh implementation would). A
+   PR touching any `load<Runtime>()` function must diff-check the result
+   against that runtime's own most recent "L3" merge commit, not just against
+   its immediate parent, to catch this exact regression before it merges
+   again.
 
 ## Diagrams
 
@@ -135,21 +219,34 @@ flowchart LR
 ```
 
 **Playground run path** -- one contract, many runtimes, one result shape
-(`.summary.ok` / `.summary.bad`):
+(`.summary.ok` / `.summary.bad`). Grouped by Invariant 9 compliance, not
+alphabetically -- see Decision 10 for why the left group currently violates it:
 
 ```mermaid
 flowchart TD
   U["user code + Run"] --> APP["web/app.js run path"]
   APP -->|javascript| JS["js-runtime.js (inline, native)"]
   APP -->|other langs| R["runtimes.js LOADERS"]
-  R --> TS["typescript"]
-  R --> PY["python (Pyodide)"]
-  R --> RB["ruby.wasm"]
-  R --> PHP["php-wasm"]
-  R --> WAT["wat (wabt)"]
-  R --> PGL["postgres (PGlite)"]
-  R --> CPP["cpp (Binji wasm-clang, single-thread)"]
-  R --> CC["c (Wasmer WASIX clang)"]
+  subgraph MT["main thread -- Invariant 9 violation (Decision 10)"]
+    TS["typescript"]
+    PY["python (Pyodide)"]
+    RB["ruby.wasm"]
+    PHP["php-wasm"]
+  end
+  subgraph WK["Worker + timeout (compliant)"]
+    WAT["wat (wabt)"]
+    PGL["postgres (PGlite)"]
+    CPP["cpp (Binji wasm-clang, single-thread)"]
+    CC["c (Wasmer WASIX clang)"]
+  end
+  R --> TS
+  R --> PY
+  R --> RB
+  R --> PHP
+  R --> WAT
+  R --> PGL
+  R --> CPP
+  R --> CC
   CC -->|needs SharedArrayBuffer| COI["COI reload gate (C only)"]
   JS --> RES[".summary .ok / .bad"]
   R --> RES

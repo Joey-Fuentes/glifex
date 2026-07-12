@@ -1,0 +1,22 @@
+name: retro-exhaustive
+# Exhaustive 8080 core validation: runs 8080EXM (23.8 BILLION cycles, every
+# CRC checked against real Intel silicon) plus the fast diagnostics. Manual
+# by design -- NOT a free-tier diet casualty: an exhaustive suite on a cron
+# for a core that rarely changes burns minutes for nothing. Run this from
+# the Actions tab after any change to web/retro/cpu8080.mjs.
+# Reference wall time: ~81s in a dev sandbox (~293M emulated cycles/s);
+# expect 1.5-4 min here.
+on:
+  workflow_dispatch: {}
+jobs:
+  exhaustive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - name: 8080 unit battery
+        run: node web/retro/cpu8080.test.mjs
+      - name: Full CP/M diagnostic suite incl. 8080EXM
+        run: node web/retro/harness8080.mjs --suite web/retro/test-roms/8080 --full --quiet

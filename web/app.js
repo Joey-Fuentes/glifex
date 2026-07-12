@@ -1,15 +1,116 @@
 // Glifex playground. Consumes problems.generated.json (baked from the same
 // problems/ the CLI uses) so the browser can never drift from the CLI.
 
-var state = { corpus: null, current: null, lang: "javascript", revealed: false };
+var state = { corpus: null, current: null, lang: "javascript", revealed: false, runtimeBusy: false };
 
 // ── rendering ────────────────────────────────────────────────────────
 function $(s) { return document.querySelector(s); }
 
 // clear the results panel back to the neutral prompt (problem/lang switch)
-function clearResults() { $("#results").innerHTML = `<div class="hint">Write your solution and press Run.</div>`; }
+function clearResults() { $("#results").innerHTML = `<div class="hint">Write your solution and press Run.</div>`; if (window.GlifexLab) GlifexLab.sync(state); /* L1-sync */ }
 // loading state: spinner + message during compile/runtime fetch/execution
 function showRunning(res, msg) { res.innerHTML = `<div class="running"><span class="spinner" aria-hidden="true"></span>${msg}</div>`; }
+
+// Shared runtime-call guard. The Run button (below) and the Complexity
+// Lab's Analyze button (web/lab.js) both ultimately drive the SAME
+// cached, shared runtime objects (window.Runtimes.get(lang) -- see
+// runtimes.js's module-level cache, one instance per language for the
+// whole page lifetime). At least one of those (confirmed: C's
+// Wasmer/WASIX compiler) is not safe to invoke while a PREVIOUS call
+// into it is still in flight -- an overlapping call can hang the
+// underlying WASM instance indefinitely. Since the SAME cached instance
+// is reused for every future caller, once that happens every subsequent
+// Run or Analyze for ANY language hangs too -- confirmed directly:
+// mashing the Run button alone reproduces it, no Lab involved, and
+// after it happens the Lab hangs on languages that were never touched.
+// lab.js previously had its OWN "running" flag, checked only against
+// itself -- it had no way to know about the Run button's calls, or vice
+// versa, so the two entry points could still overlap each other. This
+// is the single, shared lock both go through instead.
+//
+// The timeout below is a last-resort safety net, not the primary fix:
+// the LOCK prevents the overlap that -- as far as could be confirmed
+// without direct access to the vendored Wasmer/WASIX source, which
+// isn't checked into this repo -- appears to cause the hang in the
+// first place. Generous on purpose: C's first-ever run downloads a
+// ~100MB toolchain, which can legitimately take a while on a slow
+// connection, and a timeout that fires on a merely-slow-but-working
+// load would be worse than no timeout at all.
+//
+// Raised well past the original 120s for C's current diagnostic
+// config: reps=10 combined with retryOnError=2 means up to 10 reps x
+// up to 3 attempts each (the original attempt plus up to 2 retries) =
+// up to 30 total compile+run attempts in a single Analyze click, each
+// a fully fresh worker. At ~15-20s per attempt (measured), even the
+// EXPECTED case (not worst case) already approaches 250s, so 240
+// would still be too tight -- this needs real headroom above the
+// worst-case math (~600s at 20s/attempt), not just double the
+// original. Not the shipped value -- revert once these C diagnostics
+// conclude.
+const RUNTIME_TIMEOUT_MS = 600000;
+// The plain Run button used to execute JS directly on the main thread,
+// same as the Lab did before L3 -- a runaway solve() (an accidental
+// infinite loop, or code that's just much slower than the user
+// expected) could freeze the whole tab. Same fix as the Lab's, reusing
+// the same shared window.callWorker helper and the same
+// js-lab-worker.js script (its {id:'measure', source, cases} message
+// protocol already does exactly what runJavaScript(source, cases) did
+// -- compile once, run the cases, return results -- there was no need
+// for a second, near-identical worker file).
+//
+// Persists across separate Run clicks for the whole page session
+// (unlike the Lab's jsLabWorkerState, which is deliberately scoped to
+// one analyze() call and cleaned up in open()'s own finally) -- each
+// Run click is an independent, separate user action, not part of one
+// multi-rep session the way the Lab's repeated measurements are, so
+// there's no natural "end of session" moment to tear this down at;
+// reusing one worker across many Run clicks avoids paying repeated
+// spawn overhead for what's otherwise a very frequent action.
+const jsRunWorkerState = { worker: null };
+const JS_RUN_TIMEOUT_MS = 20000;
+async function runJsViaWorker(source, cases) {
+  try {
+    const res = await window.callWorker(
+      jsRunWorkerState, "js-lab-worker.js", { id: "measure", source, cases },
+      JS_RUN_TIMEOUT_MS, "Your code took too long to finish (over 20s) -- likely an infinite loop or a much slower algorithm than expected on these inputs.");
+    if (res.id === "error") return { error: res.error };
+    return { results: res.results, nsPerCase: res.nsPerCase };
+  } catch (e) {
+    return { error: String((e && e.message) || e) };
+  }
+}
+function setRuntimeButtonsEnabled(enabled) {
+  const runBtn = document.getElementById("run-btn");
+  const labBtn = document.getElementById("lab-btn");
+  if (runBtn) runBtn.disabled = !enabled;
+  if (labBtn) labBtn.disabled = !enabled;
+}
+async function withRuntimeLock(target, fn, renderMsg) {
+  const setMsg = renderMsg || ((el, html) => { el.innerHTML = `<div class="summary bad">${html}</div>`; });
+  if (state.runtimeBusy) {
+    if (target) setMsg(target, "A run is already in progress &mdash; please wait for it to finish before starting another.");
+    return;
+  }
+  state.runtimeBusy = true;
+  setRuntimeButtonsEnabled(false);
+  let timer;
+  try {
+    await Promise.race([
+      fn(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("GLIFEX_RUNTIME_TIMEOUT")), RUNTIME_TIMEOUT_MS); }),
+    ]);
+  } catch (e) {
+    if (e && e.message === "GLIFEX_RUNTIME_TIMEOUT") {
+      if (target) setMsg(target, `This runtime hasn't responded in ${Math.round(RUNTIME_TIMEOUT_MS / 1000)}s and may be stuck. Other languages should still work normally; if they don't either, refresh the page.`);
+    } else {
+      throw e;
+    }
+  } finally {
+    clearTimeout(timer);
+    state.runtimeBusy = false;
+    setRuntimeButtonsEnabled(true);
+  }
+}
 
 function renderProblemList() {
   const ul = $("#problem-list");
@@ -45,7 +146,8 @@ function selectProblem(id) {
     + (p.tags || []).map((t) => `<span class="tag">${t}</span>`).join("");
   $("#statement").innerHTML = renderMarkdown(p.statement.replace(/^#.*\n/, ""));
   const sel = $("#lang-select");
-  sel.innerHTML = langs.map((l) => `<option value="${l}">${l}</option>`).join("");
+  const dn = (state.corpus && state.corpus.displayNames) || {};
+  sel.innerHTML = langs.map((l) => `<option value="${l}">${dn[l] || l}</option>`).join("");
   sel.value = state.lang;
   loadEditor();
   $("#preview-wrap").hidden = p.track !== "frontend";
@@ -110,10 +212,55 @@ function syncReference() {
   if (!panel.hidden) showReference(state.refVariant || "optimized");
 }
 
+// C-specific: clean.c/optimized.c carry a leading `#define solve
+// __glifex_ref_<variant>` line that renames their own symbol at compile
+// time. Baked into the FILE itself (not applied as a separate
+// pre-processing step) because both compile paths need it: the CLI's
+// test_cmd is a plain `gcc ... *.c` glob with no pre-processing stage,
+// and the browser's c-worker.js writes this same file content directly
+// too -- there's no single shared place to inject the rename at
+// runtime for both.
+//
+// Every caller that uses L.clean/L.optimized as literal SOURCE TEXT
+// (not just as the file c-worker.js writes to /c/clean.c or
+// /c/optimized.c, where the rename is supposed to stay) needs this
+// stripped first -- not just the reference panel's display. Missing
+// that once already caused a real bug: compareOptimized() below reads
+// the same raw L.optimized and passes it as the PRACTICE slot's source
+// to test the reference solution's own performance -- with the rename
+// directive still attached, that source and c-worker.js's own
+// /c/optimized.c write would BOTH rename their "solve" to the same
+// target, reintroducing a fresh collision instead of the one this was
+// meant to fix. One shared function so future call sites don't have to
+// remember this on their own.
+function stripCRename(src) {
+  return String(src || "").replace(/^#define solve __glifex_ref_\w+\n/, "");
+}
+
 function showReference(variant) {
   state.refVariant = variant;
-  const src = currentSource(variant) || "(no reference for this variant)";
-  $("#reference-code").textContent = src;
+  let src = currentSource(variant) || "(no reference for this variant)";
+  // Display-only: the user should see clean, readable "solve"-named
+  // code, and critically, copying that displayed text must NOT also
+  // copy the rename directive -- if it did, pasting the copied code
+  // into practice.c would rename the user's OWN "solve" function too,
+  // reintroducing exactly the bug this whole change fixes.
+  if (state.lang === "c") src = stripCRename(src);
+  // C++'s equivalent problem: loadCpp() (runtimes.js) always dispatches
+  // variant "practice" to the compiled binary regardless of editor
+  // content, looking for a function literally named "practice" -- C
+  // has no such issue (its variants share the bare "solve" name, only
+  // renamed via #define, which stripCRename() above already strips).
+  // Without this, copying a revealed clean/optimized/brute-force
+  // solution into practice's editor -- the natural way to check a
+  // reference actually works -- fails to compile/link, with nothing
+  // wrong with the algorithm itself.
+  if (state.lang === "cpp" && variant && variant !== "practice") {
+    const fnName = variant === "brute-force" ? "bruteforce" : variant;
+    src = src.replace(new RegExp(`\\bValue\\s+${fnName}\\s*\\(`), "Value practice(");
+  }
+  $("#reference-code").value = src;
+  $("#ref-brute-force").classList.toggle("active", variant === "brute-force");
   $("#ref-clean").classList.toggle("active", variant === "clean");
   $("#ref-optimized").classList.toggle("active", variant === "optimized");
 }
@@ -144,9 +291,17 @@ function renderResults(out, res, opts = {}) {
     `</div>`).join("") +
     `<div class="summary ${allPass ? "ok" : "bad"}">${passed}/${out.results.length} passed</div>`;
   if (allPass && out.nsPerCase) {
-    html += `<div class="timing">~${fmtNs(out.nsPerCase)}/case <span class="dim">(coarse — this device, this runtime; cross-language comparison is not meaningful)</span>` +
-      (opts.compared ? ` · reference optimized: ~${fmtNs(opts.compared)}/case` :
-       ` <a href="#" id="compare-btn">compare vs optimized</a>`) + `</div>`;
+    if (out.cycles && out.clockHz) {
+      const mhz = (out.clockHz / 1e6).toFixed(3);
+      html += `<div class="timing">${out.cycles.toLocaleString()} cycles/case ≈ ${fmtNs(out.nsPerCase)} @ ${mhz} MHz <span class="dim">(deterministic — true per-instruction cycle counts at the reference clock)</span>` +
+        `<br>code ${out.codeBytes} B · workspace ${out.spaceBytes} B` +
+        (opts.compared ? ` · reference optimized: ~${fmtNs(opts.compared)}/case` :
+         ` · <a href="#" id="compare-btn">compare vs optimized</a>`) + `</div>`;
+    } else {
+      html += `<div class="timing">~${fmtNs(out.nsPerCase)}/case <span class="dim">(coarse — this device, this runtime; cross-language comparison is not meaningful)</span>` +
+        (opts.compared ? ` · reference optimized: ~${fmtNs(opts.compared)}/case` :
+         ` <a href="#" id="compare-btn">compare vs optimized</a>`) + `</div>`;
+    }
   }
   res.innerHTML = html;
   const cb = document.getElementById("compare-btn");
@@ -156,8 +311,14 @@ function renderResults(out, res, opts = {}) {
 
 async function compareOptimized(userOut, res) {
   const p = state.current;
-  const src = (p.languages[state.lang] || {}).optimized;
+  let src = (p.languages[state.lang] || {}).optimized;
   if (!src) return;
+  // Same C-specific strip as showReference() (see stripCRename's own
+  // comment) -- src here becomes the PRACTICE slot's source text, not
+  // just display text, so leaving the rename directive attached would
+  // rename ITS "solve" to the same target c-worker.js's own
+  // /c/optimized.c write already uses, colliding with itself.
+  if (state.lang === "c") src = stripCRename(src);
   let refOut;
   if (state.lang === "javascript") refOut = GlifexJsRuntime.runJavaScript(src, p.cases);
   else {
@@ -199,6 +360,10 @@ function runFrontend(p, res) {
 }
 
 async function run() {
+  await withRuntimeLock($("#results"), () => runInner());
+}
+
+async function runInner() {
   const p = state.current;
   const res = $("#results");
   if (p.track === "frontend") { runFrontend(p, res); return; }
@@ -237,7 +402,8 @@ async function run() {
 
   // ── algorithm track ─────────────────────────────────────────────────
   if (state.lang === "javascript") {
-    renderResults(GlifexJsRuntime.runJavaScript((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases), res);
+    showRunning(res, "Running JavaScript…");
+    renderResults(await runJsViaWorker((window.GlifexEditor ? GlifexEditor.getValue() : document.getElementById("editor").value), p.cases), res);
     return;
   }
   // The C toolchain (Wasmer/WASIX) needs SharedArrayBuffer, which requires the
@@ -300,3 +466,18 @@ module.exports = function solve(input) {
 };</code></pre>
     <p>Full docs, the CLI, and the plugin system live in the repository README.</p>`;
 }
+
+// Reference panel: one-tap copy. The panel is a readonly TEXTAREA (a form
+// element), so native select-all -- Ctrl/Cmd+A on desktop AND Android's
+// long-press "Select all" -- is contained to the code by the browser itself.
+(function () {
+  const ta = document.getElementById("reference-code");
+  const btn = document.getElementById("ref-copy");
+  if (btn) btn.onclick = async () => {
+    const text = ta ? ta.value : "";
+    try { await navigator.clipboard.writeText(text); }
+    catch (e) { if (ta) { ta.focus(); ta.select(); } return; }  // fallback: select for manual copy
+    const was = btn.textContent; btn.textContent = "copied!";
+    setTimeout(() => { btn.textContent = was; }, 1200);
+  };
+})();

@@ -1,8 +1,9 @@
+#define solve __glifex_ref_clean
 #include "solution.h"
 
 static int cmpc(const void *a, const void *b) { return *(const char *)a - *(const char *)b; }
 
-JVal *clean(JVal *c) {
+JVal *solve(JVal *c) {
     char *s = jstrdup(jget(c, "s")->str), *t = jstrdup(jget(c, "t")->str);
     size_t ls = strlen(s), lt = strlen(t);
     if (ls != lt) return jbool_(0);

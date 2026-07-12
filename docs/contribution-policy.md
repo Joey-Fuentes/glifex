@@ -8,7 +8,9 @@ enforces that the declaration is true. Honesty is the gate, not totality.
 
 New algorithm problems must implement **Python, JavaScript, C, and C++**, each
 with passing `clean` and `optimized` references and a **blank** `practice`
-stub (001/002 are worked-example exceptions, flagged `worked_example = true`).
+stub. (001/002 previously shipped `practice` solved, flagged
+`worked_example = true` -- reverted; every problem now ships a blank stub
+uniformly. Worked examples are deferred to a future phase, not dropped.)
 Rationale: Python+JS keep every problem attemptable by most visitors — JS
 guarantees playground support — and C/C++ prove the contract under manual
 memory. Everything above the floor is a welcome incremental PR ("add Ruby to

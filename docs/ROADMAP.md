@@ -70,14 +70,60 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
   > run is skipped (blank stubs), and floor-of-four + min-6-cases in `glifex verify` warn
 
   > instead of erroring. Worked examples (001/002) stay strict.
+  > *(Later reverted -- 001/002 are no longer worked examples; see
+  > contribution-policy.md. Worked examples deferred to a future phase.)*
 - [x] **Bx-2. PHP** -- shipped. php-wasm interpreter (drop-in like Python/Ruby);
       in the `LOADERS` registry, green e2e in `runtimes.spec.js`, verified in STATUS.
 - [x] **Bx-3. C / C++** -- shipped (caveats tracked). C via clang/WASIX (Wasmer),
       C++ via Binji wasm-clang; green e2e in `c-smoke.spec.js` / `cpp-toolchain.spec.js`.
       See STATUS "C++ runtime (Bx-3b)". *Follow-up: modern-LLVM clang rebuild (Bx-3b-2).*
-- [ ] **Bx-4. Retro trio (6502 / Z80 / SM83)** -- CPU-core-only; OSS cores + GoodASM +
-      SingleStepTests vectors run in CI = deterministic, silicon-accurate proof. Smallest,
-      most-verifiable, no GC/threads/COI. Front of the line. *High.*
+      - Known issue, likely root-caused and fixed (pending live
+        confirmation): the intermittent "RuntimeError: unreachable" trap
+        described below turned out, on direct measurement, to correlate
+        with a severe memory amplification bug in the shared C JSON
+        parser's `jstr_()` -- it allocated a buffer sized to the ENTIRE
+        remaining unparsed JSON on every string parsed, not just that one
+        string, and those allocations are intentionally never freed
+        (short-lived test process). Directly measured on a realistic
+        Complexity Lab Analyze payload: 112x amplification (44MB
+        allocated for a 394KB input) before the fix, 1.0x after. The
+        distinguishing evidence that pointed here rather than at generic
+        SDK flakiness: the trap was reported as happening almost every
+        time at large input sizes, not intermittently -- inconsistent
+        with random instability, consistent with a deterministic memory
+        problem. Fixed by computing each string's own actual length
+        before allocating, instead of "everything left to parse."
+        Genuinely intermittent SDK-level flakiness (the linker-failure
+        variant below) is a SEPARATE, remaining issue, not addressed by
+        this fix.
+      - Known issue (still open, unfixed, third-party SDK limitation):
+        the Wasmer/WASIX C runtime intermittently crashes or fails to
+        compile -- observed as either the uncaught "RuntimeError:
+        unreachable" above, or a clang/lld linker failure with no
+        apparent cause in the user's own code. Confirmed NOT a
+        cross-call state-leakage bug: every C run is isolated into its
+        own fresh Worker with the SDK fully re-initialized (see
+        web/c-worker.js), and the failure still occurs occasionally even
+        so -- other runs and languages are unaffected afterward, and
+        re-running the same attempt often succeeds. Consistent with
+        independently-reported instability in this exact SDK version
+        doing similar in-browser clang/LLVM work elsewhere. Diagnostic
+        breadcrumb logging (stage + source/case-size context, both in
+        the worker and its caller) added to correlate future occurrences
+        against specific inputs rather than guessing from one data
+        point; Wasmer's own `initializeLogger("debug")` is available as
+        a deeper layer if this needs another pass. Deliberately NOT
+        worked around with automatic retry -- would mask the signal
+        needed to actually diagnose it. [Bx-3-wasmer-known-issue]
+- [x] **Bx-4. Retro trio (6502 / i8080 / SM83)** -- CPU-core-only; OSS cores +
+      GoodASM + SingleStepTests vectors run in CI = deterministic,
+      silicon-accurate proof. Smallest, most-verifiable, no GC/threads/COI.
+      Shipped: 6502 and SM83 via Tom Harte SingleStepTests; i8080 (a
+      documented plan pivot from the originally-scoped Z80 -- Tom Harte
+      vectors don't exist for the 8080) validated instead against the CP/M
+      diagnostic ROM suite, including the exhaustive 8080EXM
+      (23,803,381,171 cycles, every CRC matching real Intel silicon).
+      Full detail: STATUS.md's "Retro track" and "Operational" sections.
 - [ ] **Bx-5. C#** -- Roslyn on .NET-wasm; the mature "real compiler, client-side" story
       (Blazor-class). Work: wire `Console` I/O to the harness. *High.*
 - [ ] **Bx-6. Rust** -- rubri: Miri (MIR interpreter) in wasm, *not* `rustc` -- sidesteps the
@@ -105,6 +151,108 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
 - [ ] **Bx-14. Swift** -- Emscripten + MiniSwift: MiniSwift built to wasm via Emscripten, run
       in-browser -- sidesteps the missing in-browser `swiftc` (like rubri does for Rust).
       *Subset, not real swiftc -> CLI-divergence to disclose; MiniSwift scope unverified -- confirm.*
+
+### L -- Complexity Lab (browser face of C3; the falsifier doctrine applies)
+
+Empirical growth analysis inside the playground: seeded input families at
+growing sizes, correctness-gated against the JS clean oracle, judged by
+consecutive growth ratios (constants cancel; absolute cross-language speed
+never enters a verdict -- Decision 6 holds). Notation done properly: worst/
+average/best CASE are input families; O / Omega / Theta are BOUNDS on any of
+them. The declared O is tested on the adversarial family, the declared Omega
+on the easy family; a Theta badge appears only when both ends pin one class.
+
+- [x] **L1. Browser complexity falsifier, all tiers** -- per-case metric
+      samples through the existing runner contract (caseLoop + js-runtime
+      wall ns, retro per-case cycles/space, C/C++ harness `[METRIC]` lines
+      behind `--metrics`, PHP in-script timing); engine battery in CI;
+      e2e smoke on the JS track. Deterministic (cycle) tracks get tight
+      tolerance and exact verdicts; wall tiers get medians + loose
+      tolerance and honest "inconclusive" below timing resolution. Grew
+      well past its original scope: declared bounds are now per-variant
+      (brute-force / clean / optimized can each declare a different
+      bound, not one shared per-problem value), with two distinct judging
+      modes (revealed -- test the open reference's own bound; empirical-
+      match -- no reveal, measure first and report which known variant(s)
+      match). Full detail, evidence, and the still-open C-runtime known
+      issue: STATUS.md's "Complexity Lab (L1)" section.
+      - Known issue (documented in the PR that added this line;
+        not yet fixed): the wall-tier adaptive-repeat sampler can
+        produce a false REFUTATION (not just "inconclusive") on
+        cheap, side-effect-free solutions -- a dead-code-elimination
+        / JIT-noise gap in the sampler itself. Candidate fixes: an
+        anti-DCE sink, and a magnitude/consistency floor for the
+        inconclusive check. [L1-dce-known-issue]
+      - Known issue, root-caused (not yet fixed): a real CI failure
+        pattern (near-total point disagreement, e.g. 22-30 of 30, on
+        e2e/lab.spec.js's JS/Fibonacci tests) survived four rounds of
+        statistical robustness fixes (min-of-N sampling, rep-level
+        outlier replacement, a replacement time budget, and majority-
+        agreement point reliability -- see web/lab.js and
+        web/lab-engine.mjs's isReliable()) before the actual mechanism
+        was found: e2e/lab.spec.js runs non-cross-origin-isolated
+        (confirmed via self.crossOriginIsolated === false and a
+        directly-measured ~0.2ms clock granularity in that exact
+        environment) -- e2e/coi.spec.js is the only spec that
+        deliberately isolates itself (register the SW, then reload).
+        Chrome coarsens performance.now() to 100us resolution (plus
+        deliberate random jitter, a separate anti-fingerprinting
+        measure) outside a cross-origin-isolated context, versus 5us
+        inside one -- a 20x difference. The wall-tier sampler's
+        adaptive-repeat loop doubles its repeat count until crossing a
+        2ms window; for a very fast operation (small-n Fibonacci can be
+        nanoseconds per call), that doubling interacts badly with a
+        clock this coarse -- each step's overshoot past the quantization
+        boundary is essentially arbitrary, producing systematic (not
+        occasional) noise across nearly every measured point, which
+        explains why the four statistical fixes each helped partially
+        (they make the estimator more robust to noise in general) but
+        none fully resolved it (none address the clock resolution
+        itself). Candidate fix: make the Lab's own page cross-origin
+        isolated the same way e2e/coi.spec.js already proves is
+        possible (register the service worker, reload through it) --
+        a real architectural change, not another statistical layer;
+        scoped out but not yet built. [L1-coi-clock-known-issue]
+      - Coverage gap, not a bug: `e2e/lab.spec.js` (the only e2e spec that
+        exercises Analyze at all) never switches languages -- it only ever
+        runs the Lab against a hardcoded JavaScript fixture. Every
+        compiled-language Analyze bug found in this session's C/C++ work
+        (a WASM-backend crash, a fixed-capacity hash table that could
+        hang at large n, a worker-reuse bug, a severe memory-amplification
+        bug) happened in exactly the part of the surface this suite was
+        never watching. [L1-e2e-analyze-js-only-gap]
+- [ ] **L2. Manifest promotion** -- move generators + declared O/Omega into
+      problem manifests with verifier support; reconcile with the C3 CLI
+      falsifier so browser and CLI share one source of truth.
+- [x] **L3. Worker migration + bigger ladders** -- moved lab execution off
+      the main thread for every runtime (JS, TypeScript, Python, Ruby, PHP,
+      WAT, Postgres, the retro CPU trio, C, and C++), spawning a fresh
+      worker per call rather than reusing one across a session -- closes
+      the hang-exposure class where a single stuck call (runaway user
+      code, or a genuine bug like C++'s hash-table issue below) could
+      poison every subsequent call for the rest of the session, not just
+      that one. C already had this from earlier work (STATUS.md's C
+      runtime section); C++ did not until this batch, and needed it for
+      the same reason C originally did. Size budgets raised: the
+      Complexity Lab's ladder extended from 5 to 10 points (up to n=32768,
+      from n=1024), grounded in a real, observed timing measurement
+      (~20s for the original 4-point ladder scaled to ~40s for 10, well
+      under the 2-minute outer runtime-lock timeout) rather than a guess.
+- [ ] **L4. Space complexity falsifier** -- extend the declared-bounds
+      system (currently time-only: O/Omega/Theta as time bounds) to test
+      declared SPACE complexity too, using the same falsifier doctrine
+      (refute, never confirm) against growth in measured space rather
+      than measured time. Retro tracks and C/C++ already capture a raw
+      space metric per run (`spaceBytes` -- distinct bytes written outside
+      the program image; C/C++ also report `codeBytes`) but nothing
+      currently judges it against a DECLARED bound the way time is
+      judged. *Spike first:* precise, comparable space measurement is
+      straightforward for retro/native tracks (fixed memory model) but
+      unproven for JS/interpreted/managed-memory tracks -- confirm a
+      viable proxy metric before committing to the full per-variant
+      schema extension. Sequenced after L2/L3 (manifest promotion should
+      land first, so space bounds join the SAME per-variant schema
+      rather than a second, parallel one).
 
 ### C — Corpus era (the forever-work; policy is law as of 002)
 - [ ] **C1. Problems 003+** — floor-of-four, manifest-first, blank stubs,
@@ -142,8 +290,7 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
 - requirements.md — trigger: second regular maintainer.
 - Codespaces prebuilds, hosted-Postgres CI path, Go real bench, Dev
   Container confirmation — as needed.
-- Retro track (Z80/6502/SM83) — **pulled into Bx** (see browser-runtimes.md); Lean proofs still parked
-  track — future design sessions; documented in README.
+- Lean proofs for the retro track — future design sessions; documented in README.
 - Theme switcher, focus mode, personal notes, related problems — backlog;
   harvest on demand.
 

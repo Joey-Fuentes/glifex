@@ -48,7 +48,10 @@ test.describe("C++ runtime (Binji wasm-clang)", () => {
         worker.onmessage = (e) => resolve(e.data);
         worker.onerror = (e) => reject(new Error("worker error: " + e.message));
         setTimeout(() => reject(new Error("timeout")), 280_000);
-        worker.postMessage({ id: "run", source, headers, cases: p.cases, variant: "practice" });
+        // practice ships as a blank stub (worked_example policy reversal) --
+        // run the real, shipped `clean` variant instead, which is already
+        // compiled into `source` above alongside practice/optimized.
+        worker.postMessage({ id: "run", source, headers, cases: p.cases, variant: "clean" });
       });
     });
     if (res.id === "error") throw new Error("driver error: " + res.error + "\n--- output ---\n" + (res.output || ""));
@@ -61,6 +64,21 @@ test.describe("C++ runtime (Binji wasm-clang)", () => {
     await page.goto("/");
     await page.locator("#problem-list li").first().click();
     await page.locator("#lang-select").selectOption("cpp");
+    // practice ships as a blank stub (worked_example policy reversal) --
+    // fill in the real, shipped `clean` solution. web/runtimes.js's
+    // loadCpp() always sends variant: "practice" to the worker
+    // regardless of editor content (see its own source) -- the C++
+    // harness dispatches by literal function name, so the function
+    // must actually be named `practice`, not `clean`, for the UI's Run
+    // button to find it. Rename it here, same idea as the direct-driver
+    // test above (which sidesteps this by controlling `variant`
+    // directly instead), just via the UI's own, fixed dispatch path.
+    const source = await page.evaluate(async () => {
+      const corpus = await (await fetch("problems.generated.json")).json();
+      const p = corpus.problems.find((x) => x.id.indexOf("001") === 0);
+      return p.languages.cpp.clean.replace(/\bValue clean\(/, "Value practice(");
+    });
+    await page.locator("#editor").fill(source);
     await page.locator("#run-btn").click();
     await expect(page.locator(".summary")).toHaveClass(/ok/, { timeout: 290_000 });
   });

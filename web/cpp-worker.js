@@ -55,7 +55,7 @@ async function compileLinkRun(source, headers, cases, variant) {
   const mod = await WebAssembly.compile(new Uint8Array(wasmBytes).slice());
   out = '';
   api.memfs.setStdinStr(JSON.stringify(cases));   // harness reads the cases from stdin
-  await api.run(mod, 'all.wasm', variant || 'practice');
+  await api.run(mod, 'all.wasm', variant || 'practice', '--metrics');   // L1-cpp-argv: harness emits per-case [METRIC] lines
   return out;
 }
 
@@ -66,6 +66,30 @@ self.onmessage = async (e) => {
     const output = await compileLinkRun(d.source, d.headers, d.cases, d.variant);
     self.postMessage({ id: 'result', output });
   } catch (err) {
+    // Binji's App.run() rejects on ANY non-zero process exit -- but the
+    // harness's own convention is exit 1 for "some cases failed" (a
+    // normal, expected outcome users need to see as pass/fail results,
+    // not a scary error banner) and exit 0 for "all passed". A genuine
+    // crash (compile error, trap) can never reach this point having
+    // already printed a complete "<passed>/<n> passed" line -- the
+    // harness prints that immediately before its own return statement,
+    // so its presence reliably means the program ran to completion and
+    // simply had failing cases. Only treat this as a real error when
+    // that summary line never appeared.
+    if (/^\d+\/\d+ passed$/m.test(out)) {
+      self.postMessage({ id: 'result', output: out });
+      return;
+    }
     self.postMessage({ id: 'error', error: String((err && err.stack) || err), output: out });
   }
+};
+
+self.onerror = (e) => {
+  // Defense in depth: an uncaught error (e.g. a WASM trap escaping
+  // Binji's own error handling) fires here rather than propagating as
+  // a rejected Promise -- without this handler, the caller's
+  // postMessage-based Promise would simply never settle. Mirrors
+  // c-worker.js's own self.onerror for the exact same reasoning.
+  console.error(`[glifex-cpp-worker] UNCAUGHT: ${(e && e.message) || e}`);
+  self.postMessage({ id: 'error', error: `worker crashed (uncaught): ` + String((e && e.message) || e), output: out });
 };

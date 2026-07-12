@@ -3,11 +3,7 @@ class Practice : Solution {
         @Suppress("UNCHECKED_CAST")
         val nums = c["nums"] as List<Long>
         val target = c["target"] as Long
-        val seen = HashMap<Long, Int>()
-        nums.forEachIndexed { i, n ->
-            seen[target - n]?.let { return listOf(it, i) }
-            seen[n] = i
-        }
+        // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.
         return emptyList<Int>()
     }
 }

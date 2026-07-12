@@ -47,11 +47,29 @@ test.describe("WASM runtimes smoke", () => {
 
   test.afterAll(async () => { await page.close(); });
 
-  // Algorithm track: picking the language auto-loads its practice solution.
+  // Algorithm track: fetch each language's `clean` solution from the shipped
+  // corpus and fill it in explicitly, rather than relying on the auto-loaded
+  // `practice` editor content being a working solution -- since the
+  // worked_example policy reversal, practice ships as a blank, fail-first
+  // stub for every problem (001 included), same as everywhere else. This
+  // suite's actual claim is "the runtime compiles and runs a real solution
+  // green," not "practice happens to be solved" -- fetching `clean`
+  // decouples the two, and can't drift out of sync with the shipped code
+  // the way a hardcoded copy would.
+  async function fillWithCleanSolution(page, problemId, lang) {
+    const source = await page.evaluate(async ({ problemId, lang }) => {
+      const corpus = await (await fetch("problems.generated.json")).json();
+      const p = corpus.problems.find((x) => x.id.indexOf(problemId) === 0);
+      return p.languages[lang].clean;
+    }, { problemId, lang });
+    await page.locator("#editor").fill(source);
+  }
+
   for (const lang of ["typescript", "python", "ruby", "php"]) {
     test(`${lang} compiles-and-runs green`, async () => {
       test.setTimeout(120_000);   // first-load download+init is slow in CI
       await page.locator("#lang-select").selectOption(lang);
+      await fillWithCleanSolution(page, "001", lang);
       await page.locator("#run-btn").click();
       await expect(summary).toBeVisible({ timeout: 120_000 });   // runtime loaded + ran
       await expect(summary).toHaveClass(/ok/);                   // ...and every case passed

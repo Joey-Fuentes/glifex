@@ -3,10 +3,7 @@ name: retro-smoke
 # 6502 tier). Green here => customasm is good; the cpu6502 execution half is
 # proven when the browser runtime lands. Independent of the main CI matrix.
 on:
-  push:
-    paths: ["retro/**", ".github/workflows/retro-smoke.yml"]
-  pull_request:
-    paths: ["retro/**", ".github/workflows/retro-smoke.yml"]
+  # TEMP(free-tier): auto triggers disabled to save minutes; run manually from the Actions tab.
   workflow_dispatch: {}
 jobs:
   smoke:

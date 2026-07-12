@@ -34,6 +34,7 @@
     <input type="file" id="import-file" accept="application/json" hidden />
   </div>
   <div class="status" id="offline-badge" title="Runs fully offline">● offline-ready</div>
+  <button id="refresh-btn" class="ghost sm" title="Reload the latest version">&#10227;</button>
 </header>
 
 <div id="hero" class="hero" hidden>
@@ -57,6 +58,7 @@
           <label>Language
             <select id="lang-select"></select>
           </label>
+          <button id="lab-btn" class="ghost" hidden title="Complexity Lab: empirical growth analysis -- refutes declared bounds, never proves them">Analyze growth</button><!-- L1-btn -->
           <button id="reveal-btn" class="ghost" title="Show reference solution">Reveal</button>
           <button id="run-btn" class="primary">▶ Run tests</button>
         </div>
@@ -79,10 +81,12 @@
       <div class="reference-panel" id="reference-panel" hidden>
         <div class="ref-tabs">
           <span class="editor-label">reference</span>
+          <button id="ref-brute-force" class="ghost sm">brute force</button>
           <button id="ref-clean" class="ghost sm">clean</button>
           <button id="ref-optimized" class="ghost sm active">optimized</button>
+          <button id="ref-copy" class="ghost sm" title="Copy the reference solution">copy</button>
         </div>
-        <pre id="reference-code"></pre>
+        <textarea id="reference-code" readonly spellcheck="false" wrap="off"></textarea>
       </div>
 
       <div class="results" id="results" role="status" aria-live="polite">
@@ -90,6 +94,8 @@
         natively in your browser — no download, works offline. Other languages need a
         one-time runtime fetch (see Docs).</div>
       </div>
+
+      <div id="lab" class="lab" hidden></div><!-- L1-panel -->
       </div>
     </div>
   </section>
@@ -112,6 +118,7 @@
 <script src="assertions.js"></script>
 <script src="runtimes.js"></script>
 <script src="js-runtime.js"></script>
+<script src="lab.js"></script><!-- L1-script -->
 <script src="app.js"></script>
 <script src="wiring.js"></script>
 </body>

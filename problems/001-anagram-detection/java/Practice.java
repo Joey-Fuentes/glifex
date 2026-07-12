@@ -1,9 +1,9 @@
 import java.util.*;
 public class Practice implements Solution {
     public Object solve(Map<String, Object> c) {
-        char[] a = ((String) c.get("s")).toCharArray();
-        char[] b = ((String) c.get("t")).toCharArray();
-        Arrays.sort(a); Arrays.sort(b);
-        return Arrays.equals(a, b);
+        String s = (String) c.get("s");
+        String t = (String) c.get("t");
+        // Return true if s and t are anagrams of each other, false otherwise.
+        return false;
     }
 }

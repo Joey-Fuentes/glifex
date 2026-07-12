@@ -1,10 +1,6 @@
 <?php
 function solve(array $c): array {
-    $seen = [];
-    foreach ($c['nums'] as $i => $n) {
-        $need = $c['target'] - $n;
-        if (isset($seen[$need])) return [$seen[$need], $i];
-        $seen[$n] = $i;
-    }
+    $nums = $c['nums']; $target = $c['target'];
+    // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.
     return [];
 }

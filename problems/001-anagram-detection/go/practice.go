@@ -1,13 +1,10 @@
 package main
 
-import "sort"
-
-func sortStr(s string) string {
-	r := []rune(s)
-	sort.Slice(r, func(i, j int) bool { return r[i] < r[j] })
-	return string(r)
-}
-
 func practice(c map[string]any) any {
-	return sortStr(c["s"].(string)) == sortStr(c["t"].(string))
+	s := c["s"].(string)
+	t := c["t"].(string)
+	// Return true if s and t are anagrams of each other, false otherwise.
+	_ = s
+	_ = t
+	return false
 }

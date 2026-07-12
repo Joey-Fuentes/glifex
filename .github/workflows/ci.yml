@@ -46,11 +46,22 @@ jobs:
           node web/build.mjs
           git diff --exit-code -I '"generatedAt"' web/problems.generated.json \
             || (echo "::error::web/problems.generated.json is stale — run 'node web/build.mjs' and commit" && exit 1)
+      - name: Corpus integrity (declared+runnable languages are baked)
+        run: node web/corpus-integrity.test.mjs
+      - name: Complexity Lab engine battery (L1)
+        run: node web/lab-engine.test.mjs
+      - name: JS runtime battery (compile-once/measure-many)
+        run: node web/js-runtime.test.mjs
+      - name: Retro 8080 core (unit battery + fast CP/M diagnostics, <5s)
+        run: |
+          node web/retro/cpu8080.test.mjs
+          node web/retro/harness8080.mjs --suite web/retro/test-roms/8080 --quiet
 
   # ── Stage 2: the core promise — every problem, every language, 3 OSes ──
   matrix:
     name: glifex test (${{ matrix.os }})
     needs: [lint, corpus]
+    if: ${{ false }}   # TEMP(free-tier): 3-OS matrix disabled to save minutes (macOS bills 10x, Windows 2x). Re-enable by deleting this line.
     strategy:
       fail-fast: false
       matrix:
@@ -147,32 +158,40 @@ jobs:
           npm init -y >/dev/null
           npm install -D @playwright/test
           npx playwright install --with-deps chromium firefox
+      - name: Restore vendored runtimes cache (e2e flavor, no CodeMirror)
+        uses: actions/cache@v4
+        with:
+          path: web/vendor
+          key: vendor-v1-ci-${{ hashFiles('web/fetch-runtimes.mjs') }}
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
         run: |
-          node web/fetch-runtimes.mjs
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; echo "fetch-runtimes attempt $i failed; retrying in 20s"; sleep 20; done; [ "$ok" = 1 ]
           # e2e drives the plain #editor textarea directly; keep CodeMirror OUT so it
           # doesn't wrap (and hide) the textarea. CM is a production-only UI enhancement
           # exercised manually — the runtimes are what e2e must regression-cover.
           rm -rf web/vendor/codemirror
       - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
         run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           mkdir -p web/vendor/c
           VER=0.8.0-beta.1
           npm pack @wasmer/sdk@${VER}
           tar xzf wasmer-sdk-*.tgz
           cp -r package/dist/. web/vendor/c/
           rm -rf package wasmer-sdk-*.tgz
-          curl https://get.wasmer.io -sSfL | sh
+          curl --retry 5 --retry-delay 15 --retry-all-errors https://get.wasmer.io -sSfL | sh
           export PATH="$HOME/.wasmer/bin:$PATH"
-          wasmer package download clang/clang -o web/vendor/c/clang.webc
+          ok=0; for i in 1 2 3 4 5; do wasmer package download clang/clang -o web/vendor/c/clang.webc && { ok=1; break; }; echo "wasmer download attempt $i failed; retrying in 15s"; sleep 15; done; [ "$ok" = 1 ]
           echo '{"runtime":"c","via":"wasmer"}' > web/vendor/c/manifest.json
           ls -la web/vendor/c
       - name: Vendor C++ toolchain (Binji wasm-clang)
         run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           mkdir -p web/vendor/cpp
           BASE=https://raw.githubusercontent.com/binji/wasm-clang/master
           for f in clang lld memfs sysroot.tar shared.js worker.js; do
-            curl -fsSL "$BASE/$f" -o "web/vendor/cpp/$f"
+            curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/$f" -o "web/vendor/cpp/$f"
           done
           # Binji's Memory.check() refreshes only on detachment; also refresh on
           # buffer-identity change so growing the app's wasm memory during a large
@@ -182,6 +201,8 @@ jobs:
           echo '{"runtime":"cpp","via":"binji-wasm-clang","clang":"8.0.1","std":"c++17"}' > web/vendor/cpp/manifest.json
           ls -la web/vendor/cpp
           test "$(stat -c%s web/vendor/cpp/clang)" -gt 1000000 || { echo "clang too small (LFS pointer?)"; exit 1; }
+      - name: Mark vendor complete (cached for future runs)
+        run: touch web/vendor/.vendor-complete
       - name: Build corpus & run E2E (incl. offline-mode test)
         run: |
           node web/build.mjs
@@ -193,8 +214,51 @@ jobs:
           name: playwright-traces
           path: test-results/
 
+  # ── Stage 4.5: the single required status check ──────────────────────
+  # GitHub's branch protection treats a SKIPPED job as satisfying a
+  # required check, not as a failure. That let a red `playground` job
+  # (which skips its downstream `e2e` via `needs:`) through auto-merge
+  # anyway, since only `e2e` itself was configured as required and
+  # "skipped" reads as "passed" to GitHub. This job is the fix: it
+  # depends on every currently-active job, runs unconditionally via
+  # `if: always()` (so it still runs even when an upstream job failed or
+  # was skipped, rather than being skipped itself the same way), and
+  # explicitly fails if any of them isn't a genuine "success". Point
+  # branch protection's required check at THIS job, not at e2e directly
+  # -- see the repo's Settings > Branches (not something this workflow
+  # file can configure by itself). Deliberately no `name:` field here --
+  # GitHub then reports it under the job id itself ("ci-status-gate"),
+  # so the string typed into Settings > Branches, the job id in this
+  # file, and what actually gets reported are all the same one string,
+  # not two that can silently drift apart.
+  #
+  # matrix and security are deliberately excluded: both are currently
+  # disabled (if: ${{ false }}), so their result is always "skipped" by
+  # design, not a real signal -- including them here would permanently
+  # block every merge. Add them back in if/when they're re-enabled.
+  ci-status-gate:
+    needs: [lint, corpus, playground, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any required job did not succeed
+        run: |
+          echo "lint:       ${{ needs.lint.result }}"
+          echo "corpus:     ${{ needs.corpus.result }}"
+          echo "playground: ${{ needs.playground.result }}"
+          echo "e2e:        ${{ needs.e2e.result }}"
+          if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.corpus.result }}" != "success" ] || \
+             [ "${{ needs.playground.result }}" != "success" ] || \
+             [ "${{ needs.e2e.result }}" != "success" ]; then
+            echo "::error::One or more required CI jobs did not succeed (see results above) -- this must block merge"
+            exit 1
+          fi
+          echo "All required jobs succeeded."
+
   # ── Stage 5: security ────────────────────────────────────────────────
   security:
+    if: ${{ false }}   # TEMP(free-tier): advisory job disabled to save minutes. Re-enable by deleting this line.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

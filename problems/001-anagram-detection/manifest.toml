@@ -2,7 +2,6 @@
 title = "Anagram Detection"
 difficulty = "easy"
 tags = ["strings", "hash-map", "sorting"]
-worked_example = true   # practice ships solved (001/002 only; new problems ship blank stubs)
 
 [languages]
 python      = { variants = ["practice", "clean", "optimized"] }

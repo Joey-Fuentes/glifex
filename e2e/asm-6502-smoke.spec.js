@@ -48,10 +48,10 @@ test.describe("asm-6502 runtime (real assembly, 16-bit result)", () => {
     const result = await page.evaluate(async ({ FIB16, ECHO }) => {
       const rt = await window.Runtimes.get("asm-6502");
       if (!rt) return "no-runtime";
-      const echo = rt.run(ECHO, [{ input: { n: 7 }, expected: 7 }, { input: { n: 42 }, expected: 42 }]);
+      const echo = await rt.run(ECHO, [{ input: { n: 7 }, expected: 7 }, { input: { n: 42 }, expected: 42 }]);
       if (echo.error) return "echo error: " + echo.error;
       if (!echo.results.every((r) => r.ok)) return "echo cases-failed: " + JSON.stringify(echo.results);
-      const fib = rt.run(FIB16, [
+      const fib = await rt.run(FIB16, [
         { input: { n: 0 }, expected: 0 }, { input: { n: 1 }, expected: 1 },
         { input: { n: 10 }, expected: 55 }, { input: { n: 13 }, expected: 233 },
         { input: { n: 20 }, expected: 6765 },

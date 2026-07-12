@@ -13,7 +13,7 @@ function switchView(v) {
 
 async function boot() {
   if (location.protocol.startsWith("http") && "serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
   }
   document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => switchView(b.dataset.view)));
   $("#lang-select").onchange = (e) => { state.lang = e.target.value; loadEditor(); syncReference(); clearResults(); };
@@ -26,6 +26,7 @@ async function boot() {
     if (show) showReference(state.refVariant || "optimized");
   }
   $("#reveal-btn").onclick = () => setRevealVisible($("#reference-panel").hidden);
+  $("#ref-brute-force").onclick = () => showReference("brute-force");
   $("#ref-clean").onclick = () => showReference("clean");
   $("#ref-optimized").onclick = () => showReference("optimized");
   $("#run-btn").onclick = run;
@@ -81,18 +82,31 @@ async function boot() {
   const meta = (n) => document.querySelector(`meta[name="${n}"]`)?.content || "dev";
   const running = { version: meta("glifex-version"), commit: meta("glifex-commit") };
   $("#offline-badge").textContent = `● offline-ready · v${running.version} (${running.commit})`;
-  fetch("version.json", { cache: "no-store" })
-    .then((r) => r.json())
-    .then((v) => {
-      if (v.version !== running.version && running.version !== "dev") {
-        const a = document.createElement("a");
-        a.href = "#"; a.className = "update-available";
-        a.textContent = ` ⟳ v${v.version} available — refresh`;
-        a.onclick = (e) => { e.preventDefault(); location.reload(); };
-        $("#offline-badge").appendChild(a);
-      }
-    })
-    .catch(() => {});   // offline / file:// — badge already shows the truth
+  // Update pipeline: the refresh button (next to the badge) always forces a
+  // fresh load; detection runs at boot, on tab refocus, and every 5 minutes,
+  // so a newer deploy is always caught and surfaced ON the button.
+  const refreshBtn = $("#refresh-btn");
+  async function forceRefresh() {
+    try { const reg = await navigator.serviceWorker?.getRegistration?.(); if (reg) await reg.update(); } catch {}
+    location.reload();   // SW navigations are cache:"no-cache", so this is genuinely fresh
+  }
+  function markUpdate(v) {
+    if (!refreshBtn) return;
+    refreshBtn.classList.add("update");
+    refreshBtn.textContent = "\u27F3 update";
+    refreshBtn.title = "v" + v + " available -- tap to load it";
+  }
+  async function checkUpdate() {
+    if (running.version === "dev") return;
+    try {
+      const v = await (await fetch("version.json", { cache: "no-store" })).json();
+      if (v.version && v.version !== running.version) markUpdate(v.version);
+    } catch {}   // offline / file:// -- badge already shows the truth
+  }
+  if (refreshBtn) refreshBtn.onclick = forceRefresh;
+  checkUpdate();
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
+  setInterval(checkUpdate, 5 * 60 * 1000);
   const wanted = location.hash.slice(1);
   const has = (pid) => state.corpus.problems.some((p) => p.id === pid);
   if (wanted && has(wanted)) selectProblem(wanted);

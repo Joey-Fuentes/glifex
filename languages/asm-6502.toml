@@ -1,4 +1,5 @@
 name = "asm-6502"
+display = "6502 assembly"
 extension = "s"
 practice_file = "practice.s"
 family = "assembly"
