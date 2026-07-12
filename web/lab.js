@@ -199,6 +199,11 @@ const GlifexLab = (() => {
     // is wall time. One tiny run decides which ladder and tolerance apply.
     progress(panel, "Probing runtime tier\u2026");
     const runner = lang === "javascript" ? "js" : await window.Runtimes.get(lang);
+    // TypeScript transpiles to and runs as ordinary JS, so it shares the JS
+    // peak-space path (main-thread measureUserAgentSpecificMemory + cooperating
+    // probes). This gate is SPACE-ONLY -- timing still routes TS through its
+    // runtime (runner.run) below, since that's where the transpile happens.
+    const jsLike = lang === "javascript" || lang === "typescript";
     if (!runner) return void (panel.innerHTML = card(`<div class="lab-verdict bad">Runtime for ${esc(lang)} is not available${window.Runtimes.error(lang) ? ": " + esc(window.Runtimes.error(lang)) : ""}.</div>`));
     const runOnce = async (cases) => runner === "js"
       ? await runJsInWorker(source, cases)
@@ -400,7 +405,7 @@ const GlifexLab = (() => {
       }
       const spaceJ = (declaredSpace && spaceSeries.ns.length >= 2)
         ? E.judgeSpaceUpper(spaceSeries.ns, spaceSeries.ys, declaredSpace, tier.tol) : null;
-      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: runner === "js", spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
+      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: jsLike, spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
       if (boundMode === "empirical-match") {
         const variantBounds = {};
         for (const [variant, b] of Object.entries(langComplexity)) {
@@ -424,13 +429,13 @@ const GlifexLab = (() => {
     // web/lab-space-probes.mjs), `measuring` (a probe pass is running), or --
     // once it finishes -- `failed` (couldn't land >=2 samples). Success renders
     // the tab. This keeps the feature honest in EVERY state.
-    const jsApiOk = runner === "js"
+    const jsApiOk = jsLike
       && typeof performance !== "undefined" && typeof performance.measureUserAgentSpecificMemory === "function"
       && window.GlifexJsRuntime && window.GlifexJsRuntime.measureSpaceProbe;
-    const probeSet = (runner === "js" && SP && SP.SPACE_PROBES) ? SP.SPACE_PROBES[p.id] : null;
+    const probeSet = (jsLike && SP && SP.SPACE_PROBES) ? SP.SPACE_PROBES[p.id] : null;
     const spaceProbe = (probeSet && revealedVariant && probeSet.variants) ? probeSet.variants[revealedVariant] : null;
     let spaceStatus = null;
-    if (runner === "js") {
+    if (jsLike) {
       spaceStatus = !jsApiOk ? { state: "unavailable" }
         : !declaredSpace ? { state: "needs-reveal" }
           : !spaceProbe ? { state: "not-instrumented" }

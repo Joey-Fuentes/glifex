@@ -70,3 +70,24 @@ test("no reveal -> prompts to reveal for peak memory", async ({ page, browserNam
   await page.locator("#lab .lab-verdict").first().waitFor({ timeout: 75000 });
   await expect(page.locator("#lab")).toContainText(/Reveal a reference solution to also measure/i);
 });
+
+test("TypeScript reuses the JS probe path -> Space tab (transpiles to JS)", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "measureUserAgentSpecificMemory is Chromium-only");
+  test.setTimeout(120000);   // TS transpile + analyze is slow on first load
+  await page.addInitScript(() => { performance.measureUserAgentSpecificMemory = async () => ({ bytes: 1000 }); });
+  await page.goto("http://localhost:8080/");
+  await page.waitForFunction(() => window.state && window.state.corpus, null, { timeout: 15000 });
+  await page.evaluate(() => window.selectProblem("001-anagram-detection"));
+  await page.locator("#lang-select").selectOption("typescript");
+  await page.evaluate((src) => { if (window.GlifexEditor) GlifexEditor.setValue(src); else document.getElementById("editor").value = src; },
+    "export = function solve(c: { s: string; t: string }): boolean { return [...c.s].sort().join('') === [...c.t].sort().join(''); };");
+  await page.locator("#reveal-btn").click();
+  await expect(page.locator("#reference-panel")).toBeVisible();
+  await stubProbe(page, "async (probe, gen, sizes) => sizes.map((n, i) => ({ n, bytes: (i + 1) * 100000 }))");
+  await page.locator("#lab-btn").click();
+  await page.locator("#lab .lab-verdict").first().waitFor({ timeout: 90000 });
+  const tab = page.locator("[data-labmetric='space']");
+  await expect(tab).toBeVisible({ timeout: 30000 });
+  await tab.click();
+  await expect(page.locator("[data-metricpanel='space']")).toContainText(/PEAK workspace/i);
+});
