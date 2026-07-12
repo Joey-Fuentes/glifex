@@ -4,7 +4,7 @@
 // harness/support (builtins archive, Rc json.hpp, cases fed on stdin) and the
 // harness reports 7/7.
 // Single-threaded (--no-threads), no SharedArrayBuffer -- just runs under our COI.
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 test.describe("C++ runtime (Binji wasm-clang)", () => {
   test.skip(({ browserName }) => browserName !== "chromium", "runs on chromium for now");

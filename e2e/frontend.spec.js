@@ -1,7 +1,7 @@
 // Frontend-track E2E: proves the reference solution passes and the blank
 // starter fails, against REAL browser computed styles (the mock-DOM unit test
 // covers logic; this covers actual CSS resolution — flex, gap, cascade).
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 test("frontend problem: clean solution passes all assertions", async ({ page }) => {
   await page.goto("/");

@@ -4,7 +4,7 @@
 // validated instruction-for-instruction against the first-party core in the
 // sandbox (fib(20)=6765, fib(24)=46368). If plain 6502 can't compile-and-run
 // with correct 16-bit results, this fails; it cannot fake-pass.
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 const FIB16 = [
   "      lda #0",

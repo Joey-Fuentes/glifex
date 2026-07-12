@@ -7,7 +7,7 @@
 // Chromium-only for now (the smoke just needs to prove the toolchain); Firefox is
 // added with the full runtime in PR-2b. Long timeout: loading the ~100MB clang
 // container + compiling in wasm is slow in CI.
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 test.describe("C toolchain (Wasmer WASIX clang)", () => {
   test.skip(({ browserName }) => browserName !== "chromium", "smoke runs on chromium for now");

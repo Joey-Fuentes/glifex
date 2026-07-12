@@ -19,6 +19,53 @@
 <meta name="twitter:title" content="Glifex: polyglot practice playground" />
 <meta name="twitter:description" content="Practice algorithms in 18 languages. Runs in your browser, offline. No account, no tracking." />
 <meta name="twitter:image" content="https://glifex.dev/og.png" />
+<style id="coi-boot-style">
+  html.coi-loading body { visibility: hidden; }
+  html.coi-loading::before { content: ""; position: fixed; inset: 0; z-index: 2147483646; background: #0d1117; }
+  html.coi-loading::after {
+    content: "Enabling fast, isolated timing\2026";
+    position: fixed; inset: 0; z-index: 2147483647;
+    display: flex; align-items: center; justify-content: center;
+    color: #8b949e; font: 500 15px/1.5 system-ui, -apple-system, sans-serif; letter-spacing: .01em;
+  }
+</style>
+<script id="coi-boot">
+// Cross-origin isolation bootstrap (runs before the app renders). sw.js stamps
+// COOP/COEP, but a document is only isolated once it loads THROUGH a controlling
+// SW. On the first visit we aren't isolated yet, so: show a full-screen overlay
+// (nothing interactive / no draft typed and lost), register the SW, and once it's
+// ready reload once to pick up the headers. The reloaded page is isolated and this
+// block is skipped, so the overlay never shows. One-shot (coiTried) + an 8s
+// failsafe guarantee it always clears (a browser that can't isolate just runs
+// un-isolated). Makes high-res performance.now() (Lab timing) and
+// measureUserAgentSpecificMemory (JS/TS space) available site-wide.
+//
+// data-coi is set on <html> ONLY on the FINAL (non-reloading) load -- "on" if
+// isolated, "off" if not. It is deliberately NOT set on the load that triggers
+// the reload, so automation (and anything else) can wait for a settled page
+// instead of racing the reload. See e2e/coi-fixtures.js.
+(function () {
+  var de = document.documentElement;
+  var mark = function () { de.classList.remove("coi-loading"); de.setAttribute("data-coi", self.crossOriginIsolated ? "on" : "off"); };
+  try {
+    if (location.protocol.indexOf("http") === 0 && "serviceWorker" in navigator
+        && !self.crossOriginIsolated && !sessionStorage.getItem("coiTried")) {
+      de.classList.add("coi-loading");
+      navigator.serviceWorker.register("sw.js", { updateViaCache: "none" })
+        .then(function () { return navigator.serviceWorker.ready; })
+        .then(function () {
+          try { sessionStorage.setItem("coiTried", "1"); } catch (e) {}
+          if (!self.crossOriginIsolated) { location.reload(); return; }  // reloading -> not the final load, do not mark
+          mark();
+        })
+        .catch(mark);
+      setTimeout(mark, 8000);   // failsafe: never let the overlay stick
+    } else {
+      mark();   // already isolated, or already tried -> this IS the final load
+    }
+  } catch (e) { mark(); }
+})();
+</script>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>

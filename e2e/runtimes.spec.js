@@ -11,7 +11,7 @@
 // /ok/ (every case passed). A non-vendored runtime yields .needs-runtime (no .summary
 // → times out); a broken one yields .summary.bad (/ok/ fails). A dead runtime cannot
 // fake a pass.
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 // A correct iterative nth-Fibonacci in WebAssembly Text — exercises the WAT runtime
 // end to end (wabt assembles it → instantiate → call solve). Kept inline so the test
