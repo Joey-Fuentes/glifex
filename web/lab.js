@@ -383,7 +383,7 @@ const GlifexLab = (() => {
     // exact and present now; JS: none yet), and for JS we then measure space in the
     // BACKGROUND and call finalize() again to slot the Space tab in when it lands.
     // A run token stops a slow background pass from clobbering a newer analyze.
-    const finalize = (spaceMeasuring) => {
+    const finalize = (spaceStatus) => {
       const spaceBy = {};
       for (let i = 0; i < plan.length; i++) if (repRows[0][i] && repRows[0][i].space != null) spaceBy[plan[i].mode + ":" + plan[i].n] = repRows[0][i].space;
       const spaceSeries = { ns: [], ys: [] };
@@ -393,7 +393,7 @@ const GlifexLab = (() => {
       }
       const spaceJ = (declaredSpace && spaceSeries.ns.length >= 2)
         ? E.judgeSpaceUpper(spaceSeries.ns, spaceSeries.ys, declaredSpace, tier.tol) : null;
-      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: runner === "js", spaceMeasuring: !!spaceMeasuring };
+      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: runner === "js", spaceStatus: spaceStatus || null };
       if (boundMode === "empirical-match") {
         const variantBounds = {};
         for (const [variant, b] of Object.entries(langComplexity)) {
@@ -409,16 +409,28 @@ const GlifexLab = (() => {
       }
     };
 
-    // Is a JS space measurement worth attempting? Needs a declared bound to judge
-    // against and the window API present (absent on Firefox / headless -> no tab).
-    const jsSpacePossible = runner === "js" && declaredSpace
+    // JS space STATUS -- always surfaced, so the card is never silently blank
+    // about memory. Retro tracks report exact space inline (spaceStatus stays
+    // null; their tab just appears). For JS we resolve one of: `unavailable`
+    // (Firefox / headless / not isolated), `needs-reveal` (no declared bound to
+    // test against), `measuring` (a background pass is running), or -- once it
+    // finishes -- `failed` (couldn't land >=2 samples). On success the tab renders
+    // and the status is moot. This is what makes the feature honest in EVERY state.
+    const jsApiOk = runner === "js"
       && typeof performance !== "undefined" && typeof performance.measureUserAgentSpecificMemory === "function"
       && window.GlifexJsRuntime && window.GlifexJsRuntime.compileJavaScript;
+    let spaceStatus = null;
+    if (runner === "js") {
+      spaceStatus = !jsApiOk ? { state: "unavailable" }
+        : !declaredSpace ? { state: "needs-reveal" }
+          : { state: "measuring" };
+    }
 
-    finalize(jsSpacePossible);   // verdict now; JS shows a "measuring memory" note where the tab will appear
+    finalize(spaceStatus);   // verdict now; JS surfaces its space status where the tab will appear
 
-    if (jsSpacePossible) {
+    if (spaceStatus && spaceStatus.state === "measuring") {
       (async () => {
+        let got = 0, total = 0;
         try {
           const upperIdx = [];
           for (let i = 0; i < plan.length; i++) if (plan[i].mode === cfg.roles.upper) upperIdx.push(i);
@@ -429,15 +441,18 @@ const GlifexLab = (() => {
             for (let k = 0; k < MAX_SPACE_SIZES; k++) set.add(upperIdx[Math.round((k * (upperIdx.length - 1)) / (MAX_SPACE_SIZES - 1))]);
             picks = [...set];
           }
+          total = picks.length;
           const compiled = window.GlifexJsRuntime.compileJavaScript(source);
           if (compiled && !compiled.error && compiled.measureSpace) {
             const sp = await compiled.measureSpace(picks.map((i) => cases[i]), { deadline: Date.now() + 180000 });
-            if (sp) picks.forEach((i, k) => { if (sp[k] != null && repRows[0][i]) repRows[0][i].space = sp[k]; });
+            if (sp) picks.forEach((i, k) => { if (sp[k] != null && repRows[0][i]) { repRows[0][i].space = sp[k]; got++; } });
             const dbg = picks.map((i) => ({ mode: plan[i].mode, n: plan[i].n, bytes: repRows[0][i] && repRows[0][i].space }));
             if (dbg.some((d) => d.bytes != null)) console.debug("[glifex] JS space (approx) raw (n,bytes):", dbg);
           }
         } catch (e) { /* best-effort: leave space unmeasured */ }
-        if (runId === analyzeSeq) finalize(false);   // re-render only if this analyze is still current
+        // Re-render only if this analyze is still current. If >=2 points landed,
+        // finalize shows the tab; otherwise it shows the honest "failed" note.
+        if (runId === analyzeSeq) finalize({ state: "failed", samples: got, total });
       })();
     }
   }
@@ -445,6 +460,19 @@ const GlifexLab = (() => {
   const mkCase = (c, oracle) => ({ input: c.input, expected: oracle(JSON.parse(JSON.stringify(c.input))) });
 
   // ---- rendering ------------------------------------------------------
+  // The honest, always-present JS space status line (retro tracks pass null and
+  // render their tab instead). Every non-success state gets a visible message, so
+  // the card is never blank about memory: it either shows the tab, or says why not.
+  function spaceStatusNote(st) {
+    if (!st || !st.state) return "";
+    let msg = "";
+    if (st.state === "unavailable") msg = "Memory profiling isn't available in this browser (it needs Chromium with cross-origin isolation). Space is still measured exactly on the retro CPU tracks.";
+    else if (st.state === "needs-reveal") msg = "Reveal a reference solution to also measure this code's memory usage (approximate).";
+    else if (st.state === "measuring") msg = "&#9203; Measuring memory (approximate)&hellip; a quick background pass; the <b>Space</b> tab will appear here in a moment. The time verdict above is already final.";
+    else if (st.state === "failed") msg = "&#9888; Attempted to measure memory but couldn't get a reliable reading" + (st.total ? ` (${st.samples} of ${st.total} samples returned)` : "") + ". In-browser JS memory profiling is best-effort and approximate; the time verdict above is unaffected. Try Analyze again.";
+    return msg ? `<p class="lab-note lab-note-warn">${msg}</p>` : "";
+  }
+
   function render(panel, X) {
     const { cfg, tierId, tier, j, boundMode, totalRetries } = X;
     const unit = tierId === "det" ? "cycles" : "ns";
@@ -506,9 +534,7 @@ const GlifexLab = (() => {
     } else {
       html += chart(X, unit);
       html += table(X, unit);
-      if (X.spaceMeasuring) {
-        html += `<p class="lab-note lab-note-warn">&#9203; Measuring memory (approximate)&hellip; a quick background pass &mdash; the <b>Space</b> tab will appear here in a moment. The time verdict above is already final and won't change.</p>`;
-      }
+      html += spaceStatusNote(X.spaceStatus);
     }
     html += boundMode === "empirical-match"
       ? `<p class="lab-note">No solution was revealed, so there was no specific claim to refute &mdash; this mode measures growth first and reports which known solution type(s) (if any) it matches, using the same tolerance-based classification as every refutation elsewhere in this tool. Reveal a specific solution (clean, optimized, brute-force&hellip;) to test your code against THAT variant's own declared bound instead.</p>`

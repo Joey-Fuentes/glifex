@@ -47,3 +47,35 @@ test("JS space: main-thread measurement surfaces the tab + approximate disclaime
   await expect(panel).toContainText(/Approximate/i);
   await expect(panel).toContainText("measureUserAgentSpecificMemory");
 });
+
+const JS_FIB2 = `module.exports = function solve(c) { let a = 0, b = 1; for (let i = 0; i < c.n; i++) { const t = a + b; a = b; b = t; } return a; };`;
+
+test("JS space: honest 'couldn't measure' note when the API yields nothing", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "measureUserAgentSpecificMemory is Chromium-only");
+  test.setTimeout(90000);
+  // API present (so it's attempted) but every call throws -> 0 samples -> failed state
+  await page.addInitScript(() => { performance.measureUserAgentSpecificMemory = () => { throw new DOMException("not available", "SecurityError"); }; });
+  await page.goto("http://localhost:8080/");
+  await page.locator('#problem-list li:has-text("Fibonacci")').click();
+  await page.evaluate((src) => { if (window.GlifexEditor) GlifexEditor.setValue(src); else document.getElementById("editor").value = src; }, JS_FIB2);
+  await page.locator("#reveal-btn").click();
+  await expect(page.locator("#reference-panel")).toBeVisible();
+  await page.locator("#lab-btn").click();
+  await page.locator("#lab .lab-verdict").first().waitFor({ timeout: 75000 });
+  // never blank about memory: shows an honest failure line, and no tab
+  await expect(page.locator("#lab")).toContainText(/couldn't get a reliable reading/i, { timeout: 30000 });
+  await expect(page.locator("[data-labmetric='space']")).toHaveCount(0);
+});
+
+test("JS space: prompts to reveal when analyzed without a declared bound", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "measureUserAgentSpecificMemory is Chromium-only");
+  test.setTimeout(90000);
+  await page.addInitScript(() => { performance.measureUserAgentSpecificMemory = async () => ({ bytes: 1000000 }); });
+  await page.goto("http://localhost:8080/");
+  await page.locator('#problem-list li:has-text("Fibonacci")').click();
+  await page.evaluate((src) => { if (window.GlifexEditor) GlifexEditor.setValue(src); else document.getElementById("editor").value = src; }, JS_FIB2);
+  // NO reveal -> empirical-match, no declaredSpace -> needs-reveal status
+  await page.locator("#lab-btn").click();
+  await page.locator("#lab .lab-verdict").first().waitFor({ timeout: 75000 });
+  await expect(page.locator("#lab")).toContainText(/Reveal a reference solution to also measure/i);
+});
