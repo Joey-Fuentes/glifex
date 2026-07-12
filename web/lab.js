@@ -507,7 +507,7 @@ const GlifexLab = (() => {
       html += chart(X, unit);
       html += table(X, unit);
       if (X.spaceMeasuring) {
-        html += `<p class="lab-note lab-note-warn">&#9203; Measuring memory (approximate)&hellip; this uses a slow, GC-gated browser API &mdash; each sample can take ~20s &mdash; so the <b>Space</b> tab will appear here shortly via a background pass. The time verdict above is already final and won't change.</p>`;
+        html += `<p class="lab-note lab-note-warn">&#9203; Measuring memory (approximate)&hellip; a quick background pass &mdash; the <b>Space</b> tab will appear here in a moment. The time verdict above is already final and won't change.</p>`;
       }
     }
     html += boundMode === "empirical-match"
