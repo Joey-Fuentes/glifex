@@ -119,16 +119,17 @@ function withMockMemory(seq, fn) {
 const idSolve = "module.exports = function solve(c){ return c.n; };";
 const cases3 = [{ input: { n: 10 } }, { input: { n: 100 } }, { input: { n: 1000 } }];
 
-// call order: 1 probe, then per case (before, after). deltas clamp at >= 0.
+// call order now: 1 baseline sample, then 1 measurement per case. deltas are
+// (measurement - baseline), clamped at >= 0.
 await withMockMemory(
-  [1000,                 // probe (non-null -> API "available")
-   1000, 1100,           // case0: +100
-   1100, 1300,           // case1: +200
-   1300, 1300 - 50],     // case2: -50 -> clamped to 0
+  [1000,          // baseline
+   1100,          // case0: +100
+   1200,          // case1: +200
+   1000 - 50],    // case2: -50 vs baseline -> clamped to 0
   async () => {
     const sp = await compileJavaScript(idSolve).measureSpace(cases3);
     ok(Array.isArray(sp) && sp.length === 3, "measureSpace: returns one entry per case");
-    ok(sp[0] === 100 && sp[1] === 200, "measureSpace: reports the before/after delta per size");
+    ok(sp[0] === 100 && sp[1] === 200, "measureSpace: reports growth over the shared baseline per size");
     ok(sp[2] === 0, "measureSpace: negative delta (GC between samples) clamps to 0, never negative");
   }
 );
@@ -141,18 +142,18 @@ await (async () => {
   ok(sp === null, "measureSpace: returns null when the API is absent (graceful degradation)");
 })();
 
-// API present but throws on call (e.g. headless SecurityError) -> null
+// baseline call throws (e.g. headless SecurityError) -> null
 await withMockMemory([new Error("not available")], async () => {
   const sp = await compileJavaScript(idSolve).measureSpace(cases3);
-  ok(sp === null, "measureSpace: returns null when the probe call throws (headless/unsupported)");
+  ok(sp === null, "measureSpace: returns null when the baseline call throws (headless/unsupported)");
 });
 
 // one flaky sample mid-run -> that size is null, others still measured
 await withMockMemory(
-  [1000, 1000, 1200, new Error("blip"), 1400, 1400, 1900],
+  [1000, 1200, new Error("blip"), 1900],
   async () => {
     const sp = await compileJavaScript(idSolve).measureSpace(cases3);
-    ok(sp[0] === 200 && sp[1] === null && sp[2] === 500, "measureSpace: a single failed sample nulls only its own size");
+    ok(sp[0] === 200 && sp[1] === null && sp[2] === 900, "measureSpace: a single failed sample nulls only its own size");
   }
 );
 

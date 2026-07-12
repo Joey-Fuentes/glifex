@@ -22,7 +22,7 @@ function compileJavaScript(source) {
     new Function("module", "exports", source)(module, module.exports);
     const solve = typeof module.exports === "function" ? module.exports : module.exports.solve;
     if (typeof solve !== "function") throw new Error("no solve() exported");
-    return { measure: (cases, opts) => measureJsCases(solve, cases, opts), measureSpace: (cases, deadline) => measureJsSpace(solve, cases, deadline) };
+    return { measure: (cases, opts) => measureJsCases(solve, cases, opts), measureSpace: (cases, opts) => measureJsSpace(solve, cases, opts) };
   } catch (e) {
     return { error: `Compile error: ${e.message}` };
   }
@@ -143,32 +143,37 @@ function measureJsCases(solve, cases, opts) {
 // retained, and report the clamped delta. Deltas are measured fresh per size
 // and the result released between sizes, so they don't accumulate. See
 // docs/ROADMAP.md (L4) for the path toward a cleaner metric.
-async function measureJsSpace(solve, cases, deadline) {
+async function measureJsSpace(solve, cases, opts) {
+  opts = opts || {};
   if (typeof performance === "undefined" || typeof performance.measureUserAgentSpecificMemory !== "function") return null;
-  // The API waits for the next GC and may take up to ~20s per call, which would
-  // freeze the analyze UI. Cap each call, and stop the whole pass at `deadline`;
-  // we return whatever sizes we managed (>=2 still lets the judge run, fewer just
-  // means no space verdict). Better a partial/absent metric than a frozen Lab.
+  // The API waits for the next GC and can take ~20s PER CALL. To keep the call
+  // count low we take ONE baseline, then ONE measurement per size (result held),
+  // reporting each size's clamped growth over the baseline -- half the calls of a
+  // before/after scheme. Because each call blocks until a GC, results released
+  // from earlier sizes are reclaimed by the time the next size is measured, so
+  // the deltas stay attributable. Each call is capped (well above the real ~20s)
+  // so a stuck call can't wedge the pass, and an overall deadline bounds the whole
+  // thing. This runs in the BACKGROUND (see lab.js) -- it is never on the path
+  // that renders the time verdict -- so being slow is acceptable, not a freeze.
+  const deadline = opts.deadline || (Date.now() + 180000);
   const sample = async () => {
     let t;
     try {
-      const timeout = new Promise((res) => { t = setTimeout(() => res(null), 5000); });
-      const r = await Promise.race([performance.measureUserAgentSpecificMemory(), timeout]);
+      const r = await Promise.race([performance.measureUserAgentSpecificMemory(), new Promise((res) => { t = setTimeout(() => res(null), 30000); })]);
       return (r && typeof r.bytes === "number") ? r.bytes : null;
     } catch (e) { return null; }
     finally { clearTimeout(t); }
   };
-  if ((await sample()) == null) return null;
+  const baseline = await sample();
+  if (baseline == null) return null;
   const space = new Array(cases.length).fill(null);
   for (let i = 0; i < cases.length; i++) {
-    if (deadline && Date.now() > deadline) break;   // budget spent -> keep what we have
+    if (Date.now() > deadline) break;      // budget spent -> keep what we have
     try {
-      solve(cases[i].input);                 // warm-up (discarded)
-      const before = await sample();
-      let held = solve(cases[i].input);      // retain across the post-measurement
-      const after = await sample();
-      if (before != null && after != null) space[i] = Math.max(0, after - before);
-      held = null;                           // release before the next size
+      let held = solve(cases[i].input);    // retain the result across the measurement
+      const m = await sample();
+      if (m != null) space[i] = Math.max(0, m - baseline);
+      held = null;                         // release before the next size
     } catch (e) { /* leave this size's space null */ }
   }
   return space;
