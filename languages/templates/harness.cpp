@@ -3,11 +3,17 @@
 #include <chrono>
 #include <iostream>
 #include <sstream>
+#include <cstdlib>
 
 Value practice(const Input&);
 Value clean(const Input&);
 Value optimized(const Input&);
+// Weak DEFINITION, not a bare declaration: an undefined weak reference
+// links to zero on ELF (Linux) but is an "Undefined symbols" link error on
+// Mach-O (macOS) and PE (MinGW). A weak definition links cleanly on all three
+// and is overridden by the strong symbol in brute-force.cpp when present.
 __attribute__((weak)) Value bruteforce(const Input&);
+__attribute__((weak)) Value bruteforce(const Input&) { std::cerr << "brute-force reference not provided\n"; std::exit(2); }
 
 int main(int argc, char** argv) {
     std::string variant = argc > 1 ? argv[1] : "practice";
