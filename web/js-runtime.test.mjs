@@ -95,4 +95,65 @@ const ok = (cond, msg) => { n++; if (!cond) { console.error("FAIL:", msg); proce
 // practical safety net for whatever residual noise remains in any given
 // environment; the deterministic tests above are what CI actually gates on.
 
+// --- L4 (JS space): measureJsSpace best-effort heap proxy ---------------
+// Deterministic tests of the DELTA LOGIC (baseline-subtract, clamp, per-size
+// alignment) via a scripted mock of measureUserAgentSpecificMemory. The real
+// API's signal quality is NOT tested here (it can't run headless -- see the
+// disclaimer in lab.js); this only pins the arithmetic and the graceful
+// degradation that keeps the feature invisible wherever the API is missing.
+const savedPerf = globalThis.performance;
+function withMockMemory(seq, fn) {
+  // seq: array of numbers/null the mock returns in order; a value that is an
+  // Error instance is thrown instead (to test the try/catch path).
+  let i = 0;
+  globalThis.performance = {
+    now: () => 0,
+    measureUserAgentSpecificMemory: async () => {
+      const v = seq[i++];
+      if (v instanceof Error) throw v;
+      return { bytes: v };
+    },
+  };
+  return Promise.resolve(fn()).finally(() => { globalThis.performance = savedPerf; });
+}
+const idSolve = "module.exports = function solve(c){ return c.n; };";
+const cases3 = [{ input: { n: 10 } }, { input: { n: 100 } }, { input: { n: 1000 } }];
+
+// call order: 1 probe, then per case (before, after). deltas clamp at >= 0.
+await withMockMemory(
+  [1000,                 // probe (non-null -> API "available")
+   1000, 1100,           // case0: +100
+   1100, 1300,           // case1: +200
+   1300, 1300 - 50],     // case2: -50 -> clamped to 0
+  async () => {
+    const sp = await compileJavaScript(idSolve).measureSpace(cases3);
+    ok(Array.isArray(sp) && sp.length === 3, "measureSpace: returns one entry per case");
+    ok(sp[0] === 100 && sp[1] === 200, "measureSpace: reports the before/after delta per size");
+    ok(sp[2] === 0, "measureSpace: negative delta (GC between samples) clamps to 0, never negative");
+  }
+);
+
+// API missing entirely -> null (feature stays invisible, tab omitted)
+await (async () => {
+  globalThis.performance = { now: () => 0 };   // no measureUserAgentSpecificMemory
+  const sp = await compileJavaScript(idSolve).measureSpace(cases3);
+  globalThis.performance = savedPerf;
+  ok(sp === null, "measureSpace: returns null when the API is absent (graceful degradation)");
+})();
+
+// API present but throws on call (e.g. headless SecurityError) -> null
+await withMockMemory([new Error("not available")], async () => {
+  const sp = await compileJavaScript(idSolve).measureSpace(cases3);
+  ok(sp === null, "measureSpace: returns null when the probe call throws (headless/unsupported)");
+});
+
+// one flaky sample mid-run -> that size is null, others still measured
+await withMockMemory(
+  [1000, 1000, 1200, new Error("blip"), 1400, 1400, 1900],
+  async () => {
+    const sp = await compileJavaScript(idSolve).measureSpace(cases3);
+    ok(sp[0] === 200 && sp[1] === null && sp[2] === 500, "measureSpace: a single failed sample nulls only its own size");
+  }
+);
+
 console.log(`js-runtime battery: ${n}/${n} passed`);

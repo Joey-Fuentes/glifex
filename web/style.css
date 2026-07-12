@@ -207,3 +207,5 @@ button.ghost.active { color: var(--accent); border-color: var(--accent); }
 
 /* L4: Complexity Lab Time|Space metric switch */
 .lab-metrictabs { display: flex; gap: .4rem; margin: .6rem 0 .2rem; }
+
+.lab-note-warn { color: #d9a441; border-left: 2px solid #d9a441; padding-left: .6rem; }

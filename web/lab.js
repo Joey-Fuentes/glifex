@@ -160,10 +160,10 @@ const GlifexLab = (() => {
   // identifies "your code" as the likely cause rather than a generic
   // stuck-runtime message.
   const JS_LAB_TIMEOUT_MS = 20000;
-  async function runJsInWorker(source, cases) {
+  async function runJsInWorker(source, cases, wantSpace) {
     try {
       const res = await window.callWorker(
-        jsLabWorkerState, "js-lab-worker.js", { id: "measure", source, cases },
+        jsLabWorkerState, "js-lab-worker.js", { id: "measure", source, cases, opts: { space: !!wantSpace } },
         JS_LAB_TIMEOUT_MS, "Your code took too long to finish (over 20s) -- likely an infinite loop or a much slower algorithm than expected at this input size.");
       if (res.id === "error") return { error: res.error };
       return { results: res.results, nsPerCase: res.nsPerCase };
@@ -198,8 +198,8 @@ const GlifexLab = (() => {
     progress(panel, "Probing runtime tier\u2026");
     const runner = lang === "javascript" ? "js" : await window.Runtimes.get(lang);
     if (!runner) return void (panel.innerHTML = card(`<div class="lab-verdict bad">Runtime for ${esc(lang)} is not available${window.Runtimes.error(lang) ? ": " + esc(window.Runtimes.error(lang)) : ""}.</div>`));
-    const runOnce = async (cases) => runner === "js"
-      ? await runJsInWorker(source, cases)
+    const runOnce = async (cases, wantSpace) => runner === "js"
+      ? await runJsInWorker(source, cases, wantSpace)
       : await runner.run(source, cases, p.languages[lang]);
 
     const probePlan = C.buildPlan(cfg, "wall", lang, "probe").plan.slice(0, 1);
@@ -328,6 +328,31 @@ const GlifexLab = (() => {
       repDurations[r] = dt;
     }
 
+    // L4 (JS space): a dedicated, best-effort space pass -- run AFTER the
+    // timed reps and separately from them, so measureUserAgentSpecificMemory's
+    // async cost never inflates a rep's duration (which would trip the
+    // rep-outlier replacement above). Only the JS worker attempts it, and
+    // only where the API can actually run (cross-origin isolated, Chromium,
+    // non-headless): elsewhere the returned results carry no `.space`, so
+    // nothing merges, spaceBy stays empty, and the Time|Space tab omits
+    // itself exactly as before. The values it does produce are an
+    // explicitly-approximate heap proxy (see js-runtime.js's measureJsSpace
+    // and the disclaimer in the space table) -- NOT the exact per-case
+    // workspace the retro tracks report. Merged into repRows[0], which is
+    // the row the space collection below reads.
+    if (runner === "js" && repRows[0]) {
+      const sp = await runOnce(cases, true);
+      if (sp && !sp.error && sp.results) {
+        sp.results.forEach((r, i) => { if (r && r.space != null && repRows[0][i]) repRows[0][i].space = r.space; });
+        // Diagnostic (Chrome DevTools console.debug -- silent by default): the raw
+        // (n, bytes) heap-proxy series, so the approximate JS/TS space methodology
+        // can be iterated against REAL numbers in the one place the API runs (a
+        // headed, cross-origin-isolated Chrome). Not user-facing.
+        const dbg = plan.map((c, i) => ({ mode: c.mode, n: c.n, bytes: repRows[0][i] && repRows[0][i].space }));
+        if (dbg.some((d) => d.bytes != null)) console.debug("[glifex] JS space (approx) raw (n,bytes):", dbg);
+      }
+    }
+
     // Aggregate: median across reps, per (mode, size). A single measurement
     // can be wildly unreliable even when it's present (a GC pause, thermal
     // throttle, or background OS activity hitting one rep) -- catch that at
@@ -404,10 +429,10 @@ const GlifexLab = (() => {
       // declared claim to test against; render() shows different headline
       // lines for this mode instead of the usual refuted/consistent ones.
       const j = E.judge(modes, cfg.roles, { upper: mv.upperClosest, lower: mv.lowerClosest }, tier.tol);
-      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, mv, variantBounds, totalRetries, spaceJ, spaceSeries, declaredSpace });
+      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, mv, variantBounds, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: runner === "js" });
     } else {
       const j = E.judge(modes, cfg.roles, declared, tier.tol);
-      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, revealedVariant, totalRetries, spaceJ, spaceSeries, declaredSpace });
+      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, revealedVariant, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: runner === "js" });
     }
   }
 
@@ -624,14 +649,14 @@ const GlifexLab = (() => {
     for (let i = 0; i < pts.length; i++) g += `<circle cx="${pts[i].split(",")[0]}" cy="${pts[i].split(",")[1]}" r="3.6" fill="${col}" stroke="#0d1117" stroke-width="1.4"/>`;
     g += `<text x="${(L + W - R) / 2}" y="${H - 5}" text-anchor="middle" fill="#8b949e" font-size="10">${esc(cfg.sizeLabel)} (log)</text>`;
     g += `<text x="13" y="${(T + H - B) / 2}" fill="#8b949e" font-size="10" transform="rotate(-90 13 ${(T + H - B) / 2})" text-anchor="middle">bytes / case (log)</text>`;
-    const legend = `<span class="lab-k" style="background:${col}"></span>${esc(modeLabel(cfg, cfg.roles.upper))} workspace <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
+    const legend = `<span class="lab-k" style="background:${col}"></span>${esc(modeLabel(cfg, cfg.roles.upper))} ${X.spaceApprox ? "retained heap <em>(approx)</em>" : "workspace"} <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
     return `<figure class="lab-fig"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="space growth chart" font-family="var(--mono)">${g}</svg><figcaption>${legend}</figcaption></figure>`;
   }
 
   function spaceTable(X) {
     const ns = X.spaceSeries.ns, ys = X.spaceSeries.ys, declared = X.declaredSpace;
     const names = E.CLASSES.map((c) => c.id);
-    let h = `<h3 class="lab-sec">Workspace step-ratio proof</h3><div class="lab-tablewrap"><table class="lab-table"><tr><th>step</th><th>workspace B</th><th>measured &times;</th>${names.map((n) => `<th${n === declared ? ' class="declared"' : ""}>${n === declared ? "declared " : ""}${n} &times;</th>`).join("")}</tr>`;
+    let h = `<h3 class="lab-sec">${X.spaceApprox ? "Heap-growth step-ratio (approximate)" : "Workspace step-ratio proof"}</h3><div class="lab-tablewrap"><table class="lab-table"><tr><th>step</th><th>${X.spaceApprox ? "heap &Delta; B" : "workspace B"}</th><th>measured &times;</th>${names.map((n) => `<th${n === declared ? ' class="declared"' : ""}>${n === declared ? "declared " : ""}${n} &times;</th>`).join("")}</tr>`;
     for (let i = 1; i < ns.length; i++) {
       const meas = ys[i] / ys[i - 1];
       h += `<tr><td>${ns[i - 1]} &rarr; ${ns[i]}</td><td>${ys[i]}</td><td>&times;${meas.toFixed(2)}</td>`;
@@ -642,7 +667,9 @@ const GlifexLab = (() => {
       }
       h += "</tr>";
     }
-    h += `</table></div><p class="lab-note">Workspace = distinct bytes written outside the program image, measured exactly (deterministic; no clock). Judged the same way as time &mdash; refute, never prove. A flat curve is consistent with O(1); growth above the declared class refutes it.</p>`;
+    h += X.spaceApprox
+      ? `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate.</b> Unlike the retro tracks' exact workspace metric, JavaScript memory here is a coarse proxy: <code>performance.measureUserAgentSpecificMemory()</code> reports the <em>whole worker heap</em> (not this call), is quantized and GC-dependent, and only runs at all in cross-origin-isolated Chromium. Small allocations sit under its noise floor, so treat a &ldquo;refuted&rdquo; here as a prompt to look closer &mdash; not proof. Growing this into a trustworthy metric is tracked in the roadmap (L4).</p>`
+      : `</table></div><p class="lab-note">Workspace = distinct bytes written outside the program image, measured exactly (deterministic; no clock). Judged the same way as time &mdash; refute, never prove. A flat curve is consistent with O(1); growth above the declared class refutes it.</p>`;
     return h;
   }
 
