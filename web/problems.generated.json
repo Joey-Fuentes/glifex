@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-12T00:29:24.032Z",
+  "generatedAt": "2026-07-12T07:48:20.267Z",
   "displayNames": {
     "asm-6502": "6502 assembly",
     "i8080": "Intel 8080 assembly",
@@ -160,7 +160,7 @@
         },
         "go": {
           "practice": "package main\n\nfunc practice(c map[string]any) any {\n\ts := c[\"s\"].(string)\n\tt := c[\"t\"].(string)\n\t// Return true if s and t are anagrams of each other, false otherwise.\n\t_ = s\n\t_ = t\n\treturn false\n}\n",
-          "clean": "package main\n\nfunc clean(c map[string]any) any {\n\treturn sortStr(c[\"s\"].(string)) == sortStr(c[\"t\"].(string))\n}\n",
+          "clean": "package main\n\nimport \"sort\"\n\n// sortStr returns s with its runes in sorted order, so two anagrams\n// produce identical sorted strings. Ranges over runes (not bytes) to match\n// the optimized variant's Unicode handling. O(n log n) time, O(n) space --\n// the declared \"clean\" bound. (This helper was referenced but never\n// defined in the initial commit; the Go leg only ran once the CI matrix\n// was re-enabled, which is what surfaced it.)\nfunc sortStr(s string) string {\n\tr := []rune(s)\n\tsort.Slice(r, func(i, j int) bool { return r[i] < r[j] })\n\treturn string(r)\n}\n\nfunc clean(c map[string]any) any {\n\treturn sortStr(c[\"s\"].(string)) == sortStr(c[\"t\"].(string))\n}\n",
           "optimized": "package main\n\nfunc optimized(c map[string]any) any {\n\ts, t := c[\"s\"].(string), c[\"t\"].(string)\n\tif len(s) != len(t) {\n\t\treturn false\n\t}\n\tcount := map[rune]int{}\n\tfor _, ch := range s {\n\t\tcount[ch]++\n\t}\n\tfor _, ch := range t {\n\t\tcount[ch]--\n\t\tif count[ch] < 0 {\n\t\t\treturn false\n\t\t}\n\t}\n\treturn true\n}\n",
           "brute-force": null,
           "complexity": {
