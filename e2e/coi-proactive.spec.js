@@ -8,7 +8,7 @@
 // It also guards the loop concern: expect.poll succeeding means the app reaches
 // a STABLE isolated state (it isn't stuck reloading), and the list staying
 // visible means nothing was COEP-blocked.
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 test("app proactively becomes cross-origin isolated with no manual reload", async ({ page }) => {
   await page.goto("/");

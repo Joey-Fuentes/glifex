@@ -7,7 +7,7 @@
 //
 // Deterministic by design: an explicit reload (not a racy first-visit auto-reload),
 // so it can't disrupt the other specs, which run non-isolated and unchanged.
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 test("service worker makes the page cross-origin isolated (SharedArrayBuffer available)", async ({ page }) => {
   await page.goto("/");

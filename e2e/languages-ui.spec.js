@@ -5,7 +5,7 @@
 // baked for a problem, this test demands the dropdown show it, and fails if the
 // UI drops it. (The corpus-integrity unit test guards the layer above -- that a
 // declared+runnable language actually makes it INTO the corpus.)
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 test.describe("language dropdown surfaces the corpus", () => {
   test("every problem's dropdown == its baked corpus languages", async ({ page }) => {

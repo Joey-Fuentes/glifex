@@ -5,7 +5,7 @@
 // Wasm-aware conventions (apply when WASM runtimes are vendored):
 //  - never wait on 'networkidle'; assert on app-set ready signals instead
 //  - capture pageerror/console: wasm traps have opaque stacks otherwise
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 test.beforeEach(async ({ page }) => {
   // Surface wasm traps and JS errors in test output instead of silent failure.

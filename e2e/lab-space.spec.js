@@ -9,7 +9,7 @@
 // verdicts: the space metric is a count of distinct memory writes, not a
 // clock reading, and i8080's cycle-accurate tier never trips the
 // time-reliability gate that suppresses a card.
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 // Correct i8080 fib, baked corpus "clean" reference -> constant workspace
 // (writes only the 2 result bytes) -> O(1) space.

@@ -27,7 +27,7 @@
 // never appear. Fixed by revealing a variant explicitly (restoring the
 // original test's intent) and adding a second, separate test for the
 // no-reveal path specifically, so both are covered on their own terms.
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 // A correct O(n) iterative fib -- exactly the shape lab-config.mjs's
 // declared bound describes, using the SAME safe, precision-validated

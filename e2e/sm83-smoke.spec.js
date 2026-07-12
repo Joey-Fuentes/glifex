@@ -4,7 +4,7 @@
 // native 16-bit ADD HL,DE -- validated instruction-for-instruction against the
 // first-party core in the sandbox (fib(20)=6765, fib(24)=46368). If plain SM83
 // can't compile-and-run with correct 16-bit results, this fails.
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./coi-fixtures");
 
 const FIB = [
   "    LD HL,0",

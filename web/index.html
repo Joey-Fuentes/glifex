@@ -33,30 +33,37 @@
 // Cross-origin isolation bootstrap (runs before the app renders). sw.js stamps
 // COOP/COEP, but a document is only isolated once it loads THROUGH a controlling
 // SW. On the first visit we aren't isolated yet, so: show a full-screen overlay
-// (so nothing is interactive / no draft can be typed and lost), register the SW,
-// and once it's ready reload once to pick up the headers -- then the reloaded
-// page is isolated and this whole block is skipped, so the overlay never shows.
-// One-shot (coiTried) + an 8s failsafe guarantee the overlay always clears, even
-// on a browser where isolation never engages (it just runs un-isolated).
-// This makes high-res performance.now() (Lab timing) and
+// (nothing interactive / no draft typed and lost), register the SW, and once it's
+// ready reload once to pick up the headers. The reloaded page is isolated and this
+// block is skipped, so the overlay never shows. One-shot (coiTried) + an 8s
+// failsafe guarantee it always clears (a browser that can't isolate just runs
+// un-isolated). Makes high-res performance.now() (Lab timing) and
 // measureUserAgentSpecificMemory (JS/TS space) available site-wide.
+//
+// data-coi is set on <html> ONLY on the FINAL (non-reloading) load -- "on" if
+// isolated, "off" if not. It is deliberately NOT set on the load that triggers
+// the reload, so automation (and anything else) can wait for a settled page
+// instead of racing the reload. See e2e/coi-fixtures.js.
 (function () {
+  var de = document.documentElement;
+  var mark = function () { de.classList.remove("coi-loading"); de.setAttribute("data-coi", self.crossOriginIsolated ? "on" : "off"); };
   try {
     if (location.protocol.indexOf("http") === 0 && "serviceWorker" in navigator
         && !self.crossOriginIsolated && !sessionStorage.getItem("coiTried")) {
-      var de = document.documentElement;
       de.classList.add("coi-loading");
-      var clear = function () { de.classList.remove("coi-loading"); };
       navigator.serviceWorker.register("sw.js", { updateViaCache: "none" })
         .then(function () { return navigator.serviceWorker.ready; })
         .then(function () {
           try { sessionStorage.setItem("coiTried", "1"); } catch (e) {}
-          if (!self.crossOriginIsolated) location.reload(); else clear();
+          if (!self.crossOriginIsolated) { location.reload(); return; }  // reloading -> not the final load, do not mark
+          mark();
         })
-        .catch(clear);
-      setTimeout(clear, 8000);   // failsafe: never let the overlay stick
+        .catch(mark);
+      setTimeout(mark, 8000);   // failsafe: never let the overlay stick
+    } else {
+      mark();   // already isolated, or already tried -> this IS the final load
     }
-  } catch (e) {}
+  } catch (e) { mark(); }
 })();
 </script>
 <link rel="stylesheet" href="style.css" />
