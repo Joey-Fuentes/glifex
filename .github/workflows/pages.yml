@@ -90,7 +90,7 @@ jobs:
         # diagnostics) executed only by the test harness -- never deployed.
         # See THIRD_PARTY_NOTICES.md "Repo-only test fixtures".
         run: rm -rf web/retro/test-roms
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with: { path: web }
 
   deploy:
