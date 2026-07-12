@@ -14,7 +14,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with: { python-version: "3.13" }
       - name: Ruff (Python lint + format check)
@@ -34,7 +34,7 @@ jobs:
     name: Playground corpus is not stale
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with: { node-version: "24" }
       - uses: actions/setup-python@v5
@@ -68,7 +68,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with: { python-version: "3.13" }
       - uses: actions/setup-node@v6
@@ -127,7 +127,7 @@ jobs:
     needs: [corpus]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with: { node-version: "24" }
       - name: Browser JS engine executes the corpus green
@@ -150,7 +150,7 @@ jobs:
     needs: [playground]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with: { node-version: "24" }
       - name: Install Playwright
@@ -261,7 +261,7 @@ jobs:
     if: ${{ false }}   # TEMP(free-tier): advisory job disabled to save minutes. Re-enable by deleting this line.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Trivy — dependencies + secrets (blocking)
         uses: aquasecurity/trivy-action@master
         with:
