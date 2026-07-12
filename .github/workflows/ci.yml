@@ -159,7 +159,7 @@ jobs:
           npm install -D @playwright/test
           npx playwright install --with-deps chromium firefox
       - name: Restore vendored runtimes cache (e2e flavor, no CodeMirror)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: web/vendor
           key: vendor-v1-ci-${{ hashFiles('web/fetch-runtimes.mjs') }}
