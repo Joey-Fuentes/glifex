@@ -41,7 +41,7 @@ importScripts("js-runtime.js");   // loads compileJavaScript into this worker's 
 let cachedSource = null;
 let cachedCompiled = null;
 
-self.onmessage = (e) => {
+self.onmessage = async (e) => {
   const d = e.data || {};
   if (d.id !== "measure") return;
   try {
@@ -54,6 +54,16 @@ self.onmessage = (e) => {
       return;
     }
     const out = cachedCompiled.measure(d.cases, d.opts);
+    // L4 (JS space): optional best-effort heap-growth proxy. Requested by
+    // lab.js on a single rep (opts.space) and only attached where the
+    // measureUserAgentSpecificMemory API can actually run (isolated,
+    // Chromium, non-headless); otherwise results carry no .space and the
+    // Lab simply omits the space tab. Never throws -- measureSpace returns
+    // null wherever the API is unavailable. It's async, so this handler is.
+    if (d.opts && d.opts.space && typeof cachedCompiled.measureSpace === "function") {
+      const sp = await cachedCompiled.measureSpace(d.cases);
+      if (sp) out.results.forEach((r, i) => { if (sp[i] != null) r.space = sp[i]; });
+    }
     self.postMessage({ id: "result", results: out.results, nsPerCase: out.nsPerCase });
   } catch (err) {
     self.postMessage({ id: "error", error: String((err && err.message) || err) });

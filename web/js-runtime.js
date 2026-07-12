@@ -22,7 +22,7 @@ function compileJavaScript(source) {
     new Function("module", "exports", source)(module, module.exports);
     const solve = typeof module.exports === "function" ? module.exports : module.exports.solve;
     if (typeof solve !== "function") throw new Error("no solve() exported");
-    return { measure: (cases, opts) => measureJsCases(solve, cases, opts) };
+    return { measure: (cases, opts) => measureJsCases(solve, cases, opts), measureSpace: (cases) => measureJsSpace(solve, cases) };
   } catch (e) {
     return { error: `Compile error: ${e.message}` };
   }
@@ -124,6 +124,44 @@ function measureJsCases(solve, cases, opts) {
     nsPerCase = (samples[1] * 1e6) / (iters * cases.length);
   }
   return { results, nsPerCase };
+}
+
+// L4 (JS/TS space) -- a BEST-EFFORT, explicitly-approximate per-size heap
+// proxy via performance.measureUserAgentSpecificMemory(). This is NOT the
+// exact per-case workspace the retro tracks report; it is fundamentally
+// coarser and must be presented as such (the UI carries a disclaimer):
+//   - whole-agent: it measures the ENTIRE worker heap, not this solve()
+//     call, so we report a before/after DELTA rather than an absolute;
+//   - GC-dependent: the number depends on when garbage collection last ran;
+//   - quantized/coarse: bucketed at a granularity meant for catching MB-
+//     scale leaks, so small allocations sit under its noise floor;
+//   - Chromium-only, cross-origin-isolated-only, and unavailable in headless
+//     Chrome -- so it returns null wherever it can't run and NEVER throws,
+//     which makes the whole feature degrade to "no space tab" cleanly.
+// Per size: warm up once (so lazy/JIT allocation isn't attributed here),
+// measure the heap immediately before and after ONE solve() with its result
+// retained, and report the clamped delta. Deltas are measured fresh per size
+// and the result released between sizes, so they don't accumulate. See
+// docs/ROADMAP.md (L4) for the path toward a cleaner metric.
+async function measureJsSpace(solve, cases) {
+  if (typeof performance === "undefined" || typeof performance.measureUserAgentSpecificMemory !== "function") return null;
+  const sample = async () => {
+    try { const r = await performance.measureUserAgentSpecificMemory(); return (r && typeof r.bytes === "number") ? r.bytes : null; }
+    catch (e) { return null; }   // present but not callable here (e.g. headless) -> treat as unavailable
+  };
+  if ((await sample()) == null) return null;
+  const space = new Array(cases.length).fill(null);
+  for (let i = 0; i < cases.length; i++) {
+    try {
+      solve(cases[i].input);                 // warm-up (discarded)
+      const before = await sample();
+      let held = solve(cases[i].input);      // retain across the post-measurement
+      const after = await sample();
+      if (before != null && after != null) space[i] = Math.max(0, after - before);
+      held = null;                           // release before the next size
+    } catch (e) { /* leave this size's space null */ }
+  }
+  return space;
 }
 
 // Kept for the non-Lab callers (the plain Run button): a single compile +
