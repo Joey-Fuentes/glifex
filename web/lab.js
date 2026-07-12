@@ -139,10 +139,13 @@ const GlifexLab = (() => {
   function determineBoundMode(langComplexity, cfgDeclared, revealedVariant) {
     const revealedBounds = revealedVariant ? langComplexity[revealedVariant] : null;
     if (revealedBounds && revealedBounds.upper) {
-      return { boundMode: "revealed", declared: { upper: revealedBounds.upper, lower: revealedBounds.lower || cfgDeclared.lower } };
+      // L4: the declared SPACE bound rides the SAME per-variant object the
+      // time bounds come from (the corpus carries a `space` class next to
+      // upper/lower). Upper-only: there is no declared space-lower anywhere.
+      return { boundMode: "revealed", declared: { upper: revealedBounds.upper, lower: revealedBounds.lower || cfgDeclared.lower }, declaredSpace: revealedBounds.space || null };
     }
-    if (Object.keys(langComplexity).length) return { boundMode: "empirical-match", declared: null };
-    return { boundMode: "legacy", declared: cfgDeclared };
+    if (Object.keys(langComplexity).length) return { boundMode: "empirical-match", declared: null, declaredSpace: null };
+    return { boundMode: "legacy", declared: cfgDeclared, declaredSpace: (cfgDeclared && cfgDeclared.space) || null };
   }
 
   // L3 worker-per-run-of-a-session helper for JS (see jsLabWorkerState's
@@ -177,7 +180,7 @@ const GlifexLab = (() => {
     const langComplexity = (p.languages[lang] || {}).complexity || {};
     const panelEl = document.getElementById("reference-panel");
     const revealedVariant = panelEl && !panelEl.hidden ? state.refVariant : null;
-    const { boundMode, declared } = determineBoundMode(langComplexity, cfg.declared, revealedVariant);
+    const { boundMode, declared, declaredSpace } = determineBoundMode(langComplexity, cfg.declared, revealedVariant);
 
     // Oracle: the JavaScript clean reference produces expected outputs for
     // generated inputs. Inputs are JSON-cloned before the oracle sees them
@@ -357,7 +360,14 @@ const GlifexLab = (() => {
       if (vals.length >= 2 && !E.isReliable(vals, SPREAD_LIMIT)) { unreliable++; continue; }
       modes[plan[i].mode].ns.push(plan[i].n);
       modes[plan[i].mode].ys.push(E.median(vals));
-      if (tierId === "det" && repRows[0][i].space != null) spaceBy[plan[i].mode + ":" + plan[i].n] = repRows[0][i].space;
+      // L4: collect the exact per-size workspace metric wherever the
+      // runtime reports one -- retro reports `space` on every track, but
+      // only i8080 hits the det tier; 6502/SM83 land on the wall tier for
+      // TIME (no cycle table) yet their space is just as exact (distinct
+      // bytes written, not a clock reading). Gate on the value's presence,
+      // not the tier, so those two get judged too. JS/interpreted report
+      // no `space`, so they naturally contribute nothing here.
+      if (repRows[0][i].space != null) spaceBy[plan[i].mode + ":" + plan[i].n] = repRows[0][i].space;
     }
     if (missing) {
       return void (panel.innerHTML = card(`<div class="lab-verdict warn">Inconclusive: ${missing} of ${plan.length} measurements came back below timing resolution for this runtime. No verdict is honest here &mdash; a larger ladder needs the L3 worker budget.</div>`));
@@ -365,6 +375,20 @@ const GlifexLab = (() => {
     if (unreliable > UNRELIABLE_TOLERANCE) {
       return void (panel.innerHTML = card(`<div class="lab-verdict warn">Inconclusive: ${unreliable} of ${plan.length} measurements disagreed by more than ${SPREAD_LIMIT}&times; across repeated passes (likely a GC pause, thermal throttle, or other transient interruption on this device) &mdash; more than this analysis' tolerance of ${UNRELIABLE_TOLERANCE}, so no verdict is honest built on top of that. Try Analyze growth again; a fresh set of passes is often clean.</div>`));
     }
+
+    // L4: assemble the space series for the upper (space-worst) family and
+    // judge it against the declared space bound. Space is deterministic, so
+    // one value per size (already in spaceBy) is exact -- no median needed.
+    // spaceJ stays null when there's no declared space bound (empirical
+    // match, or an unmigrated variant) or fewer than two measured points:
+    // nothing to refute, so nothing is shown -- the tab omits itself.
+    const spaceSeries = { ns: [], ys: [] };
+    for (const n of modes[cfg.roles.upper].ns) {
+      const v = spaceBy[cfg.roles.upper + ":" + n];
+      if (v != null) { spaceSeries.ns.push(n); spaceSeries.ys.push(v); }
+    }
+    const spaceJ = (declaredSpace && spaceSeries.ns.length >= 2)
+      ? E.judgeSpaceUpper(spaceSeries.ns, spaceSeries.ys, declaredSpace, tier.tol) : null;
 
     if (boundMode === "empirical-match") {
       const variantBounds = {};
@@ -380,10 +404,10 @@ const GlifexLab = (() => {
       // declared claim to test against; render() shows different headline
       // lines for this mode instead of the usual refuted/consistent ones.
       const j = E.judge(modes, cfg.roles, { upper: mv.upperClosest, lower: mv.lowerClosest }, tier.tol);
-      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, mv, variantBounds, totalRetries });
+      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, mv, variantBounds, totalRetries, spaceJ, spaceSeries, declaredSpace });
     } else {
       const j = E.judge(modes, cfg.roles, declared, tier.tol);
-      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, revealedVariant, totalRetries });
+      render(panel, { p, lang, cfg, tierId, tier, reps, sizes, modes, j, detMeta, seedBase, spaceBy, boundMode, revealedVariant, totalRetries, spaceJ, spaceSeries, declaredSpace });
     }
   }
 
@@ -422,11 +446,36 @@ const GlifexLab = (() => {
         ? vline("theta", `${THETA} Growth is pinned between matching bounds: consistent with ${j.theta.cls.replace("O(", THETA + "(")} on these families.`)
         : vline("dim", `No ${THETA} badge: the two families&rsquo; growth does not pin a single class (upper tracks ${j.perMode[up.mode].closest}, lower ${j.perMode[lo.mode].closest}) &mdash; which is itself the point: case spread is real.`);
     }
+    // L4: space verdict -- shown alongside the time bounds (never hidden
+    // behind the tab), because "O(n) time but O(1) space" vs "O(n) space"
+    // is exactly the contrast worth seeing at a glance. Upper-only,
+    // refute-only doctrine, same as time. The [space] tag disambiguates it
+    // from the time upper/lower lines.
+    if (X.spaceJ) {
+      const sv = X.spaceJ, sd = sv.declared;
+      html += sv.verdict === "refuted"
+        ? vline("bad", `&#10007; <b>[space]</b> ${sd} REFUTED &mdash; workspace grows faster than declared on the &ldquo;${esc(modeLabel(cfg, cfg.roles.upper))}&rdquo; family (measured tracks ${sv.closest}).`)
+        : sv.verdict === "consistent"
+          ? vline("ok", `&#10003; <b>[space]</b> ${sd}: consistent on the &ldquo;${esc(modeLabel(cfg, cfg.roles.upper))}&rdquo; family &mdash; this run failed to refute it.`)
+          : vline("ok", `&#10003; <b>[space]</b> ${sd} holds, but is not tight (workspace grows as ${sv.closest}).`);
+    }
     if (cfg.note) html += `<p class="lab-note">${esc(cfg.note)}</p>`;
     if (totalRetries > 0) html += `<p class="lab-note">Note: ${totalRetries} runtime error${totalRetries === 1 ? "" : "s"} occurred and ${totalRetries === 1 ? "was" : "were"} retried before this result completed (a known, intermittent runtime instability -- see docs/ROADMAP.md's Bx-3 entry). The result below reflects only successful runs.</p>`;
 
-    html += chart(X, unit);
-    html += table(X, unit);
+    // L4: a Time|Space metric tab appears ONLY when there's a space
+    // verdict to show (conditional, not a greyed-out dead control) -- so
+    // every non-retro track's card is byte-for-byte unchanged. The time
+    // panel is the proven path, untouched; the space panel is parallel.
+    if (X.spaceJ) {
+      html += `<div class="lab-metrictabs">`
+        + `<button class="ghost sm active" data-labmetric="time">Time growth</button>`
+        + `<button class="ghost sm" data-labmetric="space">Space growth</button></div>`;
+      html += `<div data-metricpanel="time">${chart(X, unit)}${table(X, unit)}</div>`;
+      html += `<div data-metricpanel="space" hidden>${spaceChart(X)}${spaceTable(X)}</div>`;
+    } else {
+      html += chart(X, unit);
+      html += table(X, unit);
+    }
     html += boundMode === "empirical-match"
       ? `<p class="lab-note">No solution was revealed, so there was no specific claim to refute &mdash; this mode measures growth first and reports which known solution type(s) (if any) it matches, using the same tolerance-based classification as every refutation elsewhere in this tool. Reveal a specific solution (clean, optimized, brute-force&hellip;) to test your code against THAT variant's own declared bound instead.</p>`
       : `<p class="lab-note">O / ${OMEGA} / ${THETA} are BOUNDS, not case names: worst, average, and best case are different cost functions from different input families, and each can carry any bound. The card tests the declared O on the adversarial family and the declared ${OMEGA} on the easy one; ${THETA} appears only when both ends pin the same class. Refutations are conclusive; &ldquo;consistent&rdquo; only means this run failed to refute &mdash; a curve can never prove a bound.</p>`;
@@ -435,7 +484,15 @@ const GlifexLab = (() => {
 
     panel.querySelectorAll("[data-labmode]").forEach((b) => (b.onclick = () => {
       panel.querySelectorAll("[data-labmode]").forEach((x) => x.classList.toggle("active", x === b));
-      panel.querySelector(".lab-tablewrap").innerHTML = tableFor(X, unit, b.dataset.labmode);
+      // Scope to THIS button's own panel so the space panel (if present)
+      // never has its (single-mode, tab-less) table clobbered.
+      const wrap = (b.closest("[data-metricpanel]") || panel).querySelector(".lab-tablewrap");
+      if (wrap) wrap.innerHTML = tableFor(X, unit, b.dataset.labmode);
+    }));
+    // L4: Time|Space metric switch -- toggles which panel is visible.
+    panel.querySelectorAll("[data-labmetric]").forEach((b) => (b.onclick = () => {
+      panel.querySelectorAll("[data-labmetric]").forEach((x) => x.classList.toggle("active", x === b));
+      panel.querySelectorAll("[data-metricpanel]").forEach((pnl) => (pnl.hidden = pnl.dataset.metricpanel !== b.dataset.labmetric));
     }));
   }
 
@@ -531,6 +588,62 @@ const GlifexLab = (() => {
       h += "</tr>";
     }
     return h + "</table>";
+  }
+
+  // L4: the space growth chart -- same log-log format as chart(), one
+  // series (the space-worst family), y-axis in BYTES (the disambiguator
+  // from the time chart's ns/cycles), dashed fit of the declared space
+  // class (red when refuted). Deliberately parallel to chart() rather than
+  // a shared generic, to leave the proven time path byte-for-byte intact.
+  function spaceChart(X) {
+    const { cfg } = X;
+    const ns = X.spaceSeries.ns, ys = X.spaceSeries.ys;
+    const W = 640, H = 320, L = 64, R = 12, T = 14, B = 40; const lx = Math.log10;
+    const x0 = lx(Math.min(...ns)), x1 = lx(Math.max(...ns));
+    const y0 = lx(Math.max(Math.min(...ys), 1e-9)) - 0.15, y1 = lx(Math.max(...ys)) + 0.15;
+    const Xc = (n) => L + ((lx(n) - x0) / (x1 - x0 || 1)) * (W - L - R);
+    const Yc = (v) => H - B - ((lx(Math.max(v, 1e-9)) - y0) / (y1 - y0 || 1)) * (H - T - B);
+    const fmt = (v) => (v >= 1e6 ? (v / 1e6).toPrecision(3) + "M" : v >= 1000 ? (v / 1000).toPrecision(3) + "k" : v.toPrecision(3));
+    let g = "";
+    for (let d = Math.ceil(y0); d <= Math.floor(y1); d++) {
+      const y = H - B - ((d - y0) / (y1 - y0 || 1)) * (H - T - B);
+      g += `<line x1="${L}" y1="${y}" x2="${W - R}" y2="${y}" stroke="#2a3140"/><text x="${L - 7}" y="${y + 3}" text-anchor="end" fill="#8b949e" font-size="10">${fmt(10 ** d)}</text>`;
+    }
+    for (const n of ns)
+      g += `<line x1="${Xc(n)}" y1="${T}" x2="${Xc(n)}" y2="${H - B}" stroke="#232b38"/><text x="${Xc(n)}" y="${H - B + 13}" text-anchor="middle" fill="#8b949e" font-size="10">${n}</text>`;
+    const fit = E.fitClass(E.classById(X.declaredSpace).f, ns, ys);
+    let d = "";
+    for (let i = 0; i <= 48; i++) {
+      const n = 10 ** (x0 + ((x1 - x0) * i) / 48), y = fit.predict(n);
+      if (y > 0) d += (d ? "L" : "M") + Xc(n).toFixed(1) + " " + Yc(y).toFixed(1);
+    }
+    g += `<path d="${d}" fill="none" stroke="${X.spaceJ.verdict === "refuted" ? "#ff7b72" : "#8b949e"}" stroke-width="1.6" stroke-dasharray="5 5"/>`;
+    const col = MODE_COLORS[cfg.roles.upper] || "#6ea8fe";
+    const pts = ns.map((n, i) => Xc(n).toFixed(1) + "," + Yc(ys[i]).toFixed(1));
+    g += `<polyline points="${pts.join(" ")}" fill="none" stroke="${col}" stroke-width="1.4" opacity=".75"/>`;
+    for (let i = 0; i < pts.length; i++) g += `<circle cx="${pts[i].split(",")[0]}" cy="${pts[i].split(",")[1]}" r="3.6" fill="${col}" stroke="#0d1117" stroke-width="1.4"/>`;
+    g += `<text x="${(L + W - R) / 2}" y="${H - 5}" text-anchor="middle" fill="#8b949e" font-size="10">${esc(cfg.sizeLabel)} (log)</text>`;
+    g += `<text x="13" y="${(T + H - B) / 2}" fill="#8b949e" font-size="10" transform="rotate(-90 13 ${(T + H - B) / 2})" text-anchor="middle">bytes / case (log)</text>`;
+    const legend = `<span class="lab-k" style="background:${col}"></span>${esc(modeLabel(cfg, cfg.roles.upper))} workspace <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
+    return `<figure class="lab-fig"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="space growth chart" font-family="var(--mono)">${g}</svg><figcaption>${legend}</figcaption></figure>`;
+  }
+
+  function spaceTable(X) {
+    const ns = X.spaceSeries.ns, ys = X.spaceSeries.ys, declared = X.declaredSpace;
+    const names = E.CLASSES.map((c) => c.id);
+    let h = `<h3 class="lab-sec">Workspace step-ratio proof</h3><div class="lab-tablewrap"><table class="lab-table"><tr><th>step</th><th>workspace B</th><th>measured &times;</th>${names.map((n) => `<th${n === declared ? ' class="declared"' : ""}>${n === declared ? "declared " : ""}${n} &times;</th>`).join("")}</tr>`;
+    for (let i = 1; i < ns.length; i++) {
+      const meas = ys[i] / ys[i - 1];
+      h += `<tr><td>${ns[i - 1]} &rarr; ${ns[i]}</td><td>${ys[i]}</td><td>&times;${meas.toFixed(2)}</td>`;
+      for (const n of names) {
+        const pred = E.classById(n).f(ns[i]) / E.classById(n).f(ns[i - 1]);
+        const close = Math.abs(Math.log(meas / pred)) <= X.tier.tol;
+        h += `<td class="${n === declared ? "declared " : ""}${close ? "hit" : (n === declared ? "miss" : "")}">&times;${pred.toFixed(2)}</td>`;
+      }
+      h += "</tr>";
+    }
+    h += `</table></div><p class="lab-note">Workspace = distinct bytes written outside the program image, measured exactly (deterministic; no clock). Judged the same way as time &mdash; refute, never prove. A flat curve is consistent with O(1); growth above the declared class refutes it.</p>`;
+    return h;
   }
 
   function prov(X) {

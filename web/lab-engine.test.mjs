@@ -5,7 +5,7 @@
 // composition, the trivial-Omega(1) rule, and the generator invariants the
 // verdicts depend on (seed determinism; two-sum planted-pair uniqueness;
 // anagram adversarial family really is anagrams).
-import { CLASSES, classById, fitClass, classifyGrowth, judge, matchKnownVariants, median, isReliable, mulberry32, hashSeed } from "./lab-engine.mjs";
+import { CLASSES, classById, fitClass, classifyGrowth, judge, judgeSpaceUpper, matchKnownVariants, median, isReliable, mulberry32, hashSeed } from "./lab-engine.mjs";
 import { PROBLEMS, buildPlan, TIERS } from "./lab-config.mjs";
 
 let n = 0;
@@ -308,6 +308,28 @@ ok(CLASSES.length === 6, "fitted model set mirrors the polynomial whitelist");
   ok(wat.clean.upper === "O(n)" && wat.optimized.upper === "O(n)", "baked corpus: WAT clean and optimized both declare O(n)");
   const js = p.languages.javascript.complexity;
   ok(js.clean.upper === "O(n)" && js.optimized.upper === "O(n)", "baked corpus: JS (via the default fallback, no per-language override) declares O(n) for clean/optimized");
+}
+
+// --- L4: judgeSpaceUpper -- space is upper-only, O(1)-dominant. The O(1)
+// path is a pure flatness test (bHat would eat the whole constant of a
+// flat curve; confirmed directly before this path existed); O(n)+ uses the
+// bHat-corrected classifier. Numbers below include the real i8080 fib
+// workspace measured against web/retro/cpu8080.mjs: O(1) fib = [2,2,2,2];
+// the same fib made to push each value = [8,14,26,50] (2n+2). --------
+{
+  const dt = TIERS.det.tol, ns = [3, 6, 12, 24];
+  let v = judgeSpaceUpper(ns, [2, 2, 2, 2], "O(1)", dt);
+  ok(v.verdict === "consistent", "flat O(1) space is consistent (the bHat-eats-flat regression this path exists for)");
+  v = judgeSpaceUpper(ns, [8, 14, 26, 50], "O(1)", dt);
+  ok(v.verdict === "refuted", "real O(n) i8080 workspace [8,14,26,50] REFUTES declared O(1)");
+  v = judgeSpaceUpper(ns, [6, 12, 24, 48], "O(1)", dt);
+  ok(v.verdict === "refuted", "clean linear space refutes O(1)");
+  v = judgeSpaceUpper(ns, [20, 26, 38, 62], "O(n)", dt);
+  ok(v.verdict === "consistent", "O(n) space with a fixed baseline is consistent (bHat corrects the baseline)");
+  v = judgeSpaceUpper([8, 16, 32, 64], [64, 256, 1024, 4096], "O(n)", dt);
+  ok(v.verdict === "refuted", "quadratic space refutes declared O(n)");
+  v = judgeSpaceUpper([8, 16, 32, 64], [64, 256, 1024, 4096], "O(n^2)", dt);
+  ok(v.verdict === "consistent", "quadratic space is consistent with O(n^2)");
 }
 
 console.log(`lab-engine battery: ${n}/${n} passed`);
