@@ -124,6 +124,13 @@ function algoProblems() {
         "json.hpp": read(join(ld, "json.hpp")),
         "solution.hpp": read(join(ld, "solution.hpp")),
       };
+      // C# compiles the real CLI Harness.cs + ISolution.cs in-browser (via the
+      // vendored .NET-wasm + Roslyn runner), so bake those invariant support
+      // files alongside the per-variant sources -- same idea as C/C++ above.
+      if (lang === "csharp") languages[lang].support = {
+        "Harness.cs": read(join(ld, "Harness.cs")),
+        "ISolution.cs": read(join(ld, "ISolution.cs")),
+      };
     }
     return { id, track: "algorithm", ...manifestMeta(dir), title: title(md), statement: md,
              cases: JSON.parse(read(join(dir, "test_cases.json"))), languages };

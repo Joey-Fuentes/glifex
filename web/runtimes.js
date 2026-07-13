@@ -568,6 +568,67 @@ const Runtimes = (() => {
     };
   }
 
+  // -- C#: vendored .NET-wasm + Roslyn, compiling the real CLI harness in-browser
+  // Runs on the MAIN THREAD. The .NET-wasm runtime's dotnet.create() does not
+  // complete inside a dedicated Web Worker (module OR classic): the emscripten
+  // glue keys its environment off `typeof window`, and dotnet.create() hangs
+  // during native init in a worker (confirmed via trace across both worker types
+  // -- all assets 200, create() never resolves). On the main thread window is
+  // present (ENVIRONMENT_IS_WEB), which is the standard, working boot path.
+  // Cost: compile/run briefly blocks the UI. Moving it back off-thread (e.g. a
+  // window-shim, or a future runtime that supports workers) is a follow-up.
+  // Single-threaded (the runner disables Roslyn concurrency), so no COI needed.
+  async function loadCsharp() {
+    if (!(await vendored("csharp"))) return null;
+    let exportsPromise = null;
+    function getExports() {
+      if (exportsPromise) return exportsPromise;
+      exportsPromise = (async () => {
+        const mod = await import("./vendor/csharp/dotnet.js");
+        const api = await mod.dotnet.create();
+        const cfg = api.getConfig();
+        return api.getAssemblyExports(cfg.mainAssemblyName);
+      })().catch((e) => { exportsPromise = null; throw e; });
+      return exportsPromise;
+    }
+    return {
+      async run(source, cases, lang) {
+        try {
+          const exports = await getExports();
+          const support = (lang && lang.support) || {};
+          const files = {
+            "Harness.cs": support["Harness.cs"] || "",
+            "ISolution.cs": support["ISolution.cs"] || "",
+            "Practice.cs": source || "",
+          };
+          const list = cases || [];
+          const t0 = performance.now();
+          const out = String(exports.Runner.Run(JSON.stringify(files), JSON.stringify(list), "practice") || "");
+          const dt = performance.now() - t0;
+          if (out.startsWith("GLIFEX_COMPILE_ERROR"))
+            return { error: "C# compile error:\n" + out.slice(20).trim().slice(0, 800) };
+          if (out.startsWith("GLIFEX_RUNTIME_ERROR"))
+            return { error: "C# runtime error:\n" + out.slice(20).trim().slice(0, 800) };
+          const byI = new Map();
+          for (const line of out.split("\n")) {
+            const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
+            if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
+          }
+          if (byI.size === 0) return { error: "no case results from C# harness:\n" + out.trim().slice(0, 600) };
+          const results = list.map((c, i) => {
+            const r = byI.get(i);
+            if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
+            if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected, tNs: null };
+            return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected, tNs: null };
+          });
+          return { results, nsPerCase: list.length ? (dt * 1e6) / list.length : 0 };
+        } catch (e) {
+          return { error: String((e && e.message) || e) };
+        }
+      },
+    };
+  }
+
   // -- Retro assembly tracks: customasm.wasm assembles, first-party cores run --
   // One generic loader, per-ISA config (RETRO-CONTRACT: factored at n=3 cores).
   // Assemble ABI (raw wasm string-passing) proven from customasm web/main.js.
@@ -637,7 +698,7 @@ const Runtimes = (() => {
     entry: 0x0100, inAddr: 0xC000, outAddr: 0xC010, maxSteps: 400000, haltName: "HLT",
     initSp: 0xF000, clockHz: 2000000,   // T-states / 2.000 MHz (original 8080; ROM-validated table)
   });
-  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
+  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed

@@ -12,7 +12,7 @@ java        = { variants = ["practice", "clean", "optimized"] }
 kotlin      = { variants = ["practice", "clean", "optimized"] }
 swift       = { variants = ["practice", "clean", "optimized"] }
 ruby        = { variants = ["practice", "brute-force", "clean", "optimized"] }
-csharp      = { variants = ["practice", "clean", "optimized"] }
+csharp      = { variants = ["practice", "brute-force", "clean", "optimized"] }
 cpp         = { variants = ["practice", "brute-force", "clean", "optimized"] }
 c           = { variants = ["practice", "brute-force", "clean", "optimized"] }
 rust        = { variants = ["practice", "clean", "optimized"] }
@@ -79,3 +79,8 @@ notes = "open-addressing hash table in linear memory, fused lookup+insert loop, 
 time = "O(n)"
 space = "O(n)"
 notes = "a different hash-table design from clean.wat, not just a micro-optimized copy -- generation counter instead of an explicit clear, 2048 slots (headroom above clean.wat's exact-fit 1024) -- measured ~15-20% faster across multiple interleaved timing rounds, see optimized.wat's header comment"
+
+[complexity.csharp.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop baseline -- the pedagogical starting point clean/optimized improve on"

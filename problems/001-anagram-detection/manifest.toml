@@ -12,7 +12,7 @@ java        = { variants = ["practice", "clean", "optimized"] }
 kotlin      = { variants = ["practice", "clean", "optimized"] }
 swift       = { variants = ["practice", "clean", "optimized"] }
 ruby        = { variants = ["practice", "clean", "optimized"] }
-csharp      = { variants = ["practice", "clean", "optimized"] }
+csharp      = { variants = ["practice", "brute-force", "clean", "optimized"] }
 cpp         = { variants = ["practice", "clean", "optimized"] }
 c           = { variants = ["practice", "clean", "optimized"] }
 rust        = { variants = ["practice", "clean", "optimized"] }
@@ -46,3 +46,8 @@ notes = "asm practice already uses the counting table"
 [complexity.asm-arm64.practice]
 time = "O(n)"
 space = "O(1)"
+
+[complexity.csharp.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "per-character count comparison -- the obvious baseline clean/optimized improve on"

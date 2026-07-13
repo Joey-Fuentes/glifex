@@ -1,0 +1,28 @@
+<!-- Glifex C# browser runtime project. Publishes to an AppBundle whose
+     _framework/ is vendored (deploy-time, gitignored) into web/vendor/csharp/,
+     exactly like C/C++ are vendored in pages.yml. Flags below are the ones the
+     csharp-bootstrap spike proved necessary. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <!-- No culture data needed (JSON compare); drops the ICU .dat files. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- [JSExport] marshalling generates unsafe code (SYSLIB1075). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- We compile + load assemblies at runtime; trimming (IL2026) would strip
+         types the dynamically-built code needs. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <!-- Single-threaded: Roslyn runs with WithConcurrentBuild(false), so no
+         SharedArrayBuffer / cross-origin isolation is required. -->
+    <WasmEnableThreads>false</WasmEnableThreads>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.*" />
+    <!-- Byte-image reference assemblies: a.Location is empty in wasm, so Roslyn
+         gets references as bytes, not file paths. Net90 compiles fine on the
+         net10 runtime for BCL surface; revisit if a net10 ref package is wanted. -->
+    <PackageReference Include="Basic.Reference.Assemblies.Net90" Version="*" />
+  </ItemGroup>
+</Project>

@@ -19,6 +19,9 @@ enabled via `node web/fetch-runtimes.mjs`.
 | customasm | latest | 6502 assembler compiled to WASM (in-browser assembly) | Apache-2.0 |
 | customasm std 6502 ruledef | 0.14.1 | 6502 instruction set, vendored at web/retro/6502.ruledef.asm (assembles plain mnemonics) | Apache-2.0 |
 | customasm std sm83 ruledef | 0.14.1 | SM83 (Game Boy) instruction set, vendored at web/retro/sm83.ruledef.asm (patched: upstream ADD HL,r16 rule bug) | Apache-2.0 |
+| .NET runtime (browser-wasm) | 10.0 | C# runtime executed in-browser for the C# track (Bx-5), vendored at web/vendor/csharp/ via `dotnet publish` | MIT |
+| Roslyn (Microsoft.CodeAnalysis.CSharp) | 4.x | in-browser C# compiler for the C# track (Bx-5), shipped inside the vendored .NET-wasm bundle | MIT |
+| Basic.Reference.Assemblies.Net90 | latest | byte-image BCL reference assemblies Roslyn compiles against in wasm (a.Location is empty there) | MIT |
 
 Each project's full license text ships alongside its vendored files under
 `web/vendor/<name>/` once distributed. Nothing else on glifex.dev embeds

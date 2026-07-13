@@ -36,11 +36,13 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v6
         with: { node-version: "24" }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "10.0.x" }
       - name: Restore vendored runtimes cache (production, keeps CodeMirror)
         uses: actions/cache@v6
         with:
           path: web/vendor
-          key: vendor-v1-pages-${{ hashFiles('web/fetch-runtimes.mjs') }}
+          key: vendor-v2-pages-${{ hashFiles('web/fetch-runtimes.mjs') }}
       - name: Vendor WASM runtimes
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
@@ -72,6 +74,19 @@ jobs:
           echo '{"runtime":"cpp","via":"binji-wasm-clang","clang":"8.0.1","std":"c++17"}' > web/vendor/cpp/manifest.json
           ls -la web/vendor/cpp
           test "$(stat -c%s web/vendor/cpp/clang)" -gt 1000000 || { echo "clang too small (LFS pointer?)"; exit 1; }
+      - name: Vendor C# runtime (.NET-wasm + Roslyn via dotnet publish)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          dotnet workload install wasm-tools
+          dotnet publish web/csharp-runtime/runner.csproj -c Release -o /tmp/cspub >/dev/null
+          DJS=$(find web/csharp-runtime -path '*/AppBundle/*' -name dotnet.js 2>/dev/null | head -1 || true)
+          test -n "$DJS" || { echo "AppBundle dotnet.js not found after publish"; exit 1; }
+          FW=$(dirname "$DJS")
+          mkdir -p web/vendor/csharp
+          cp -r "$FW"/. web/vendor/csharp/
+          echo '{"runtime":"csharp","via":"dotnet-wasm+roslyn","dotnet":"10.0"}' > web/vendor/csharp/manifest.json
+          ls -la web/vendor/csharp | head
+          test "$(stat -c%s web/vendor/csharp/dotnet.native.wasm)" -gt 1000000 || { echo "dotnet.native.wasm too small (publish failed?)"; exit 1; }
       - name: Mark vendor complete (cached for future runs)
         run: touch web/vendor/.vendor-complete
       - run: node web/build.mjs
