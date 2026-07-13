@@ -1,6 +1,8 @@
 // Generated harness — do not edit. Reads ../test_cases.json, dispatches on variant.
 mod json;
 mod practice;
+#[path = "brute-force.rs"]
+mod brute_force;
 mod clean;
 mod optimized;
 
@@ -16,6 +18,7 @@ fn main() {
     let cases = cases.as_arr();
     let f: fn(&JVal) -> JVal = match variant {
         "practice" => practice::solve,
+        "brute-force" => brute_force::solve,
         "clean" => clean::solve,
         _ => optimized::solve,
     };

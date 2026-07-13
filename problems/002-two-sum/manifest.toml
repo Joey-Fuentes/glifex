@@ -15,7 +15,7 @@ ruby        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 csharp      = { variants = ["practice", "brute-force", "clean", "optimized"] }
 cpp         = { variants = ["practice", "brute-force", "clean", "optimized"] }
 c           = { variants = ["practice", "brute-force", "clean", "optimized"] }
-rust        = { variants = ["practice", "clean", "optimized"] }
+rust        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 php         = { variants = ["practice", "brute-force", "clean", "optimized"] }
 dart        = { variants = ["practice", "clean", "optimized"] }
 zig         = { variants = ["practice", "clean", "optimized"] }
@@ -84,3 +84,8 @@ notes = "a different hash-table design from clean.wat, not just a micro-optimize
 time = "O(n^2)"
 space = "O(1)"
 notes = "nested-loop baseline -- the pedagogical starting point clean/optimized improve on"
+
+[complexity.rust.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop over every pair -- the O(n^2) baseline"

@@ -15,7 +15,7 @@ ruby        = { variants = ["practice", "clean", "optimized"] }
 csharp      = { variants = ["practice", "brute-force", "clean", "optimized"] }
 cpp         = { variants = ["practice", "clean", "optimized"] }
 c           = { variants = ["practice", "clean", "optimized"] }
-rust        = { variants = ["practice", "clean", "optimized"] }
+rust        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 php         = { variants = ["practice", "clean", "optimized"] }
 dart        = { variants = ["practice", "clean", "optimized"] }
 zig         = { variants = ["practice", "clean", "optimized"] }
@@ -51,3 +51,8 @@ space = "O(1)"
 time = "O(n^2)"
 space = "O(1)"
 notes = "per-character count comparison -- the obvious baseline clean/optimized improve on"
+
+[complexity.rust.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "per-char count compare -- the naive O(n^2) baseline"
