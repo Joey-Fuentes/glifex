@@ -191,6 +191,33 @@ for (const [lang, spec] of Object.entries(RUNTIMES)) {
   }
 }
 
+// Lab space measurement: php-wasm exposes no memory accounting (memory_get_usage
+// and friends return 0 in this build), so the Lab measures PHP auxiliary space by
+// snapshotting the interpreter's WASM linear memory before/after a solve (see
+// web/php-worker.js measurePhpSpace). That needs the memory's ArrayBuffer, which
+// Emscripten keeps module-internal -- expose it with a one-line, idempotent patch
+// to the fetched es.js. Re-applied on every fetch so re-vendoring keeps it; if the
+// php-wasm build changes shape and the needle is gone, PHP space just goes dark.
+{
+  const { readFile } = await import("node:fs/promises");
+  const esPath = join(VENDOR, "php", "es.js");
+  const NEEDLE = "Module.HEAPU8=HEAPU8=new Uint8Array(e)";
+  try {
+    let es = await readFile(esPath, "utf8");
+    if (es.includes("self.__phpBuf")) {
+      console.log("  php es.js: __phpBuf already exposed (skip)");
+    } else if (es.includes(NEEDLE)) {
+      es = es.replace(NEEDLE, NEEDLE + ",self.__phpBuf=e");
+      await writeFile(esPath, es);
+      console.log("  \u2713 php es.js: exposed __phpBuf for Lab space measurement");
+    } else {
+      console.log("  \u2717 php es.js: buffer needle not found (build changed?) -- Lab PHP space disabled");
+    }
+  } catch (e) {
+    console.log("  \u2717 php es.js space-patch skipped:", e.message);
+  }
+}
+
 await writeFile(join(VENDOR, "VERSIONS.json"), JSON.stringify(summary, null, 2));
 console.log(`\n${failed ? "INCOMPLETE — see ✗ lines above" : "Done"}. web/vendor/VERSIONS.json records what shipped (use it to amend THIRD_PARTY_NOTICES.md).`);
 process.exit(failed ? 1 : 0);

@@ -97,19 +97,7 @@ async function runPhp(PhpWeb, source, cases) {
     "    } else {\n" +
     "      $__tval = (int)round($__dt * 1e9);\n" +
     "    }\n" +
-    // L4 EXACT heap: per-case peak workspace, IF the runtime exposes memory
-    // accounting. Note: some php-wasm builds stub memory_get_peak_usage to 0 --
-    // in that case we emit null (honest: no false 0) rather than a misleading
-    // reading. PHP stack depth needs xdebug (absent), so no spaceStack.
-    "    $__sp = null;\n" +
-    "    if (function_exists('memory_reset_peak_usage')) {\n" +
-    "      memory_reset_peak_usage();\n" +
-    "      $__b = memory_get_usage();\n" +
-    "      solve($__c['input']);\n" +
-    "      $__pk = memory_get_peak_usage();\n" +
-    "      if ($__pk > 0) { $__sp = $__pk - $__b; if ($__sp < 0) { $__sp = 0; } }\n" +
-    "    }\n" +
-    "    $__o[] = ['i' => $__i, 'got' => $__got, 't' => $__tval, 'sp' => $__sp];\n" +
+    "    $__o[] = ['i' => $__i, 'got' => $__got, 't' => $__tval];\n" +
     "  }\n" +
     "  catch (\\Throwable $__e) { $__o[] = ['i' => $__i, 'err' => $__e->getMessage()]; }\n" +
     "}\n" +
@@ -134,10 +122,49 @@ async function runPhp(PhpWeb, source, cases) {
     const r = byI.get(i);
     if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
     if ("err" in r) return { i, ok: false, error: String(r.err), expected: c.expected };
-    return { i, ok: eq(r.got, c.expected), got: r.got, expected: c.expected, tNs: r.t != null && r.t > 0 ? r.t : null, space: (r.sp != null && r.sp >= 0) ? r.sp : undefined };
+    return { i, ok: eq(r.got, c.expected), got: r.got, expected: c.expected, tNs: r.t != null && r.t > 0 ? r.t : null };
   });
   const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
+  // L4 APPROXIMATE heap: php-wasm exposes no memory accounting, so measure the
+  // interpreter's WASM linear memory directly. self.__phpBuf is the memory's
+  // ArrayBuffer, exposed by a one-line patch in the vendored es.js. solve is
+  // already defined in this instance (persists across php.run), so per case we
+  // snapshot the low heap, run one solve, and count changed 32-bit words. That's
+  // allocation VOLUME plus a ~constant engine baseline (not a true peak, hence
+  // approximate: it won't separate O(1)-peak from O(n)-volume for iteration-heavy
+  // code), but it recovers the growth class. Region caps the scan at the low heap
+  // where the working set for these sizes lives; Int32 diff keeps it ~sub-100ms.
+  try {
+    const spaces = await measurePhpSpace(php, cases);
+    if (spaces) results.forEach((r, i) => { if (spaces[i] != null && spaces[i] >= 0) r.space = spaces[i]; });
+    if (spaces) return { results, nsPerCase, spaceApprox: true };
+  } catch (e) { /* space best-effort; timing unaffected */ }
   return { results, nsPerCase };
+}
+
+async function measurePhpSpace(php, cases) {
+  const b0 = self.__phpBuf;
+  if (!b0 || !b0.byteLength) return null;
+  const REGION = Math.min(b0.byteLength, 16 * 1024 * 1024);
+  const W = REGION >> 2;
+  const spaces = [];
+  for (const c of cases) {
+    let changed = null;
+    try {
+      // Pre-decode the input into a persistent global BEFORE snapshotting, so the
+      // O(n) cost of materializing the input isn't counted -- the snapshot then
+      // brackets only solve's own auxiliary workspace.
+      await php.run("<?php $__gx_in = json_decode(base64_decode('" + b64(JSON.stringify(c.input)) + "'), true);");
+      const before = new Int32Array(self.__phpBuf.slice(0, REGION));
+      await php.run("<?php solve($__gx_in);");
+      const after = new Int32Array(self.__phpBuf, 0, W);
+      let ch = 0;
+      for (let i = 0; i < W; i++) if (before[i] !== after[i]) ch++;
+      changed = ch * 4;
+    } catch (e) { changed = null; }
+    spaces.push(changed);
+  }
+  return spaces;
 }
 
 let PhpWebPromise = null;
