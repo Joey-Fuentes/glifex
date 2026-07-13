@@ -4,6 +4,8 @@
 #include <iostream>
 #include <sstream>
 #include <cstdlib>
+#include <cstring>
+#include <new>
 
 Value practice(const Input&);
 Value clean(const Input&);
@@ -14,6 +16,43 @@ Value optimized(const Input&);
 // and is overridden by the strong symbol in brute-force.cpp when present.
 __attribute__((weak)) Value bruteforce(const Input&);
 __attribute__((weak)) Value bruteforce(const Input&) { std::cerr << "brute-force reference not provided\n"; std::exit(2); }
+
+// --- Complexity Lab space measurement (L4) ---
+// binji's allocator segregates large vs small allocations into distant regions of
+// linear memory, so a windowed snapshot-diff misses whichever size class it is not
+// scanning, and a full-memory snapshot cannot fit in a static buffer that itself
+// lives in that memory. Instead we interpose the global operator new/delete -- every
+// STL allocation and make_rc routes through it -- and track a live/peak byte counter.
+// This yields an exact PEAK of concurrent heap bytes (the true auxiliary-space
+// measure, better than an allocation-volume proxy), independent of where the
+// allocator places blocks, of post-free memory state, and of dead-code elimination
+// (a user-defined operator new is a replaceable function the compiler may not elide).
+// STACK is a bounded poison-scan below the current frame. Both validated live.
+static long __gx_live = 0, __gx_peak = 0;
+void* operator new(std::size_t n) {
+    unsigned char* p = (unsigned char*)std::malloc(n + 16);
+    *(std::size_t*)p = n;
+    __gx_live += (long)n; if (__gx_live > __gx_peak) __gx_peak = __gx_live;
+    return p + 16;
+}
+void operator delete(void* p) noexcept {
+    if (!p) return; unsigned char* q = (unsigned char*)p - 16;
+    __gx_live -= (long)*(std::size_t*)q; std::free(q);
+}
+void operator delete(void* p, std::size_t) noexcept { ::operator delete(p); }
+void* operator new[](std::size_t n) { return ::operator new(n); }
+void operator delete[](void* p) noexcept { ::operator delete(p); }
+void operator delete[](void* p, std::size_t) noexcept { ::operator delete(p); }
+static volatile std::size_t __gx_sink = 0;
+template <class F> static long __gx_stack(F&& call) {
+    volatile char probe; char* sp = (char*)&probe;
+    const long WIN = 128 * 1024;              // bounded well inside the 1MB shadow stack
+    std::memset(sp - WIN, 0xA5, WIN - 1024);  // leave a 1KB guard just below sp
+    call();
+    for (long i = 0; i < WIN - 1024; i++)
+        if ((unsigned char)(sp - WIN)[i] != 0xA5) return (WIN - 1024) - i;
+    return 0;
+}
 
 int main(int argc, char** argv) {
     std::string variant = argc > 1 ? argv[1] : "practice";
@@ -48,6 +87,13 @@ int main(int argc, char** argv) {
         std::cout << "[CASE-BEGIN] case " << i << "\n" << std::flush;
         std::string got = dispatch(*c->obj["input"])->dump();
         if (metrics) {
+            // L4 space: peak concurrent heap bytes via the interposed operator new
+            // (bracket the solve with a peak reset), plus a bounded stack poison-scan.
+            long __hbase = __gx_live; __gx_peak = __gx_live;
+            __gx_sink ^= dispatch(*c->obj["input"])->dump().size();
+            long __gxh = __gx_peak - __hbase;
+            long __gxs = __gx_stack([&] { __gx_sink ^= dispatch(*c->obj["input"])->dump().size(); });
+            std::cout << "  [SPACE] case " << i << " heap=" << __gxh << " stack=" << __gxs << "\n";
             // Complexity Lab: per-case cost, adaptively repeated past the
             // clock grain (solve is pure by the corpus contract). The result
             // feeds the PASS/FAIL diff above, so -O2 cannot dead-code it.

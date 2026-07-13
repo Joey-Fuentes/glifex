@@ -249,6 +249,7 @@ const GlifexLab = (() => {
 
     const repRows = [];
     let workerSpaceApprox = false;   // a runtime can declare its space metric approximate (e.g. Ruby: allocation volume, not a true peak)
+    let workerSpaceApproxKind = null;   // and characterise it: 'peak' (C++ operator-new high-water) vs the default volume proxy
     const repDurations = [];      // wall time for the WHOLE runOnce() call, one entry per rep
     let detMeta = null;
     const maxRetries = (C.LANG_OVERRIDES[lang] && C.LANG_OVERRIDES[lang].retryOnError) || 0;
@@ -268,6 +269,7 @@ const GlifexLab = (() => {
       if (out.error) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${esc(out.error)}</div>`));
       if (out.clockHz) detMeta = { clockHz: out.clockHz };
       if (out.spaceApprox) workerSpaceApprox = true;
+      if (out.spaceApproxKind) workerSpaceApproxKind = out.spaceApproxKind;
       const cErr = correctnessError(out.results);
       if (cErr) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${cErr}</div>`));
       repRows.push(out.results);
@@ -332,6 +334,7 @@ const GlifexLab = (() => {
       if (out.error) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${esc(out.error)}</div>`));
       if (out.clockHz) detMeta = { clockHz: out.clockHz };
       if (out.spaceApprox) workerSpaceApprox = true;
+      if (out.spaceApproxKind) workerSpaceApproxKind = out.spaceApproxKind;
       const cErr = correctnessError(out.results);
       if (cErr) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${cErr}</div>`));
       repRows[r] = out.results;
@@ -421,7 +424,7 @@ const GlifexLab = (() => {
       }
       const spaceStackJ = (declaredSpace && spaceStackSeries.ns.length >= 2)
         ? E.judgeSpaceUpper(spaceStackSeries.ns, spaceStackSeries.ys, declaredSpace, tier.tol) : null;
-      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, spaceStackSeries, spaceStackJ, declaredSpace, spaceApprox: jsLike || workerSpaceApprox, spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
+      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, spaceStackSeries, spaceStackJ, declaredSpace, spaceApprox: jsLike || workerSpaceApprox, spaceApproxKind: workerSpaceApproxKind, spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
       if (boundMode === "empirical-match") {
         const variantBounds = {};
         for (const [variant, b] of Object.entries(langComplexity)) {
@@ -726,7 +729,7 @@ const GlifexLab = (() => {
     }
     g += `<text x="${(L + W - R) / 2}" y="${H - 5}" text-anchor="middle" fill="#8b949e" font-size="10">${esc(cfg.sizeLabel)} (log)</text>`;
     g += `<text x="13" y="${(T + H - B) / 2}" fill="#8b949e" font-size="10" transform="rotate(-90 13 ${(T + H - B) / 2})" text-anchor="middle">${_sy.length ? "heap bytes &middot; stack depth" : "bytes / case"} (log)</text>`;
-    const legend = `<span class="lab-k" style="background:${col}"></span>${X.spaceProbeVariant ? esc(X.spaceProbeVariant) + " ref peak workspace <em>(approx)</em>" : (X.spaceApprox ? "allocation volume <em>(approx)</em>" : "heap workspace")}${_sy.length ? ` <span class="lab-k" style="background:#d2a8ff"></span>stack (max recursion depth)` : ""} <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
+    const legend = `<span class="lab-k" style="background:${col}"></span>${X.spaceProbeVariant ? esc(X.spaceProbeVariant) + " ref peak workspace <em>(approx)</em>" : (X.spaceApprox ? ((X.spaceApproxKind === "peak" ? "peak heap" : "allocation volume") + " <em>(approx)</em>") : "heap workspace")}${_sy.length ? ` <span class="lab-k" style="background:#d2a8ff"></span>stack (max recursion depth)` : ""} <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
     return `<figure class="lab-fig"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="space growth chart" font-family="var(--mono)">${g}</svg><figcaption>${legend}</figcaption></figure>`;
   }
 
@@ -749,7 +752,9 @@ const GlifexLab = (() => {
     h += X.spaceApprox
       ? (X.spaceProbeVariant
           ? `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate &mdash; and it measures the revealed ${esc(X.spaceProbeVariant)} reference solution's PEAK workspace, not your typed code.</b> The reference is run instrumented, sampling <code>performance.measureUserAgentSpecificMemory()</code> at its allocation high-water (a churn forces the GC the API waits on). Unlike the retro tracks' exact per-cell metric this is a whole-heap, GC-timed, quantized proxy with a ~64KB resolution floor (hence the large sizes), so treat a &ldquo;refuted&rdquo; as a prompt to look closer &mdash; not proof. Roadmap L4 tracks making it exact.</p>`
-          : `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate &mdash; allocation volume, not peak.</b> This counts objects allocated during solve (the runtime exposes no true peak-workspace counter), which is an upper bound on peak: iteration-heavy code that allocates transient objects can read O(n) even when its persistent workspace is O(1). Treat a &ldquo;refuted&rdquo; as a prompt to look closer &mdash; not proof.</p>`)
+          : (X.spaceApproxKind === "peak"
+          ? `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate &mdash; peak heap workspace.</b> Measured by interposing the global <code>operator new</code>/<code>delete</code> and tracking the high-water of concurrently-live bytes &mdash; a true peak (deterministic, no clock), exact for STL and <code>new</code> allocations. It excludes raw <code>malloc</code>, <code>alloca</code>, and other stack buffers; the stack line covers recursion depth separately. Treat a &ldquo;refuted&rdquo; as a prompt to look closer &mdash; not proof.</p>`
+          : `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate &mdash; allocation volume, not peak.</b> This counts objects allocated during solve (the runtime exposes no true peak-workspace counter), which is an upper bound on peak: iteration-heavy code that allocates transient objects can read O(n) even when its persistent workspace is O(1). Treat a &ldquo;refuted&rdquo; as a prompt to look closer &mdash; not proof.</p>`))
       : `</table></div><p class="lab-note">Workspace = distinct bytes written outside the program image, measured exactly (deterministic; no clock). Judged the same way as time &mdash; refute, never prove. A flat curve is consistent with O(1); growth above the declared class refutes it.</p>`;
     if (X.spaceStackSeries && X.spaceStackSeries.ns.length >= 2) {
       const sn = X.spaceStackSeries.ns, sy = X.spaceStackSeries.ys;
