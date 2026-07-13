@@ -405,7 +405,20 @@ const GlifexLab = (() => {
       }
       const spaceJ = (declaredSpace && spaceSeries.ns.length >= 2)
         ? E.judgeSpaceUpper(spaceSeries.ns, spaceSeries.ys, declaredSpace, tier.tol) : null;
-      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, declaredSpace, spaceApprox: jsLike, spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
+      // L4 STACK: a parallel recursion-depth series from tracks that report it
+      // (Python via settrace; row.spaceStack). Judged against the SAME declared
+      // space bound -- total auxiliary space is max(heap, stack), so either
+      // component growing past the declared class refutes it. jsLike probes carry
+      // no stack (measured as their heap high-water only), so this stays empty there.
+      const spaceStackSeries = { ns: [], ys: [] };
+      if (!jsProbe) {
+        const stackBy = {};
+        for (let i = 0; i < plan.length; i++) if (repRows[0][i] && repRows[0][i].spaceStack != null) stackBy[plan[i].mode + ":" + plan[i].n] = repRows[0][i].spaceStack;
+        for (const n of modes[cfg.roles.upper].ns) { const v = stackBy[cfg.roles.upper + ":" + n]; if (v != null) { spaceStackSeries.ns.push(n); spaceStackSeries.ys.push(v); } }
+      }
+      const spaceStackJ = (declaredSpace && spaceStackSeries.ns.length >= 2)
+        ? E.judgeSpaceUpper(spaceStackSeries.ns, spaceStackSeries.ys, declaredSpace, tier.tol) : null;
+      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, spaceStackSeries, spaceStackJ, declaredSpace, spaceApprox: jsLike, spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
       if (boundMode === "empirical-match") {
         const variantBounds = {};
         for (const [variant, b] of Object.entries(langComplexity)) {
@@ -521,12 +534,20 @@ const GlifexLab = (() => {
     // refute-only doctrine, same as time. The [space] tag disambiguates it
     // from the time upper/lower lines.
     if (X.spaceJ) {
-      const sv = X.spaceJ, sd = sv.declared;
+      const sv = X.spaceJ, sd = sv.declared, tag = X.spaceStackJ ? "heap" : "space";
       html += sv.verdict === "refuted"
-        ? vline("bad", `&#10007; <b>[space]</b> ${sd} REFUTED &mdash; workspace grows faster than declared on the &ldquo;${esc(modeLabel(cfg, cfg.roles.upper))}&rdquo; family (measured tracks ${sv.closest}).`)
+        ? vline("bad", `&#10007; <b>[${tag}]</b> ${sd} REFUTED &mdash; workspace grows faster than declared on the &ldquo;${esc(modeLabel(cfg, cfg.roles.upper))}&rdquo; family (measured tracks ${sv.closest}).`)
         : sv.verdict === "consistent"
-          ? vline("ok", `&#10003; <b>[space]</b> ${sd}: consistent on the &ldquo;${esc(modeLabel(cfg, cfg.roles.upper))}&rdquo; family &mdash; this run failed to refute it.`)
-          : vline("ok", `&#10003; <b>[space]</b> ${sd} holds, but is not tight (workspace grows as ${sv.closest}).`);
+          ? vline("ok", `&#10003; <b>[${tag}]</b> ${sd}: consistent on the &ldquo;${esc(modeLabel(cfg, cfg.roles.upper))}&rdquo; family &mdash; this run failed to refute it.`)
+          : vline("ok", `&#10003; <b>[${tag}]</b> ${sd} holds, but is not tight (workspace grows as ${sv.closest}).`);
+    }
+    if (X.spaceStackJ) {
+      const sv = X.spaceStackJ;
+      html += sv.verdict === "refuted"
+        ? vline("bad", `&#10007; <b>[stack]</b> ${sv.declared} REFUTED &mdash; recursion depth grows faster than declared (measured tracks ${sv.closest}).`)
+        : sv.verdict === "consistent"
+          ? vline("ok", `&#10003; <b>[stack]</b> ${sv.declared}: consistent &mdash; recursion depth failed to refute it.`)
+          : vline("ok", `&#10003; <b>[stack]</b> ${sv.declared} holds, but is not tight (recursion depth grows as ${sv.closest}).`);
     }
     if (cfg.note) html += `<p class="lab-note">${esc(cfg.note)}</p>`;
     if (totalRetries > 0) html += `<p class="lab-note">Note: ${totalRetries} runtime error${totalRetries === 1 ? "" : "s"} occurred and ${totalRetries === 1 ? "was" : "were"} retried before this result completed (a known, intermittent runtime instability -- see docs/ROADMAP.md's Bx-3 entry). The result below reflects only successful runs.</p>`;
@@ -670,7 +691,9 @@ const GlifexLab = (() => {
     const ns = X.spaceSeries.ns, ys = X.spaceSeries.ys;
     const W = 640, H = 320, L = 64, R = 12, T = 14, B = 40; const lx = Math.log10;
     const x0 = lx(Math.min(...ns)), x1 = lx(Math.max(...ns));
-    const y0 = lx(Math.max(Math.min(...ys), 1e-9)) - 0.15, y1 = lx(Math.max(...ys)) + 0.15;
+    const _sy = (X.spaceStackSeries && X.spaceStackSeries.ys.length) ? X.spaceStackSeries.ys : [];
+    const _allY = ys.concat(_sy);
+    const y0 = lx(Math.max(Math.min(..._allY), 1e-9)) - 0.15, y1 = lx(Math.max(..._allY)) + 0.15;
     const Xc = (n) => L + ((lx(n) - x0) / (x1 - x0 || 1)) * (W - L - R);
     const Yc = (v) => H - B - ((lx(Math.max(v, 1e-9)) - y0) / (y1 - y0 || 1)) * (H - T - B);
     const fmt = (v) => (v >= 1e6 ? (v / 1e6).toPrecision(3) + "M" : v >= 1000 ? (v / 1000).toPrecision(3) + "k" : v.toPrecision(3));
@@ -692,9 +715,15 @@ const GlifexLab = (() => {
     const pts = ns.map((n, i) => Xc(n).toFixed(1) + "," + Yc(ys[i]).toFixed(1));
     g += `<polyline points="${pts.join(" ")}" fill="none" stroke="${col}" stroke-width="1.4" opacity=".75"/>`;
     for (let i = 0; i < pts.length; i++) g += `<circle cx="${pts[i].split(",")[0]}" cy="${pts[i].split(",")[1]}" r="3.6" fill="${col}" stroke="#0d1117" stroke-width="1.4"/>`;
+    if (_sy.length) {
+      const _scol = "#d2a8ff", _sns = X.spaceStackSeries.ns;
+      const _spts = _sns.map((n, i) => Xc(n).toFixed(1) + "," + Yc(_sy[i]).toFixed(1));
+      g += `<polyline points="${_spts.join(" ")}" fill="none" stroke="${_scol}" stroke-width="1.4" opacity=".85" stroke-dasharray="2 2"/>`;
+      for (let i = 0; i < _spts.length; i++) g += `<circle cx="${_spts[i].split(",")[0]}" cy="${_spts[i].split(",")[1]}" r="3" fill="${_scol}" stroke="#0d1117" stroke-width="1.2"/>`;
+    }
     g += `<text x="${(L + W - R) / 2}" y="${H - 5}" text-anchor="middle" fill="#8b949e" font-size="10">${esc(cfg.sizeLabel)} (log)</text>`;
-    g += `<text x="13" y="${(T + H - B) / 2}" fill="#8b949e" font-size="10" transform="rotate(-90 13 ${(T + H - B) / 2})" text-anchor="middle">bytes / case (log)</text>`;
-    const legend = `<span class="lab-k" style="background:${col}"></span>${X.spaceProbeVariant ? esc(X.spaceProbeVariant) + " ref peak workspace <em>(approx)</em>" : (X.spaceApprox ? "retained heap <em>(approx)</em>" : "workspace")} <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
+    g += `<text x="13" y="${(T + H - B) / 2}" fill="#8b949e" font-size="10" transform="rotate(-90 13 ${(T + H - B) / 2})" text-anchor="middle">${_sy.length ? "heap bytes &middot; stack depth" : "bytes / case"} (log)</text>`;
+    const legend = `<span class="lab-k" style="background:${col}"></span>${X.spaceProbeVariant ? esc(X.spaceProbeVariant) + " ref peak workspace <em>(approx)</em>" : (X.spaceApprox ? "retained heap <em>(approx)</em>" : "heap workspace")}${_sy.length ? ` <span class="lab-k" style="background:#d2a8ff"></span>stack (max recursion depth)` : ""} <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
     return `<figure class="lab-fig"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="space growth chart" font-family="var(--mono)">${g}</svg><figcaption>${legend}</figcaption></figure>`;
   }
 
@@ -717,6 +746,22 @@ const GlifexLab = (() => {
     h += X.spaceApprox
       ? `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate &mdash; and it measures the revealed ${X.spaceProbeVariant ? esc(X.spaceProbeVariant) + " " : ""}reference solution's PEAK workspace, not your typed code.</b> The reference is run instrumented, sampling <code>performance.measureUserAgentSpecificMemory()</code> at its allocation high-water (a churn forces the GC the API waits on). Unlike the retro tracks' exact per-cell metric this is a whole-heap, GC-timed, quantized proxy with a ~64KB resolution floor (hence the large sizes), so treat a &ldquo;refuted&rdquo; as a prompt to look closer &mdash; not proof. Roadmap L4 tracks making it exact.</p>`
       : `</table></div><p class="lab-note">Workspace = distinct bytes written outside the program image, measured exactly (deterministic; no clock). Judged the same way as time &mdash; refute, never prove. A flat curve is consistent with O(1); growth above the declared class refutes it.</p>`;
+    if (X.spaceStackSeries && X.spaceStackSeries.ns.length >= 2) {
+      const sn = X.spaceStackSeries.ns, sy = X.spaceStackSeries.ys;
+      h += `<h3 class="lab-sec">Recursion-depth step-ratio (stack)</h3><div class="lab-tablewrap"><table class="lab-table"><tr><th>step</th><th>max depth</th><th>measured &times;</th>${names.map((n) => `<th${n === declared ? ' class="declared"' : ""}>${n === declared ? "declared " : ""}${n} &times;</th>`).join("")}</tr>`;
+      for (let i = 1; i < sn.length; i++) {
+        const meas = sy[i] / sy[i - 1];
+        const measStr = Number.isFinite(meas) ? "&times;" + meas.toFixed(2) : "&mdash;";
+        h += `<tr><td>${sn[i - 1]} &rarr; ${sn[i]}</td><td>${sy[i]}</td><td>${measStr}</td>`;
+        for (const n of names) {
+          const pred = E.classById(n).f(sn[i]) / E.classById(n).f(sn[i - 1]);
+          const close = Number.isFinite(meas) && Math.abs(Math.log(meas / pred)) <= X.tier.tol;
+          h += `<td class="${n === declared ? "declared " : ""}${close ? "hit" : (n === declared ? "miss" : "")}">&times;${pred.toFixed(2)}</td>`;
+        }
+        h += "</tr>";
+      }
+      h += `</table></div><p class="lab-note">Stack = max recursion depth during solve (exact, via the runtime\u2019s trace hook). A flat depth is O(1) stack; depth growing with n is recursion-bound space. Total auxiliary space is the larger of heap and stack.</p>`;
+    }
     return h;
   }
 

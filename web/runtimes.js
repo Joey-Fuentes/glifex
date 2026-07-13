@@ -139,7 +139,7 @@ const Runtimes = (() => {
         } else { tNs = cdt * 1e6; }
         if (sink === caseLoop) console.log(sink); // unreachable; keeps `sink` observably used
         const row = { i, ok: eq(got, cases[i].expected), got, expected: cases[i].expected, tNs };
-        if (spaceOf) { try { const sp = spaceOf(callSolve, cases[i].input); if (sp != null && sp >= 0) row.space = sp; } catch (e) {} }
+        if (spaceOf) { try { const sp = spaceOf(callSolve, cases[i].input); if (sp != null) { if (typeof sp === "number") { if (sp >= 0) row.space = sp; } else { if (sp.heap != null && sp.heap >= 0) row.space = sp.heap; if (sp.stack != null && sp.stack >= 0) row.spaceStack = sp.stack; } } } catch (e) {} }
         results.push(row);
       } catch (e) {
         results.push({ i, ok: false, error: String(e.message || e), expected: cases[i].expected });
