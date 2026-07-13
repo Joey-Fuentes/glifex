@@ -92,7 +92,12 @@ public partial class Runner {
             }
             return sw.ToString();
         } catch (Exception ex) {
-            return "GLIFEX_RUNTIME_ERROR\n" + ex.GetType().Name + ": " + ex.Message;
+            // Unwrap reflection's TargetInvocationException so the REAL error
+            // (type + message) surfaces instead of "Arg_TargetInvocationException".
+            var real = ex;
+            while (real is TargetInvocationException && real.InnerException != null)
+                real = real.InnerException;
+            return "GLIFEX_RUNTIME_ERROR\n" + real.GetType().Name + ": " + real.Message;
         }
     }
 }

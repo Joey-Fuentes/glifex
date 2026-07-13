@@ -163,7 +163,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: web/vendor
-          key: vendor-v2-ci-${{ hashFiles('web/fetch-runtimes.mjs') }}
+          key: vendor-v3-ci-${{ hashFiles('web/fetch-runtimes.mjs') }}
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi

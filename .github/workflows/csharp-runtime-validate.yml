@@ -6,7 +6,7 @@
 name: csharp-runtime-validate
 on:
   push:
-    branches: [feat/bx5-csharp-runtime]
+    branches: [feat/bx5-csharp-runtime, fix/bx5-solve-by-interface]
 
 jobs:
   validate:
