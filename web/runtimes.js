@@ -538,22 +538,27 @@ const Runtimes = (() => {
           return { error: "C++ compile/runtime error:\n" + String(res.error || "").slice(0, 400) + "\n" + String(res.output || "").trim().slice(0, 600) };
         const out = String(res.output || "");
         const byI = new Map(), metricByI = new Map();   // L1-cpp-parse
+        const spaceByI = new Map();   // L4-cpp-space
         for (const line of out.split("\n")) {
           const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
           if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
           const mm = line.match(/\[METRIC\]\s+case\s+(\d+)\s+ns=(\d+)/);
           if (mm) metricByI.set(Number(mm[1]), Number(mm[2]));
+          const ms = line.match(/\[SPACE\]\s+case\s+(\d+)\s+heap=(\d+)\s+stack=(\d+)/);   // L4-cpp-space
+          if (ms) spaceByI.set(Number(ms[1]), { heap: Number(ms[2]), stack: Number(ms[3]) });
         }
         if (byI.size === 0) return { error: "no case results from harness:\n" + out.trim().slice(0, 600) };
         const results = cases.map((c, i) => {
           const r = byI.get(i);
           if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
           const tNs = metricByI.get(i);   // L1-cpp-rows
-          if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected, tNs };
-          return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected, tNs };
+          const sp = spaceByI.get(i);
+          const spx = sp ? { space: sp.heap, spaceStack: sp.stack } : {};
+          if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected, tNs, ...spx };
+          return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected, tNs, ...spx };
         });
         const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
-        return { results, nsPerCase };
+        return { results, nsPerCase, spaceApprox: true, spaceApproxKind: "peak" };
       },
     };
   }

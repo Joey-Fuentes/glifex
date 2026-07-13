@@ -781,7 +781,12 @@ class API {
         lld, 'wasm-ld', '--no-threads',
         '--export-dynamic',  // TODO required?
         '-z', `stack-size=${stackSize}`, `-L${libdir}`, crt1, obj, '-lc',
-        '-lc++', '-lc++abi', '-lcanvas', '-o', wasm)
+        '-lc++', '-lc++abi', '-lcanvas',
+        // Complexity Lab: binji's default heap is a fixed ~125KB, too small for
+        // real Lab sizes and for the space snapshot buffer. LLVM-8 wasm-ld accepts
+        // these; validated live (125KB -> ~16MB usable).
+        '--initial-memory=33554432', '--max-memory=67108864',
+        '-o', wasm)
   }
 
   async run(module, ...args) {
