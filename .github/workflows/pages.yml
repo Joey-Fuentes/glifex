@@ -42,7 +42,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: web/vendor
-          key: vendor-v2-pages-${{ hashFiles('web/fetch-runtimes.mjs') }}
+          key: vendor-v3-pages-${{ hashFiles('web/fetch-runtimes.mjs') }}
       - name: Vendor WASM runtimes
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi

@@ -25,15 +25,14 @@ test.describe("C# runtime (.NET-wasm + Roslyn)", () => {
     await page.locator('#problem-list li:has-text("Anagram")').click();
     await page.locator("#lang-select").selectOption("csharp");
 
-    // The browser always runs the "practice" slot, which the harness resolves to
-    // class Practice. C# variants are NAMED classes (unlike C's shared bare
-    // `solve`), so rename the clean reference's class to occupy that slot -- the
-    // C# analog of c-smoke's solve-rename strip. This proves a real, shipped
-    // solution compiles and runs, not that the blank practice stub happens to.
+    // Paste the shipped `clean` reference straight in. The harness finds the
+    // solution by ISolution interface (not class name), so any variant's class
+    // runs in the practice slot with no rename -- proving a real solution compiles
+    // and runs, not that the blank practice stub happens to.
     const source = await page.evaluate(async () => {
       const corpus = await (await fetch("problems.generated.json")).json();
       const p = corpus.problems.find((x) => x.id.indexOf("001") === 0);
-      return p.languages.csharp.clean.replace(/class\s+Clean\b/, "class Practice");
+      return p.languages.csharp.clean;   // no rename: harness finds the solution by interface, any class name runs
     });
     await page.locator("#editor").fill(source);
     await page.locator("#run-btn").click();

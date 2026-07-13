@@ -1,7 +1,8 @@
-// Generated harness — do not edit. Reads ../test_cases.json, runs a variant via reflection.
+// Generated harness — do not edit. Reads ../test_cases.json, runs the solution.
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Collections.Generic;
 
@@ -14,11 +15,27 @@ class Harness {
 
     public static int Run(string[] args) {
         string variant = args.Length > 0 ? args[0] : "practice";
-        // variant -> class name: hyphenated variants (brute-force) become PascalCase
-        // (BruteForce), matching the source file's class. Single-word variants are
-        // unchanged (practice -> Practice).
-        string cls = string.Concat(variant.Split('-').Select(p => char.ToUpper(p[0]) + p.Substring(1)));
-        var sol = (ISolution)Activator.CreateInstance(Type.GetType(cls));
+        // Find the solution by INTERFACE, not by class name. Every variant exposes
+        // the same entry point (ISolution.Solve), matching the problem statement's
+        // solve(...). In the browser only ONE ISolution class is compiled (the
+        // editor / "practice" slot), so we run whatever it is named -- paste any
+        // variant with no rename. In the CLI all variant files compile together, so
+        // several ISolution types exist: pick the one matching the variant arg.
+        var sols = Assembly.GetExecutingAssembly().GetTypes()
+            .Where(t => typeof(ISolution).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)
+            .ToList();
+        Type chosen;
+        if (sols.Count <= 1) {
+            chosen = sols.FirstOrDefault();
+        } else {
+            string cls = string.Concat(variant.Split('-').Select(p => char.ToUpper(p[0]) + p.Substring(1)));
+            chosen = sols.FirstOrDefault(t => t.Name == cls) ?? sols[0];
+        }
+        if (chosen == null) {
+            Console.WriteLine("error: no class implementing ISolution found");
+            return 1;
+        }
+        var sol = (ISolution)Activator.CreateInstance(chosen);
         var raw = File.ReadAllText(Path.Combine("..", "test_cases.json"));
         var cases = JsonSerializer.Deserialize<List<JsonElement>>(raw);
         int passed = 0;
