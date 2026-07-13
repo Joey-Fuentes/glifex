@@ -35,6 +35,13 @@ static char *read_file(const char *path) {
     return buf;
 }
 
+#ifdef __wasm__
+/* L4 space: counters DEFINED here; the -include'd gx_prelude.h declares them
+   extern and routes every allocation through the tracking wrappers. */
+long __gx_live = 0, __gx_peak = 0;
+static volatile size_t __gx_sink = 0;
+#endif
+
 int main(int argc, char **argv) {
     printf("[MAIN-START]\n"); fflush(stdout);
     const char *variant = argc > 1 ? argv[1] : "practice";
@@ -71,6 +78,35 @@ int main(int argc, char **argv) {
         printf("[CASE-BEGIN] case %d\n", i); fflush(stdout);
         char *got = jdumps(fn(in));
         if (metrics) {
+#ifdef __wasm__
+            /* L4 space: peak concurrent heap bytes (bracket the solve with a peak
+               reset; the result pointer is consumed so the call is never elided),
+               plus a bounded stack poison-scan. Gated to the wasm build; native
+               gcc verify never compiles this. */
+            {
+                long __hbase = __gx_live; __gx_peak = __gx_live;
+                JVal *__r = fn(in); __gx_sink ^= (size_t)(void *)__r;
+                long __gxh = __gx_peak - __hbase;
+                long __gxs = 0;
+                {
+                    /* Poison a window BELOW the current frame, run the solve, and see
+                       how deep it was overwritten. Self-bounding: cap the window to
+                       (sp - guard) so it can never underflow past address 0 and trap,
+                       which is what a fixed window did on WASIX's low-placed stack. */
+                    volatile char __probe; char *__sp = (char *)&__probe;
+                    long __win = 96 * 1024;
+                    long __avail = (long)(unsigned long)__sp - 8192;
+                    if (__win > __avail) __win = __avail;
+                    if (__win >= 4096) {
+                        memset(__sp - __win, 0xA5, __win);
+                        JVal *__r2 = fn(in); __gx_sink ^= (size_t)(void *)__r2;
+                        for (long k = 0; k < __win; k++)
+                            if ((unsigned char)(__sp - __win)[k] != 0xA5) { __gxs = __win - k; break; }
+                    }
+                }
+                printf("  [SPACE] case %d heap=%ld stack=%ld\n", i, __gxh, __gxs);
+            }
+#endif
             /* Complexity Lab: per-case cost, adaptively repeated past the
                clock grain (solve is pure by the corpus contract); compile
                and startup are excluded by construction. */

@@ -1,3 +1,4 @@
+const GX_PRELUDE = "#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n/* Glifex L4 C space tracker -- clang -include'd into every TU in the WASM build\n   ONLY (the native gcc reference build never sees this). Interposes the allocator\n   across all translation units so harness.c can measure a solve's peak concurrent\n   heap. Counters are DEFINED once, in harness.c. All headers json.h/solution.h need\n   are pulled in here BEFORE the macros, so no later system include is macro-mangled. */\n#include <ctype.h>\n#include <math.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <time.h>\nextern long __gx_live, __gx_peak;\nstatic inline void *__gx_malloc(size_t n){ unsigned char *p=(unsigned char*)malloc(n+16); if(!p)return 0; *(size_t*)p=n; __gx_live+=(long)n; if(__gx_live>__gx_peak)__gx_peak=__gx_live; return p+16; }\nstatic inline void __gx_free(void *q){ if(!q)return; unsigned char *p=(unsigned char*)q-16; __gx_live-=(long)*(size_t*)p; free(p); }\nstatic inline void *__gx_calloc(size_t a,size_t b){ size_t n=a*b; void *q=__gx_malloc(n); if(q) memset(q,0,n); return q; }\nstatic inline void *__gx_realloc(void *q,size_t n){ if(!q)return __gx_malloc(n); unsigned char *p=(unsigned char*)q-16; size_t old=*(size_t*)p; void *r=__gx_malloc(n); if(r) memcpy(r,q,old<n?old:n); __gx_free(q); return r; }\n#define malloc __gx_malloc\n#define calloc __gx_calloc\n#define realloc __gx_realloc\n#define free __gx_free\n";
 /*
  * Glifex C runtime driver -- wraps @wasmer/sdk (WASIX clang, compiled to
  * WASM) to compile + run our harness in a worker.
@@ -164,6 +165,7 @@ self.onmessage = async (e) => {
     await dir.writeFile("/c/clean.c", L.clean || "");
     await dir.writeFile("/c/optimized.c", L.optimized || "");
     await dir.writeFile("/c/harness.c", sup["harness.c"] || "");
+    await dir.writeFile("/c/gx_prelude.h", GX_PRELUDE);   // L4-c-space
     await dir.writeFile("/c/json.h", sup["json.h"] || "");
     await dir.writeFile("/c/solution.h", sup["solution.h"] || "");
 
@@ -172,7 +174,7 @@ self.onmessage = async (e) => {
     stage = "compiling";
     console.log(`[glifex-c-worker] ${stage} -- ${ctx}`);
     const comp = await clang.entrypoint.run({
-      args: ["-O2", "-std=c11", MP + "/c/practice.c", MP + "/c/clean.c", MP + "/c/optimized.c",
+      args: ["-O2", "-std=c11", "-include", MP + "/c/gx_prelude.h", MP + "/c/practice.c", MP + "/c/clean.c", MP + "/c/optimized.c",
              MP + "/c/harness.c", "-o", MP + "/c/out.wasm"],
       mount: { [MP]: dir },
     });
