@@ -569,59 +569,31 @@ const Runtimes = (() => {
   }
 
   // -- C#: vendored .NET-wasm + Roslyn, compiling the real CLI harness in-browser
-  // Runs on the MAIN THREAD. The .NET-wasm runtime's dotnet.create() does not
-  // complete inside a dedicated Web Worker (module OR classic): the emscripten
-  // glue keys its environment off `typeof window`, and dotnet.create() hangs
-  // during native init in a worker (confirmed via trace across both worker types
-  // -- all assets 200, create() never resolves). On the main thread window is
-  // present (ENVIRONMENT_IS_WEB), which is the standard, working boot path.
-  // Cost: compile/run briefly blocks the UI. Moving it back off-thread (e.g. a
-  // window-shim, or a future runtime that supports workers) is a follow-up.
-  // Single-threaded (the runner disables Roslyn concurrency), so no COI needed.
+  // Runs OFF the main thread in a persistent classic worker (csharp-worker.js),
+  // which boots the runtime once and reuses it. The .NET loader keys its boot
+  // path off `typeof window`, and a dedicated worker has none -- so the worker
+  // shims `self.window = self` before importing dotnet.js, which makes the
+  // loader take the normal web boot path (it hung otherwise -- see the worker's
+  // header for the full trace-backed explanation). Single-threaded, so no COI.
+  // The worker parses the harness output and returns the usual {results,
+  // nsPerCase} shape. MODULE worker + the worker's window-shim = main-thread env
+  // flags (WEB=true via shim, WORKER=false since module workers lack
+  // importScripts); a classic worker sets WORKER=true and hangs.
   async function loadCsharp() {
     if (!(await vendored("csharp"))) return null;
-    let exportsPromise = null;
-    function getExports() {
-      if (exportsPromise) return exportsPromise;
-      exportsPromise = (async () => {
-        const mod = await import("./vendor/csharp/dotnet.js");
-        const api = await mod.dotnet.create();
-        const cfg = api.getConfig();
-        return api.getAssemblyExports(cfg.mainAssemblyName);
-      })().catch((e) => { exportsPromise = null; throw e; });
-      return exportsPromise;
-    }
+    const csharpWorkerState = { worker: null };
+    const CSHARP_TIMEOUT_MS = 120000;   // first run pays the one-time boot + Roslyn compile
     return {
       async run(source, cases, lang) {
         try {
-          const exports = await getExports();
           const support = (lang && lang.support) || {};
-          const files = {
-            "Harness.cs": support["Harness.cs"] || "",
-            "ISolution.cs": support["ISolution.cs"] || "",
-            "Practice.cs": source || "",
-          };
-          const list = cases || [];
-          const t0 = performance.now();
-          const out = String(exports.Runner.Run(JSON.stringify(files), JSON.stringify(list), "practice") || "");
-          const dt = performance.now() - t0;
-          if (out.startsWith("GLIFEX_COMPILE_ERROR"))
-            return { error: "C# compile error:\n" + out.slice(20).trim().slice(0, 800) };
-          if (out.startsWith("GLIFEX_RUNTIME_ERROR"))
-            return { error: "C# runtime error:\n" + out.slice(20).trim().slice(0, 800) };
-          const byI = new Map();
-          for (const line of out.split("\n")) {
-            const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
-            if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
-          }
-          if (byI.size === 0) return { error: "no case results from C# harness:\n" + out.trim().slice(0, 600) };
-          const results = list.map((c, i) => {
-            const r = byI.get(i);
-            if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
-            if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected, tNs: null };
-            return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected, tNs: null };
-          });
-          return { results, nsPerCase: list.length ? (dt * 1e6) / list.length : 0 };
+          const res = await window.callWorker(
+            csharpWorkerState, "csharp-worker.js", { id: "run", source, cases, support },
+            CSHARP_TIMEOUT_MS, "C# took too long (over 120s) -- likely an infinite loop or a first-run boot stall.",
+            { type: "module" });   // module worker + the worker's window-shim = main-thread env flags (WEB=true, WORKER=false); classic worker hangs
+          if (res.id === "error") return { error: res.error };
+          const { id, ...out } = res;
+          return out;
         } catch (e) {
           return { error: String((e && e.message) || e) };
         }
