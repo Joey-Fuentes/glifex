@@ -152,9 +152,15 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       -- so compile-error + panic output is intact). Vendored at deploy like the others
       (web/vendor/rust/, gitignored, ~122MB raw / ~65MB gzip, cached). Panics truncate Miri's
       unsupported-unwind noise to the real message + location. Corpus at 4 variants incl. 003.
-      Green e2e in rust-smoke.spec.js. **Deferred:** panic line-numbers point at the synthesised
-      main.rs (preamble offset -- map back to editor lines); Complexity Lab time/space not yet
-      wired for Rust (Miri is a slow interpreter -- expect heavy overhead-domination like C# fib).
+      Green e2e in rust-smoke.spec.js. Complexity Lab time + space (heap) both work and classify
+      correctly (validated locally: two-sum -> time O(n)/Omega(1), space O(n) "peak heap"): the
+      synthesis interposes a #[global_allocator] (peak live bytes -> [SPACE]) and times each solve
+      warmup + best-of-2 under Miri's virtual clock (~proportional to work -> [METRIC]); Miri is
+      ~1000x slow so rust uses a small per-language Lab ladder (wallByLang), Analyze ~2min.
+      Panic + compile-error locations are mapped from the synthesised main.rs back to the editor
+      line (validated: panic -> editor line, E0308 -> editor line). STACK is not measurable under
+      Miri (abstract stack model; no poison-scan; std::backtrace unsupported), so space is heap-only
+      like C#; fib stays overhead-dominated at its tiny n (same as JS/WAT). Track complete.
 - [ ] **Bx-7. x86-64** -- Blink emulator (ISC) on real ELF; assemble user asm -> ELF ->
       Linux-syscall harness. More pipeline than size. *Medium.*
 - [ ] **Bx-8. Java** -- TeaVM + DoppioJVM. DoppioJVM (a JVM written in JS) runs the compiler

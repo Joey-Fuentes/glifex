@@ -379,9 +379,16 @@ runtimes (`web/vendor/rust/`, gitignored, ~122MB raw / ~65MB gzip, cached after 
 load). No cross-origin isolation needed (`shared:false` memory, single-threaded shim).
 Panics truncate Miri's unsupported-unwind noise down to the real message + location.
 Slow (interpreter: ~2s/run). Evidence: `rust-smoke.spec.js` (real Chromium, 001 green);
-all 12 corpus variants Miri-validated in-browser. **Deferred:** panic line-numbers map
-to the synthesised `main.rs` (preamble offset — translate back to editor lines);
-Complexity Lab time/space not yet wired for Rust.
+all 12 corpus variants Miri-validated in-browser. **Complexity Lab time + space (heap)
+work** (validated locally: two-sum → time O(n)/Ω(1), space O(n) "peak heap"): the
+synthesis interposes a `#[global_allocator]` (peak live bytes → `[SPACE]`) and times each
+solve warmup + best-of-2 under Miri's virtual clock (`[METRIC]`, ~proportional to work);
+Miri's ~1000× slowdown means rust uses a small per-language Lab ladder (`wallByLang`) and
+Analyze takes ~2min. **Panic + compile-error locations are mapped back to the editor line**
+(the synthesis records the user-source line span and rewrites Miri's `main.rs:L` — validated:
+`panic!` → editor line, `E0308` → editor line). **Stack is not measurable under Miri**
+(abstract stack model; no poison-scan; `std::backtrace` unsupported) — space is heap-only,
+like C#; fib stays overhead-dominated at tiny n (same as JS/WAT).
 
 ## ✅ C# runtime (Bx-5) — in-browser, real compiler client-side
 
