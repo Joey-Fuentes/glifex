@@ -80,7 +80,7 @@ export const LANG_OVERRIDES = {
 export const PROBLEMS = {
   "001-anagram-detection": {
     sizeLabel: "string length n",
-    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768] },
+    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] } },
     declared: { upper: "O(n)", lower: "O(1)" },
     roles: { upper: "worst", lower: "best" },
     modes: [
@@ -92,7 +92,7 @@ export const PROBLEMS = {
 
   "002-two-sum": {
     sizeLabel: "array length n",
-    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768] },
+    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] } },
     declared: { upper: "O(n)", lower: "O(1)" },
     roles: { upper: "worst", lower: "best" },
     // Base array: distinct even values, shuffled; target = odd (sum of the
@@ -173,7 +173,7 @@ export const PROBLEMS = {
       // directly: measurements consistently read as flat O(1)).
       // loadWat's callSolve() converts the resulting BigInt back to a
       // Number for the oracle comparison (see web/runtimes.js).
-      wallByLang: { sm83: [6, 7, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 23, 24], "asm-6502": [6, 7, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 23, 24] },
+      wallByLang: { sm83: [6, 7, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 23, 24], "asm-6502": [6, 7, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 23, 24], rust: [24, 32, 40, 48, 56, 64, 72, 78] },
     },
     // Retro ladder tops out at 24: fib(25) = 75025 overflows the tracks'
     // u16 result contract. Wall ladder tops at 78: fib(78) is the last
