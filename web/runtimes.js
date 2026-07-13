@@ -601,6 +601,28 @@ const Runtimes = (() => {
     };
   }
 
+  async function loadRust() {
+    if (!(await vendored("rust"))) return null;
+    const rustWorkerState = { worker: null };
+    const RUST_TIMEOUT_MS = 120000;   // first run pays the one-time sysroot fetch + miri.wasm compile
+    return {
+      async run(source, cases, lang) {
+        try {
+          const support = (lang && lang.support) || {};
+          const res = await window.callWorker(
+            rustWorkerState, "rust-worker.js", { id: "run", source, cases, support },
+            RUST_TIMEOUT_MS, "Rust took too long (over 120s) -- Miri is an interpreter (slow); likely a heavy loop or first-run boot.",
+            { type: "module" });
+          if (res.id === "error") return { error: res.error };
+          const { id, ...out } = res;
+          return out;
+        } catch (e) {
+          return { error: String((e && e.message) || e) };
+        }
+      },
+    };
+  }
+
   // -- Retro assembly tracks: customasm.wasm assembles, first-party cores run --
   // One generic loader, per-ISA config (RETRO-CONTRACT: factored at n=3 cores).
   // Assemble ABI (raw wasm string-passing) proven from customasm web/main.js.
@@ -670,7 +692,7 @@ const Runtimes = (() => {
     entry: 0x0100, inAddr: 0xC000, outAddr: 0xC010, maxSteps: 400000, haltName: "HLT",
     initSp: 0xF000, clockHz: 2000000,   // T-states / 2.000 MHz (original 8080; ROM-validated table)
   });
-  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
+  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed

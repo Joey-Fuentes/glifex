@@ -358,6 +358,31 @@ constraint, gaining C++20 + exceptions + atomic `shared_ptr` (and possibly retir
 custom memfs for a standard WASI FS). Runtime is manifest-driven (`web/vendor/cpp/manifest.json`),
 so this is a toolchain swap, not a rewrite.
 
+## ✅ Rust runtime (Bx-6) — in-browser via Miri (MIR interpreter) in wasm
+
+Live edit-run for Rust in the browser — **not** `rustc` (which needs an in-browser
+linker, the hard part) but **Miri**, the MIR interpreter, compiled to wasm. Vendored
+from LyonSyonII/rubri (bjorn3's Miri-to-wasm work + `browser_wasi_shim`); the whole
+chain is permissive (MIT / Apache-2.0). Pinned nightly ~1.78, edition 2021.
+
+`web/rust-worker.js` runs Miri in a Web Worker. Miri interprets a **single file**, so
+the worker synthesises one: `json.rs` inlined as a module + the editor's `solve` +
+the test cases embedded as a string + a harness `main` that prints CLI-identical
+`[PASS]/[FAIL]`. The `solve` is single-sourced with the CLI; only input delivery
+differs (embedded vs `../test_cases.json`), so verdicts are identical by construction.
+
+Minimal vendored sysroot: the **23 rlibs `std` actually links** + `miri.wasm`
+(`test`/`proc_macro`/`getopts`/`unicode_width` dropped — verified they aren't
+referenced; the backtrace/compression stack are `std` hard-deps and stay, so
+compile-error and panic output are intact). Vendored at deploy like the other
+runtimes (`web/vendor/rust/`, gitignored, ~122MB raw / ~65MB gzip, cached after first
+load). No cross-origin isolation needed (`shared:false` memory, single-threaded shim).
+Panics truncate Miri's unsupported-unwind noise down to the real message + location.
+Slow (interpreter: ~2s/run). Evidence: `rust-smoke.spec.js` (real Chromium, 001 green);
+all 12 corpus variants Miri-validated in-browser. **Deferred:** panic line-numbers map
+to the synthesised `main.rs` (preamble offset — translate back to editor lines);
+Complexity Lab time/space not yet wired for Rust.
+
 ## ✅ C# runtime (Bx-5) — in-browser, real compiler client-side
 
 Live edit-compile-run for C# in the browser via the vendored .NET-wasm runtime

@@ -59,6 +59,16 @@ jobs:
           echo '{"runtime":"csharp","via":"dotnet-wasm+roslyn","dotnet":"10.0"}' > web/vendor/csharp/manifest.json
           test "$(stat -c%s web/vendor/csharp/dotnet.native.wasm)" -gt 1000000 || { echo "dotnet.native.wasm too small (publish failed?)"; exit 1; }
 
+      - name: Vendor Rust runtime (Miri-in-wasm via Rubri)
+        run: |
+          git clone --depth 1 --branch 1.78-dev https://github.com/LyonSyonII/rubri /tmp/rubri || git clone --depth 1 https://github.com/LyonSyonII/rubri /tmp/rubri
+          SRC=/tmp/rubri/example/public/wasm-rustc
+          LIB=web/vendor/rust/wasm-rustc/lib/rustlib/x86_64-unknown-linux-gnu/lib
+          mkdir -p web/vendor/rust/wasm-rustc/bin "$LIB"
+          cp "$SRC"/bin/miri.opt.*.wasm web/vendor/rust/wasm-rustc/bin/miri.wasm
+          MIN="libaddr2line-b8754aeb03c02354.rlib libadler-05c3545f6cd12159.rlib liballoc-0dab879bc41cd6bd.rlib libcfg_if-c7fd2cef50341546.rlib libcompiler_builtins-a99947d020d809d6.rlib libcore-4b8e8a815d049db3.rlib libgimli-598847d27d7a3cbf.rlib libhashbrown-d2ff91fdf93cacb2.rlib liblibc-dc63949c664c3fce.rlib libmemchr-2d3a423be1a6cb96.rlib libminiz_oxide-b109506a0ccc4c6a.rlib libobject-7b48def7544c748b.rlib libpanic_abort-c93441899b93b849.rlib libpanic_unwind-11d9ba05b60bf694.rlib librustc_demangle-59342a335246393d.rlib librustc_std_workspace_alloc-552b185085090ff6.rlib librustc_std_workspace_core-5d8a121daa7eeaa9.rlib librustc_std_workspace_std-97f43841ce452f7d.rlib libstd-bdedb7706a556da2.rlib libstd-bdedb7706a556da2.so libstd_detect-cca21eebc4281add.rlib libsysroot-f654e185be3ffebd.rlib libunwind-747b693f90af9445.rlib"
+          for f in $MIN; do cp "$SRC/lib/rustlib/x86_64-unknown-linux-gnu/lib/$f" "$LIB/$f"; done
+          echo '{"runtime":"rust","via":"miri-wasm (rubri/bjorn3)","rust":"1.78.0-dev","edition":"2021"}' > web/vendor/rust/manifest.json
       - name: Summarize bundle
         run: |
           echo "=== web/vendor per-language sizes ==="; du -sh web/vendor/* 2>/dev/null | sort -h
