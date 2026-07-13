@@ -176,9 +176,11 @@ async function compile(source, cases) {
     return { error: "WASM instantiate error: " + String(e.message || e) };
   }
   if (typeof solve !== "function") return { error: 'no "solve" export (numbers in, number out)' };
-  const callSolve = (input) => {
+  // Marshal input arrays into linear memory starting at offset 0; returns the
+  // call args plus inputTop = the first byte past the input (where the solve's
+  // own scratch begins).
+  const marshalInto = (input) => {
     const values = Object.values(input);
-    let args = values;
     let offset = 0, usedMemory = false;
     const marshaled = [];
     for (const v of values) {
@@ -192,10 +194,28 @@ async function compile(source, cases) {
         marshaled.push(v);
       }
     }
-    if (usedMemory) args = marshaled;
-    return solve(...args);
+    return { args: usedMemory ? marshaled : values, inputTop: offset };
   };
-  return { measure: (cases, opts) => caseLoop(callSolve, cases, opts) };
+  const callSolve = (input) => solve(...marshalInto(input).args);
+  // L4 EXACT heap: linear-memory workspace via a zero-scan -- the SAME technique
+  // the retro CPU tracks use (distinct bytes written outside the program image).
+  // Marshal input, clear the scratch region [inputTop, end) to zero (safe: that's
+  // WASM's fresh-memory state, so a solve that self-inits or relies on zero-init
+  // both work), run solve, then scan down for the high-water non-zero byte. That
+  // extent is the solve's auxiliary workspace -- proportional to what it actually
+  // built, independent of the harness's fixed arena size. Heap-only: WAT's value
+  // stack and call frames are VM-managed and not observable, so no spaceStack.
+  const spaceOf = (_cs, input) => {
+    const { args, inputTop } = marshalInto(input);
+    const mem = new Uint8Array(memory.buffer);
+    mem.fill(0, inputTop);
+    solve(...args);
+    const mem2 = new Uint8Array(memory.buffer);   // re-view in case memory grew
+    let hi = -1;
+    for (let a = mem2.length - 1; a >= inputTop; a--) { if (mem2[a] !== 0) { hi = a; break; } }
+    return hi >= inputTop ? hi - inputTop + 1 : 0;
+  };
+  return { measure: (cases, opts) => caseLoop(callSolve, cases, { ...(opts || {}), spaceOf }) };
 }
 
 self.onmessage = async (e) => {
