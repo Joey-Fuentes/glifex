@@ -133,6 +133,14 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       (Basic.Reference.Assemblies, since a.Location is empty in wasm). Vendored at
       deploy like C/C++ (dotnet publish -> web/vendor/csharp/, gitignored). Green
       e2e in csharp-smoke.spec.js; runner proven in csharp-runtime-validate.
+      Bx-5c: moved OFF the main thread (module worker + self.window=self shim so the
+      .NET loader takes its web boot path, + addEventListener not self.onmessage --
+      the loader installs its own onmessage during boot; root-caused in a real
+      browser). Bx-5d: Complexity Lab time + space (harness [METRIC] adaptive-repeat
+      Stopwatch + [SPACE] GC allocation volume). NOTE: Lab time/space CLASSIFICATION
+      still needs per-language ladder tuning -- real-O(n) workloads classify
+      correctly (two-sum: O(n)/O(n)), but small-n problems like fib read O(1) under
+      per-call overhead (same effect seen for JS/WAT). Deferred.
 - [ ] **Bx-6. Rust** -- rubri: Miri (MIR interpreter) in wasm, *not* `rustc` -- sidesteps the
       in-browser linker problem. MIT, offline after first load. Kata-only scope: pinned ~1.78,
       no crates, no multi-file, limited I/O, slow output. *Medium.*
@@ -277,9 +285,12 @@ on the easy family; a Theta badge appears only when both ends pin one class.
       pristine harness and is unaffected.
       **Corrected prior claims:** earlier drafts said C/C++ do not report
       space and JS/TS stays unmeasured -- both are now live in production.
-      **Remaining:** C#, Go, and Java stay display-only (declared space
-      class shown, not measured) -- they have no in-browser execution path
-      to instrument.
+      **Remaining:** Go and Java stay display-only (declared space class
+      shown, not measured) -- no in-browser execution path to instrument.
+      C# now measures space (GC allocation volume) and time (adaptive-repeat
+      Stopwatch) as of Bx-5d, though its Lab time/space classification still
+      needs per-language ladder tuning (small-n problems like fib read O(1)
+      under per-call overhead; real-O(n) workloads classify correctly).
 
 ### C — Corpus era (the forever-work; policy is law as of 002)
 - [ ] **C1. Problems 003+** — floor-of-four, manifest-first, blank stubs,

@@ -1,0 +1,72 @@
+# Manual-only. Builds the COMPLETE vendored runtime bundle for ALL supported
+# languages and uploads it as a downloadable artifact. NEVER runs on push or PR
+# (workflow_dispatch only) -- trigger it from the Actions tab (Run workflow) when
+# you need the full bundle, e.g. to reproduce a runtime locally. web/vendor/** is
+# gitignored and normally built fresh at deploy; this is the on-demand way to grab
+# it whole. See STATUS.md "Vendor bundle export (manual)".
+name: export-vendor-bundle
+on:
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "10.0.x" }
+
+      - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres/WAT/customasm + CodeMirror)
+        run: |
+          ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; echo "fetch-runtimes attempt $i failed; retry 20s"; sleep 20; done; [ "$ok" = 1 ]
+
+      - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
+        run: |
+          mkdir -p web/vendor/c
+          VER=0.8.0-beta.1
+          npm pack @wasmer/sdk@${VER}
+          tar xzf wasmer-sdk-*.tgz
+          cp -r package/dist/. web/vendor/c/
+          rm -rf package wasmer-sdk-*.tgz
+          curl --retry 5 --retry-delay 15 --retry-all-errors https://get.wasmer.io -sSfL | sh
+          export PATH="$HOME/.wasmer/bin:$PATH"
+          ok=0; for i in 1 2 3 4 5; do wasmer package download clang/clang -o web/vendor/c/clang.webc && { ok=1; break; }; echo "wasmer download attempt $i failed; retry 15s"; sleep 15; done; [ "$ok" = 1 ]
+          echo '{"runtime":"c","via":"wasmer"}' > web/vendor/c/manifest.json
+
+      - name: Vendor C++ toolchain (Binji wasm-clang)
+        run: |
+          mkdir -p web/vendor/cpp
+          BASE=https://raw.githubusercontent.com/binji/wasm-clang/master
+          for f in clang lld memfs sysroot.tar shared.js worker.js; do
+            curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/$f" -o "web/vendor/cpp/$f"
+          done
+          sed -i 's/if (this.buffer.byteLength === 0) {/if (this.buffer !== this.memory.buffer || this.buffer.byteLength === 0) {/' web/vendor/cpp/shared.js
+          grep -q 'this.buffer !== this.memory.buffer' web/vendor/cpp/shared.js || { echo 'shared.js check() patch failed'; exit 1; }
+          echo '{"runtime":"cpp","via":"binji-wasm-clang","clang":"8.0.1","std":"c++17"}' > web/vendor/cpp/manifest.json
+          test "$(stat -c%s web/vendor/cpp/clang)" -gt 1000000 || { echo "clang too small (LFS pointer?)"; exit 1; }
+
+      - name: Vendor C# runtime (.NET-wasm + Roslyn via dotnet publish)
+        run: |
+          dotnet workload install wasm-tools
+          dotnet publish web/csharp-runtime/runner.csproj -c Release -o /tmp/cspub >/dev/null
+          DJS=$(find web/csharp-runtime -path '*/AppBundle/*' -name dotnet.js 2>/dev/null | head -1 || true)
+          test -n "$DJS" || { echo "AppBundle dotnet.js not found after publish"; exit 1; }
+          FW=$(dirname "$DJS")
+          mkdir -p web/vendor/csharp
+          cp -r "$FW"/. web/vendor/csharp/
+          echo '{"runtime":"csharp","via":"dotnet-wasm+roslyn","dotnet":"10.0"}' > web/vendor/csharp/manifest.json
+          test "$(stat -c%s web/vendor/csharp/dotnet.native.wasm)" -gt 1000000 || { echo "dotnet.native.wasm too small (publish failed?)"; exit 1; }
+
+      - name: Summarize bundle
+        run: |
+          echo "=== web/vendor per-language sizes ==="; du -sh web/vendor/* 2>/dev/null | sort -h
+          echo "total: $(du -sh web/vendor | cut -f1); files: $(find web/vendor -type f | wc -l)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vendor-bundle-all-languages
+          path: web/vendor
+          retention-days: 14
+          compression-level: 6
