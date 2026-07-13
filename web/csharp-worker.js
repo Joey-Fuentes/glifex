@@ -84,20 +84,33 @@ self.addEventListener("message", async (e) => {
       return void self.postMessage({ id: "error", error: "C# runtime error:\n" + out.slice(20).trim().slice(0, 800) });
 
     const byI = new Map();
+    const nsById = new Map();
+    const heapById = new Map();
     for (const line of out.split("\n")) {
       const m = line.match(/\[(PASS|FAIL)\]\s+case\s+(\d+)(?:\s+expected=(.*?)\s+got=(.*))?/);
       if (m) byI.set(Number(m[2]), { ok: m[1] === "PASS", exp: m[3], got: m[4] });
+      const mm = line.match(/\[METRIC\]\s+case\s+(\d+)\s+ns=(\d+)/);
+      if (mm) nsById.set(Number(mm[1]), Number(mm[2]));
+      const ms = line.match(/\[SPACE\]\s+case\s+(\d+)\s+heap=(\d+)/);
+      if (ms) heapById.set(Number(ms[1]), Number(ms[2]));
     }
     if (byI.size === 0)
       return void self.postMessage({ id: "error", error: "no case results from C# harness:\n" + out.trim().slice(0, 600) });
 
     const results = list.map((c, i) => {
       const r = byI.get(i);
-      if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
-      if (r.ok) return { i, ok: true, got: c.expected, expected: c.expected, tNs: null };
-      return { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected, tNs: null };
+      const tNs = nsById.has(i) && nsById.get(i) > 0 ? nsById.get(i) : null;
+      const row = r
+        ? (r.ok
+            ? { i, ok: true, got: c.expected, expected: c.expected, tNs }
+            : { i, ok: false, got: r.got != null ? r.got : "(see output)", expected: r.exp != null ? r.exp : c.expected, tNs })
+        : { i, ok: false, error: "no result for case", expected: c.expected };
+      if (heapById.has(i)) row.space = heapById.get(i);   // allocation volume (approx)
+      return row;
     });
-    self.postMessage({ id: "result", results, nsPerCase: list.length ? (dt * 1e6) / list.length : 0 });
+    // C# space is GC allocation volume (no true peak-workspace counter), so flag
+    // it approximate + "volume" -- the Lab renders the allocation-volume disclaimer.
+    self.postMessage({ id: "result", results, nsPerCase: list.length ? (dt * 1e6) / list.length : 0, spaceApprox: true, spaceApproxKind: "volume" });
   } catch (err) {
     self.postMessage({ id: "error", error: String((err && err.message) || err) });
   }
