@@ -1,0 +1,52 @@
+# THROWAWAY. Assembles the MINIMAL Rubri (Miri-in-wasm) vendor set and uploads it:
+# only the 23 sysroot rlibs std actually links + miri.wasm. Drops the 4 crates
+# nothing in std needs (test, proc_macro, getopts, unicode_width), the .gz
+# duplicates, and the redundant loose release copies. Verified locally: this set
+# compiles + runs std Rust and preserves compile-error + panic output. Delete this
+# workflow + branch after retrieval. Manual + branch-push only.
+name: export-rust-vendor
+on:
+  push:
+    branches: [chore/export-rust-vendor]
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Rubri (has the canonical wasm-rustc tree)
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 1.78-dev https://github.com/LyonSyonII/rubri rubri-src             || git clone --depth 1 https://github.com/LyonSyonII/rubri rubri-src
+
+      - name: Assemble MINIMAL vendor set (23 rlibs + miri.wasm)
+        run: |
+          set -euo pipefail
+          SRC=rubri-src/example/public/wasm-rustc
+          LIBSRC="$SRC/lib/rustlib/x86_64-unknown-linux-gnu/lib"
+          OUT=out/wasm-rustc
+          mkdir -p "$OUT/bin" "$OUT/lib/rustlib/x86_64-unknown-linux-gnu/lib"
+          echo "== miri.wasm =="; cp "$SRC"/bin/miri.opt.*.wasm "$OUT/bin/"
+          MIN="libaddr2line-b8754aeb03c02354.rlib libadler-05c3545f6cd12159.rlib liballoc-0dab879bc41cd6bd.rlib libcfg_if-c7fd2cef50341546.rlib libcompiler_builtins-a99947d020d809d6.rlib libcore-4b8e8a815d049db3.rlib libgimli-598847d27d7a3cbf.rlib libhashbrown-d2ff91fdf93cacb2.rlib liblibc-dc63949c664c3fce.rlib libmemchr-2d3a423be1a6cb96.rlib libminiz_oxide-b109506a0ccc4c6a.rlib libobject-7b48def7544c748b.rlib libpanic_abort-c93441899b93b849.rlib libpanic_unwind-11d9ba05b60bf694.rlib librustc_demangle-59342a335246393d.rlib librustc_std_workspace_alloc-552b185085090ff6.rlib librustc_std_workspace_core-5d8a121daa7eeaa9.rlib librustc_std_workspace_std-97f43841ce452f7d.rlib libstd-bdedb7706a556da2.rlib libstd-bdedb7706a556da2.so libstd_detect-cca21eebc4281add.rlib libsysroot-f654e185be3ffebd.rlib libunwind-747b693f90af9445.rlib "
+          for f in $MIN; do
+            cp "$LIBSRC/$f" "$OUT/lib/rustlib/x86_64-unknown-linux-gnu/lib/$f"               || { echo "MISSING in repo: $f"; exit 1; }
+          done
+          echo "== assembled minimal set =="; find "$OUT" -type f | sort
+          N=$(find "$OUT" -type f | wc -l)
+          echo "files: $N (expect 24 = 23 libs + miri.wasm)"
+          test "$N" -eq 24 || { echo "unexpected file count"; exit 1; }
+          du -sh "$OUT"; du -sh "$OUT"/bin "$OUT"/lib/rustlib/*/lib
+
+      - name: Copy JS glue (for the browser wiring) + license
+        run: |
+          set -euo pipefail
+          mkdir -p out/glue
+          cp -r rubri-src/example/src out/glue/ 2>/dev/null || true
+          cp rubri-src/LICENSE out/glue/LICENSE-rubri 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-vendor-min
+          path: out
+          retention-days: 7
+          compression-level: 6
