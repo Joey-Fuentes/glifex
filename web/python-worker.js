@@ -39,6 +39,7 @@ const eq = (a, b) => {
 // caseLoop copied verbatim from runtimes.js.
 function caseLoop(callSolve, cases, opts) {
   const skipAggregate = !!(opts && opts.skipAggregate);
+  const spaceOf = opts && opts.spaceOf;   // common hook: optional native peak-workspace measurer (e.g. Python tracemalloc); attaches `space` per case
   const results = [];
   const t0 = performance.now();
   for (let i = 0; i < cases.length; i++) {
@@ -54,7 +55,9 @@ function caseLoop(callSolve, cases, opts) {
         tNs = cdt >= 1 ? (cdt * 1e6) / k : null;
       } else { tNs = cdt * 1e6; }
       if (sink === caseLoop) console.log(sink); // unreachable; keeps `sink` observably used
-      results.push({ i, ok: eq(got, cases[i].expected), got, expected: cases[i].expected, tNs });
+      const row = { i, ok: eq(got, cases[i].expected), got, expected: cases[i].expected, tNs };
+      if (spaceOf) { try { const sp = spaceOf(callSolve, cases[i].input); if (sp != null && sp >= 0) row.space = sp; } catch (e) {} }
+      results.push(row);
     } catch (e) {
       results.push({ i, ok: false, error: String(e.message || e), expected: cases[i].expected });
     }
@@ -98,7 +101,31 @@ async function compile(source) {
     const v = r && typeof r.toJs === "function" ? r.toJs({ create_proxies: false }) : r;
     return v instanceof Map ? Object.fromEntries(v) : v;
   };
-  return { measure: (cases, opts) => caseLoop(callSolve, cases, opts) };
+  // L4 (EXACT space): peak workspace via tracemalloc -- run solve under the
+  // tracer and read the high-water. Exact, synchronous, no proxy, no resolution
+  // floor, and it measures the user's ACTUAL code (not a reference). Defined
+  // once here; the common caseLoop spaceOf hook calls it per case and attaches
+  // the peak as `space`, which the existing (language-agnostic) space plumbing
+  // renders exactly like the retro tracks.
+  let measurePeak = null;
+  try {
+    py.runPython(
+      "import tracemalloc as __gx_tm\n" +
+      "def __gx_peak(arg):\n" +
+      "    __gx_tm.start()\n" +
+      "    try:\n" +
+      "        solve(arg)\n" +
+      "    finally:\n" +
+      "        _c, _p = __gx_tm.get_traced_memory()\n" +
+      "        __gx_tm.stop()\n" +
+      "    return _p\n"
+    );
+    measurePeak = py.globals.get("__gx_peak");
+  } catch (e) { measurePeak = null; }
+  const spaceOf = measurePeak
+    ? (_cs, input) => { const r = measurePeak(py.toPy(input)); return typeof r === "number" ? r : Number(r); }
+    : null;
+  return { measure: (cases, opts) => caseLoop(callSolve, cases, spaceOf ? { ...(opts || {}), spaceOf } : opts) };
 }
 
 self.onmessage = async (e) => {

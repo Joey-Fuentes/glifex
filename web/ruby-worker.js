@@ -54,6 +54,7 @@ const eq = (a, b) => {
 // caseLoop copied verbatim from runtimes.js.
 function caseLoop(callSolve, cases, opts) {
   const skipAggregate = !!(opts && opts.skipAggregate);
+  const spaceOf = opts && opts.spaceOf;   // common hook: optional native peak-workspace measurer (e.g. Python tracemalloc); attaches `space` per case
   const results = [];
   const t0 = performance.now();
   for (let i = 0; i < cases.length; i++) {
@@ -69,7 +70,9 @@ function caseLoop(callSolve, cases, opts) {
         tNs = cdt >= 1 ? (cdt * 1e6) / k : null;
       } else { tNs = cdt * 1e6; }
       if (sink === caseLoop) console.log(sink); // unreachable; keeps `sink` observably used
-      results.push({ i, ok: eq(got, cases[i].expected), got, expected: cases[i].expected, tNs });
+      const row = { i, ok: eq(got, cases[i].expected), got, expected: cases[i].expected, tNs };
+      if (spaceOf) { try { const sp = spaceOf(callSolve, cases[i].input); if (sp != null && sp >= 0) row.space = sp; } catch (e) {} }
+      results.push(row);
     } catch (e) {
       results.push({ i, ok: false, error: String(e.message || e), expected: cases[i].expected });
     }
