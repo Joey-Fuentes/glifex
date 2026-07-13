@@ -6,9 +6,18 @@ using System.Text.Json;
 using System.Collections.Generic;
 
 class Harness {
-    static void Main(string[] args) {
+    // CLI entry point: the exit code signals pass/fail to the shell. The browser
+    // runtime invokes Run(...) directly instead -- Environment.Exit tears down the
+    // persistent wasm runtime, so the exit lives only here in Main. Both paths run
+    // identical logic (Run); this is the CLI-vs-embedded seam, not a second harness.
+    static void Main(string[] args) { Environment.Exit(Run(args)); }
+
+    public static int Run(string[] args) {
         string variant = args.Length > 0 ? args[0] : "practice";
-        string cls = char.ToUpper(variant[0]) + variant.Substring(1);
+        // variant -> class name: hyphenated variants (brute-force) become PascalCase
+        // (BruteForce), matching the source file's class. Single-word variants are
+        // unchanged (practice -> Practice).
+        string cls = string.Concat(variant.Split('-').Select(p => char.ToUpper(p[0]) + p.Substring(1)));
         var sol = (ISolution)Activator.CreateInstance(Type.GetType(cls));
         var raw = File.ReadAllText(Path.Combine("..", "test_cases.json"));
         var cases = JsonSerializer.Deserialize<List<JsonElement>>(raw);
@@ -22,6 +31,6 @@ class Harness {
             else Console.WriteLine($"  [FAIL] case {i}  expected={exp} got={got}");
         }
         Console.WriteLine($"{passed}/{cases.Count} passed");
-        if (passed != cases.Count) Environment.Exit(1);
+        return passed == cases.Count ? 0 : 1;
     }
 }

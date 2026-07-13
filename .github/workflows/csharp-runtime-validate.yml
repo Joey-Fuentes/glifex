@@ -1,0 +1,68 @@
+# Validates the C# managed runner against ALL C#-bearing problems (001/002/003)
+# and all four variants, under Node, before browser wiring. Auto-runs on push to
+# the feature branch. Proves: every variant compiles together and runs in wasm;
+# brute-force/clean/optimized pass every real case; practice (a stub) still runs;
+# and the persistent runtime survives Environment.Exit-free repeated runs.
+name: csharp-runtime-validate
+on:
+  push:
+    branches: [feat/bx5-csharp-runtime]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install wasm workload
+        run: dotnet workload install wasm-tools
+      - name: Publish runner
+        run: dotnet publish web/csharp-runtime/runner.csproj -c Release -o out
+      - name: Locate AppBundle
+        run: |
+          BUNDLE=$(dirname "$(find . -path '*/AppBundle/*' -name dotnet.js 2>/dev/null | head -1 || true)")
+          echo "BUNDLE=$BUNDLE"
+          echo "BUNDLE=$BUNDLE" >> "$GITHUB_ENV"
+      - name: Validate 001/002/003 x 4 variants against real cases
+        run: |
+          cat > "$BUNDLE/host.mjs" <<'JS'
+          import { dotnet } from './dotnet.js';
+          import { readFileSync } from 'node:fs';
+          const ws = process.env.GITHUB_WORKSPACE;
+          const probs = ['001-anagram-detection','002-two-sum','003-nth-fibonacci'];
+          const variants = ['practice','brute-force','clean','optimized'];
+          const vfile = { 'practice':'Practice.cs','brute-force':'Brute-force.cs','clean':'Clean.cs','optimized':'Optimized.cs' };
+          const api = await dotnet.create();
+          const cfg = api.getConfig();
+          const asm = await api.getAssemblyExports(cfg.mainAssemblyName);
+          let fail = 0;
+          for (const p of probs) {
+            const dir = ws + '/problems/' + p + '/csharp/';
+            const cases = readFileSync(ws + '/problems/' + p + '/test_cases.json','utf8');
+            const files = {
+              'Harness.cs': readFileSync(dir+'Harness.cs','utf8'),
+              'ISolution.cs': readFileSync(dir+'ISolution.cs','utf8'),
+            };
+            for (const v of variants) files[vfile[v]] = readFileSync(dir+vfile[v],'utf8');
+            const filesJson = JSON.stringify(files);
+            for (const v of variants) {
+              const out = asm.Runner.Run(filesJson, cases, v);
+              const m = /(\d+)\/(\d+) passed/.exec(out);
+              const allPass = m && m[1] === m[2];
+              console.log('--- ' + p + ' ' + v + ' ---\n' + out.trim());
+              if (v === 'practice') {
+                if (!m) { console.log('ASSERT_FAIL: ' + p + ' practice did not run'); fail++; }
+              } else if (!allPass) {
+                console.log('ASSERT_FAIL: ' + p + ' ' + v + ' did not pass all cases'); fail++;
+              }
+            }
+          }
+          console.log(fail === 0 ? 'ALL_ASSERTS_OK' : ('ASSERTS_FAILED=' + fail));
+          process.exit(fail === 0 ? 0 : 1);
+          JS
+          ( cd "$BUNDLE" && node host.mjs )

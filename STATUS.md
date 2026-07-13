@@ -343,6 +343,31 @@ constraint, gaining C++20 + exceptions + atomic `shared_ptr` (and possibly retir
 custom memfs for a standard WASI FS). Runtime is manifest-driven (`web/vendor/cpp/manifest.json`),
 so this is a toolchain swap, not a rewrite.
 
+## ✅ C# runtime (Bx-5) — in-browser, real compiler client-side
+
+Live edit-compile-run for C# in the browser via the vendored .NET-wasm runtime
+with **Roslyn compiling client-side** — the mature "real compiler in the browser"
+story. A persistent module worker (`web/csharp-worker.js`) boots the runtime once
+and calls a managed runner (`web/csharp-runtime/Runner.cs`) that compiles the
+**unmodified CLI `Harness.cs`** + `ISolution.cs` + the editor source with Roslyn
+and runs it — so the browser verdict is identical to the CLI verdict by
+construction (one harness; the CLI's `Environment.Exit` lives only in `Main`, and
+the browser invokes the inner `Run` seam).
+
+Proven necessary and sufficient over a CI spike + Node validation before browser
+wiring: single-threaded `WithConcurrentBuild(false)` (the wasm runtime can't block
+on monitors, so Roslyn's default concurrency traps), byte-image references via
+`Basic.Reference.Assemblies` (`a.Location` is empty in wasm), `InvariantGlobalization`
++ no threads (so **no cross-origin isolation needed**, unlike C), and a collectible
+`AssemblyLoadContext` per run so the reused runtime doesn't accumulate assemblies.
+
+Vendored at deploy exactly like C/C++ — a `dotnet publish` step in `pages.yml`/`ci.yml`
+drops the AppBundle `_framework` into `web/vendor/csharp/` (~39MB, gitignored,
+lazy-loaded on first C# use). Timing/space are display-only for now (the harness
+emits no `[METRIC]`/`[SPACE]` lines), matching the ROADMAP L-track note. Evidence:
+`csharp-runtime-validate` (Node: all four variants × 001/002/003 compile+run,
+verdict-identical) and `csharp-smoke.spec.js` (real Chromium, problem 001 green).
+
 ## Retro track: 6502 (Bx-4) + SM83 / Game Boy (Bx-5) -- live in production
 
 Both ship on the same proven template: customasm.wasm assembles PLAIN mnemonics

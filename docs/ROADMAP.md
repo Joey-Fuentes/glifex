@@ -124,8 +124,15 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       diagnostic ROM suite, including the exhaustive 8080EXM
       (23,803,381,171 cycles, every CRC matching real Intel silicon).
       Full detail: STATUS.md's "Retro track" and "Operational" sections.
-- [ ] **Bx-5. C#** -- Roslyn on .NET-wasm; the mature "real compiler, client-side" story
+- [x] **Bx-5. C#** -- SHIPPED. Roslyn on .NET-wasm; the mature "real compiler, client-side" story
       (Blazor-class). Work: wire `Console` I/O to the harness. *High.*
+      Shipped: persistent module worker (web/csharp-worker.js) boots the vendored
+      .NET-wasm runtime once and calls a managed runner (web/csharp-runtime/) that
+      Roslyn-compiles the UNMODIFIED CLI Harness.cs + the editor source and runs it
+      -- single-threaded (WithConcurrentBuild(false), no COI), byte-image references
+      (Basic.Reference.Assemblies, since a.Location is empty in wasm). Vendored at
+      deploy like C/C++ (dotnet publish -> web/vendor/csharp/, gitignored). Green
+      e2e in csharp-smoke.spec.js; runner proven in csharp-runtime-validate.
 - [ ] **Bx-6. Rust** -- rubri: Miri (MIR interpreter) in wasm, *not* `rustc` -- sidesteps the
       in-browser linker problem. MIT, offline after first load. Kata-only scope: pinned ~1.78,
       no crates, no multi-file, limited I/O, slow output. *Medium.*
