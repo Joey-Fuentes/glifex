@@ -135,9 +135,9 @@ async function compile(source) {
     vm.eval([
       'require "json"',
       'def __gx_heap(a)',
-      '  b = (GC.stat[:total_allocated_bytes] || 0)',
+      '  b = (GC.stat[:total_allocated_objects] || 0)',
       '  solve(a)',
-      '  (GC.stat[:total_allocated_bytes] || 0) - b',
+      '  (GC.stat[:total_allocated_objects] || 0) - b',
       'end',
       'def __gx_stack(a)',
       '  d = 0; m = 0',
