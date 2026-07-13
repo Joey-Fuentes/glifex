@@ -28,6 +28,12 @@ __attribute__((weak)) Value bruteforce(const Input&) { std::cerr << "brute-force
 // allocator places blocks, of post-free memory state, and of dead-code elimination
 // (a user-defined operator new is a replaceable function the compiler may not elide).
 // STACK is a bounded poison-scan below the current frame. Both validated live.
+// Gated to the wasm build ONLY. Replacing global operator new/delete is safe under
+// the single wasm runtime, but must never enter the native reference verify (g++):
+// there, unrelated allocations (nothrow/aligned/STL-internal) can reach this delete
+// and free a pointer offset by our header, corrupting the host heap (aborts on
+// Windows). Native builds skip all of it; only PASS/FAIL correctness is checked there.
+#ifdef __wasm__
 static long __gx_live = 0, __gx_peak = 0;
 void* operator new(std::size_t n) {
     unsigned char* p = (unsigned char*)std::malloc(n + 16);
@@ -53,6 +59,7 @@ template <class F> static long __gx_stack(F&& call) {
         if ((unsigned char)(sp - WIN)[i] != 0xA5) return (WIN - 1024) - i;
     return 0;
 }
+#endif  // __wasm__
 
 int main(int argc, char** argv) {
     std::string variant = argc > 1 ? argv[1] : "practice";
@@ -87,6 +94,7 @@ int main(int argc, char** argv) {
         std::cout << "[CASE-BEGIN] case " << i << "\n" << std::flush;
         std::string got = dispatch(*c->obj["input"])->dump();
         if (metrics) {
+#ifdef __wasm__
             // L4 space: peak concurrent heap bytes via the interposed operator new
             // (bracket the solve with a peak reset), plus a bounded stack poison-scan.
             long __hbase = __gx_live; __gx_peak = __gx_live;
@@ -94,6 +102,7 @@ int main(int argc, char** argv) {
             long __gxh = __gx_peak - __hbase;
             long __gxs = __gx_stack([&] { __gx_sink ^= dispatch(*c->obj["input"])->dump().size(); });
             std::cout << "  [SPACE] case " << i << " heap=" << __gxh << " stack=" << __gxs << "\n";
+#endif
             // Complexity Lab: per-case cost, adaptively repeated past the
             // clock grain (solve is pure by the corpus contract). The result
             // feeds the PASS/FAIL diff above, so -O2 cannot dead-code it.
