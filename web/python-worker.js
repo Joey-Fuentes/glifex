@@ -56,7 +56,7 @@ function caseLoop(callSolve, cases, opts) {
       } else { tNs = cdt * 1e6; }
       if (sink === caseLoop) console.log(sink); // unreachable; keeps `sink` observably used
       const row = { i, ok: eq(got, cases[i].expected), got, expected: cases[i].expected, tNs };
-      if (spaceOf) { try { const sp = spaceOf(callSolve, cases[i].input); if (sp != null && sp >= 0) row.space = sp; } catch (e) {} }
+      if (spaceOf) { try { const sp = spaceOf(callSolve, cases[i].input); if (sp != null) { if (typeof sp === "number") { if (sp >= 0) row.space = sp; } else { if (sp.heap != null && sp.heap >= 0) row.space = sp.heap; if (sp.stack != null && sp.stack >= 0) row.spaceStack = sp.stack; } } } catch (e) {} }
       results.push(row);
     } catch (e) {
       results.push({ i, ok: false, error: String(e.message || e), expected: cases[i].expected });
@@ -107,10 +107,11 @@ async function compile(source) {
   // once here; the common caseLoop spaceOf hook calls it per case and attaches
   // the peak as `space`, which the existing (language-agnostic) space plumbing
   // renders exactly like the retro tracks.
-  let measurePeak = null;
+  let measurePeak = null, measureStack = null;
   try {
     py.runPython(
       "import tracemalloc as __gx_tm\n" +
+      "import sys as __gx_sys\n" +
       "def __gx_peak(arg):\n" +
       "    __gx_tm.start()\n" +
       "    try:\n" +
@@ -118,12 +119,39 @@ async function compile(source) {
       "    finally:\n" +
       "        _c, _p = __gx_tm.get_traced_memory()\n" +
       "        __gx_tm.stop()\n" +
-      "    return _p\n"
+      "    return _p\n" +
+      // Stack = max recursion DEPTH during solve, via a settrace counter (exact
+      // class: O(1) iterative, O(n) linear recursion, O(log n) balanced). Measured
+      // in a SEPARATE run from tracemalloc -- settrace itself allocates, so
+      // combining them would pollute the heap number.
+      "def __gx_stack(arg):\n" +
+      "    _d = [0]; _m = [0]\n" +
+      "    def _tr(frame, event, a):\n" +
+      "        if event == 'call':\n" +
+      "            _d[0] += 1\n" +
+      "            if _d[0] > _m[0]: _m[0] = _d[0]\n" +
+      "        elif event == 'return':\n" +
+      "            if _d[0] > 0: _d[0] -= 1\n" +
+      "        return _tr\n" +
+      "    __gx_sys.settrace(_tr)\n" +
+      "    try:\n" +
+      "        solve(arg)\n" +
+      "    finally:\n" +
+      "        __gx_sys.settrace(None)\n" +
+      "    return _m[0]\n"
     );
     measurePeak = py.globals.get("__gx_peak");
-  } catch (e) { measurePeak = null; }
+    measureStack = py.globals.get("__gx_stack");
+  } catch (e) { measurePeak = null; measureStack = null; }
+  const num = (r) => (typeof r === "number" ? r : Number(r));
   const spaceOf = measurePeak
-    ? (_cs, input) => { const r = measurePeak(py.toPy(input)); return typeof r === "number" ? r : Number(r); }
+    ? (_cs, input) => {
+        const pyIn = py.toPy(input);
+        const heap = num(measurePeak(pyIn));
+        let stack = null;
+        if (measureStack) { try { stack = num(measureStack(py.toPy(input))); } catch (e) { stack = null; } }
+        return { heap, stack };
+      }
     : null;
   return { measure: (cases, opts) => caseLoop(callSolve, cases, spaceOf ? { ...(opts || {}), spaceOf } : opts) };
 }
