@@ -209,6 +209,45 @@ comfortably inside the 2-minute outer runtime-lock timeout. `maxSizes` is
 per-language (`web/lab-config.mjs`'s `LANG_OVERRIDES`) -- compiled languages
 are capped at all 10 points; PHP stays capped at 4, unrelated to this work.
 
+## ✅ Complexity Lab (L4) — space complexity, verified in production
+
+The Lab now measures a per-size SPACE metric alongside time for every executable
+track, judged by the same falsifier doctrine (refute, never confirm) against the
+corpus's declared per-variant `space` class. A conditional Space tab renders where a
+signal exists -- a heap/workspace line plus, where relevant, a dashed recursion-depth
+(stack) line -- each with a disclaimer stating exactly what was measured and how far
+to trust it.
+
+Per-track method and fidelity:
+
+- **Retro (asm-6502 / SM83 / i8080)** — exact. Per-cell RAM high-water (distinct bytes
+  written outside the program image) + code bytes. Hard verdicts.
+- **WAT** — exact. Linear-memory zero-scan high-water.
+- **Python** — exact. Heap via `tracemalloc` peak; stack via `settrace` max depth.
+- **C++ (binji)** — approximate PEAK. Global `operator new`/`delete` are interposed to
+  track a live/peak byte counter (every STL allocation + `make_rc` routes through it),
+  read as a peak-delta bracketed around the solve; stack via a bounded poison-scan. A
+  true concurrent peak, immune to the allocator's placement and to dead-code
+  elimination. Excludes raw `malloc`/`alloca` (which the stack line covers separately).
+- **C (WASIX clang)** — approximate PEAK. The worker `clang -include`'s a prelude that
+  interposes `malloc`/`calloc`/`realloc`/`free` across every translation unit (wasm
+  build only); same peak-delta + poison-scan as C++.
+- **JavaScript / TypeScript** — approximate peak. `performance.measureUserAgentSpecificMemory()`
+  sampled at the allocation high-water, unlocked by the cross-origin-isolation change
+  (the same COI wall as the L1 clock). A whole-heap, GC-timed, ~64 KB-quantized proxy:
+  it measures the revealed reference solution's peak, labelled a hint, not a proof.
+- **Ruby / PHP** — approximate VOLUME. Allocation volume during the solve
+  (`total_allocated_objects` / snapshot diff) — an upper bound on peak, not a true peak.
+
+Every non-exact track is flagged `spaceApprox` with a `spaceApproxKind` (`peak` for
+C/C++, otherwise the volume default), so the render says precisely what it measured.
+Gating: the C/C++ instrumentation is wasm-build-only (`#ifdef __wasm__` plus a
+worker-only `-include`), so the native `g++`/`gcc` reference verify (`glifex verify`)
+compiles the pristine harness and is unaffected.
+
+Still display-only (declared class shown, not measured): **C#, Go, Java** — no
+in-browser execution path to instrument.
+
 ## ✅ Tracks & infrastructure
 
 - **Worked-example policy reversed.** 001 (Anagram Detection) and 002
