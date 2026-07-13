@@ -97,18 +97,17 @@ async function runPhp(PhpWeb, source, cases) {
     "    } else {\n" +
     "      $__tval = (int)round($__dt * 1e9);\n" +
     "    }\n" +
-    // L4 EXACT heap: per-case peak workspace. memory_reset_peak_usage (PHP 8.2+)
-    // gives a true per-call peak; without it we emit null (honest) rather than a
-    // misleading cumulative figure. Delta above the pre-call baseline = the
-    // solve's own auxiliary workspace. PHP stack depth needs xdebug (absent), so
-    // no spaceStack -- heap-only, exact.
+    // L4 EXACT heap: per-case peak workspace, IF the runtime exposes memory
+    // accounting. Note: some php-wasm builds stub memory_get_peak_usage to 0 --
+    // in that case we emit null (honest: no false 0) rather than a misleading
+    // reading. PHP stack depth needs xdebug (absent), so no spaceStack.
     "    $__sp = null;\n" +
     "    if (function_exists('memory_reset_peak_usage')) {\n" +
     "      memory_reset_peak_usage();\n" +
     "      $__b = memory_get_usage();\n" +
     "      solve($__c['input']);\n" +
-    "      $__sp = memory_get_peak_usage() - $__b;\n" +
-    "      if ($__sp < 0) { $__sp = 0; }\n" +
+    "      $__pk = memory_get_peak_usage();\n" +
+    "      if ($__pk > 0) { $__sp = $__pk - $__b; if ($__sp < 0) { $__sp = 0; } }\n" +
     "    }\n" +
     "    $__o[] = ['i' => $__i, 'got' => $__got, 't' => $__tval, 'sp' => $__sp];\n" +
     "  }\n" +

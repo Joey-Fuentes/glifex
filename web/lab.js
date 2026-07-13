@@ -726,7 +726,7 @@ const GlifexLab = (() => {
     }
     g += `<text x="${(L + W - R) / 2}" y="${H - 5}" text-anchor="middle" fill="#8b949e" font-size="10">${esc(cfg.sizeLabel)} (log)</text>`;
     g += `<text x="13" y="${(T + H - B) / 2}" fill="#8b949e" font-size="10" transform="rotate(-90 13 ${(T + H - B) / 2})" text-anchor="middle">${_sy.length ? "heap bytes &middot; stack depth" : "bytes / case"} (log)</text>`;
-    const legend = `<span class="lab-k" style="background:${col}"></span>${X.spaceProbeVariant ? esc(X.spaceProbeVariant) + " ref peak workspace <em>(approx)</em>" : (X.spaceApprox ? "retained heap <em>(approx)</em>" : "heap workspace")}${_sy.length ? ` <span class="lab-k" style="background:#d2a8ff"></span>stack (max recursion depth)` : ""} <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
+    const legend = `<span class="lab-k" style="background:${col}"></span>${X.spaceProbeVariant ? esc(X.spaceProbeVariant) + " ref peak workspace <em>(approx)</em>" : (X.spaceApprox ? "allocation volume <em>(approx)</em>" : "heap workspace")}${_sy.length ? ` <span class="lab-k" style="background:#d2a8ff"></span>stack (max recursion depth)` : ""} <span class="lab-k lab-k-dash"></span>declared ${X.declaredSpace} fit`;
     return `<figure class="lab-fig"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="space growth chart" font-family="var(--mono)">${g}</svg><figcaption>${legend}</figcaption></figure>`;
   }
 
@@ -747,7 +747,9 @@ const GlifexLab = (() => {
       h += "</tr>";
     }
     h += X.spaceApprox
-      ? `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate &mdash; and it measures the revealed ${X.spaceProbeVariant ? esc(X.spaceProbeVariant) + " " : ""}reference solution's PEAK workspace, not your typed code.</b> The reference is run instrumented, sampling <code>performance.measureUserAgentSpecificMemory()</code> at its allocation high-water (a churn forces the GC the API waits on). Unlike the retro tracks' exact per-cell metric this is a whole-heap, GC-timed, quantized proxy with a ~64KB resolution floor (hence the large sizes), so treat a &ldquo;refuted&rdquo; as a prompt to look closer &mdash; not proof. Roadmap L4 tracks making it exact.</p>`
+      ? (X.spaceProbeVariant
+          ? `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate &mdash; and it measures the revealed ${esc(X.spaceProbeVariant)} reference solution's PEAK workspace, not your typed code.</b> The reference is run instrumented, sampling <code>performance.measureUserAgentSpecificMemory()</code> at its allocation high-water (a churn forces the GC the API waits on). Unlike the retro tracks' exact per-cell metric this is a whole-heap, GC-timed, quantized proxy with a ~64KB resolution floor (hence the large sizes), so treat a &ldquo;refuted&rdquo; as a prompt to look closer &mdash; not proof. Roadmap L4 tracks making it exact.</p>`
+          : `</table></div><p class="lab-note lab-note-warn">&#9888; <b>Approximate &mdash; allocation volume, not peak.</b> This counts objects allocated during solve (the runtime exposes no true peak-workspace counter), which is an upper bound on peak: iteration-heavy code that allocates transient objects can read O(n) even when its persistent workspace is O(1). Treat a &ldquo;refuted&rdquo; as a prompt to look closer &mdash; not proof.</p>`)
       : `</table></div><p class="lab-note">Workspace = distinct bytes written outside the program image, measured exactly (deterministic; no clock). Judged the same way as time &mdash; refute, never prove. A flat curve is consistent with O(1); growth above the declared class refutes it.</p>`;
     if (X.spaceStackSeries && X.spaceStackSeries.ns.length >= 2) {
       const sn = X.spaceStackSeries.ns, sy = X.spaceStackSeries.ys;
