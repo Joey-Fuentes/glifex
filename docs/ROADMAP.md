@@ -141,9 +141,20 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       still needs per-language ladder tuning -- real-O(n) workloads classify
       correctly (two-sum: O(n)/O(n)), but small-n problems like fib read O(1) under
       per-call overhead (same effect seen for JS/WAT). Deferred.
-- [ ] **Bx-6. Rust** -- rubri: Miri (MIR interpreter) in wasm, *not* `rustc` -- sidesteps the
-      in-browser linker problem. MIT, offline after first load. Kata-only scope: pinned ~1.78,
-      no crates, no multi-file, limited I/O, slow output. *Medium.*
+- [x] **Bx-6. Rust** -- SHIPPED. Miri (MIR interpreter) in wasm, *not* `rustc` -- sidesteps the
+      in-browser linker problem. Vendored from LyonSyonII/rubri (bjorn3's Miri-to-wasm +
+      browser_wasi_shim); all-permissive (MIT / Apache-2.0). Pinned nightly ~1.78, edition 2021.
+      web/rust-worker.js runs Miri in a Web Worker: it synthesises a single-file program
+      (json.rs inlined + the editor's solve + the cases embedded + a harness main) and
+      interprets it -- verdict-identical to the CLI (solve single-sourced; only input delivery
+      differs). Minimal sysroot: the 23 rlibs std actually links + miri.wasm (test/proc_macro/
+      getopts/unicode_width dropped; the backtrace/compression stack are std hard-deps and stay
+      -- so compile-error + panic output is intact). Vendored at deploy like the others
+      (web/vendor/rust/, gitignored, ~122MB raw / ~65MB gzip, cached). Panics truncate Miri's
+      unsupported-unwind noise to the real message + location. Corpus at 4 variants incl. 003.
+      Green e2e in rust-smoke.spec.js. **Deferred:** panic line-numbers point at the synthesised
+      main.rs (preamble offset -- map back to editor lines); Complexity Lab time/space not yet
+      wired for Rust (Miri is a slow interpreter -- expect heavy overhead-domination like C# fib).
 - [ ] **Bx-7. x86-64** -- Blink emulator (ISC) on real ELF; assemble user asm -> ELF ->
       Linux-syscall harness. More pipeline than size. *Medium.*
 - [ ] **Bx-8. Java** -- TeaVM + DoppioJVM. DoppioJVM (a JVM written in JS) runs the compiler

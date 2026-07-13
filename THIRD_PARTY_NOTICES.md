@@ -22,6 +22,10 @@ enabled via `node web/fetch-runtimes.mjs`.
 | .NET runtime (browser-wasm) | 10.0 | C# runtime executed in-browser for the C# track (Bx-5), vendored at web/vendor/csharp/ via `dotnet publish` | MIT |
 | Roslyn (Microsoft.CodeAnalysis.CSharp) | 4.x | in-browser C# compiler for the C# track (Bx-5), shipped inside the vendored .NET-wasm bundle | MIT |
 | Basic.Reference.Assemblies.Net90 | latest | byte-image BCL reference assemblies Roslyn compiles against in wasm (a.Location is empty there) | MIT |
+| Miri (rust-lang/miri, wasm build) | ~1.78.0-dev nightly | Rust MIR interpreter compiled to wasm; runs the Rust track (Bx-6) in-browser, vendored at web/vendor/rust/ | MIT OR Apache-2.0 |
+| rubri (LyonSyonII/rubri) | 1.78-dev | Miri-in-browser wrapper + prebuilt miri.wasm + sysroot rlibs that glifex's rust-worker vendors/adapts | MIT |
+| browser_wasi_shim (bjorn3) | bundled | JS WASI implementation + virtual FS used by the Rust worker; bundled into web/rust-worker.js | MIT OR Apache-2.0 |
+| Rust standard library (sysroot rlibs) | ~1.78.0-dev | precompiled std/core/alloc + deps Miri interprets against, vendored at web/vendor/rust/wasm-rustc/ | MIT OR Apache-2.0 |
 
 Each project's full license text ships alongside its vendored files under
 `web/vendor/<name>/` once distributed. Nothing else on glifex.dev embeds

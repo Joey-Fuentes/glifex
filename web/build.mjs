@@ -95,7 +95,7 @@ function algoProblems() {
     const languages = {};
     for (const lang of readdirSync(dir)) {
       const ld = join(dir, lang);
-      const ext = { python: "py", javascript: "js", typescript: "ts", go: "go", java: "java", ruby: "rb", csharp: "cs", wat: "wat", php: "php", c: "c", cpp: "cpp", "asm-6502": "s", sm83: "s", i8080: "s" }[lang];
+      const ext = { python: "py", javascript: "js", typescript: "ts", go: "go", java: "java", ruby: "rb", csharp: "cs", wat: "wat", php: "php", c: "c", cpp: "cpp", rust: "rs", "asm-6502": "s", sm83: "s", i8080: "s" }[lang];
       if (!ext) continue;
       const cap = lang === "java" || lang === "csharp";
       const f = (v) => read(join(ld, (cap ? v[0].toUpperCase() + v.slice(1) : v) + "." + ext));
@@ -130,6 +130,13 @@ function algoProblems() {
       if (lang === "csharp") languages[lang].support = {
         "Harness.cs": read(join(ld, "Harness.cs")),
         "ISolution.cs": read(join(ld, "ISolution.cs")),
+      };
+      // Rust runs single-file under Miri-in-wasm; the browser worker inlines
+      // json.rs as a module + the editor's solve + embedded cases, so bake the
+      // invariant json.rs alongside the per-variant sources (the CLI main.rs
+      // harness is file-based/multi-module and not used by the browser path).
+      if (lang === "rust") languages[lang].support = {
+        "json.rs": read(join(ld, "json.rs")),
       };
     }
     return { id, track: "algorithm", ...manifestMeta(dir), title: title(md), statement: md,

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-13T21:50:49.511Z",
+  "generatedAt": "2026-07-13T22:20:20.232Z",
   "displayNames": {
     "asm-6502": "6502 assembly",
     "i8080": "Intel 8080 assembly",
@@ -322,6 +322,41 @@
               "space": "O(1)",
               "notes": "counting table; O(1) under the fixed-alphabet convention"
             }
+          }
+        },
+        "rust": {
+          "practice": "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    let s = c.get(\"s\").as_str();\n    let t = c.get(\"t\").as_str();\n    // Return true if s and t are anagrams of each other, false otherwise.\n    JVal::Bool(false)\n}\n",
+          "clean": "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    let mut s: Vec<char> = c.get(\"s\").as_str().chars().collect();\n    let mut t: Vec<char> = c.get(\"t\").as_str().chars().collect();\n    s.sort_unstable(); t.sort_unstable();\n    JVal::Bool(s == t)\n}\n",
+          "optimized": "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    let s = c.get(\"s\").as_str().as_bytes();\n    let t = c.get(\"t\").as_str().as_bytes();\n    if s.len() != t.len() { return JVal::Bool(false); }\n    let mut count = [0i32; 256];\n    for &b in s { count[b as usize] += 1; }\n    for &b in t {\n        count[b as usize] -= 1;\n        if count[b as usize] < 0 { return JVal::Bool(false); }\n    }\n    JVal::Bool(true)\n}\n",
+          "brute-force": "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    let s: Vec<char> = c.get(\"s\").as_str().chars().collect();\n    let t: Vec<char> = c.get(\"t\").as_str().chars().collect();\n    if s.len() != t.len() { return JVal::Bool(false); }\n    // Obvious approach: for every character, compare its count in both strings. O(n^2).\n    for &ch in &s {\n        let cs = s.iter().filter(|&&x| x == ch).count();\n        let ct = t.iter().filter(|&&x| x == ch).count();\n        if cs != ct { return JVal::Bool(false); }\n    }\n    JVal::Bool(true)\n}\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "per-char count compare -- the naive O(n^2) baseline"
+            }
+          },
+          "support": {
+            "json.rs": "// Minimal JSON parser (dependency-free; the idiomatic path is serde_json via\n// cargo, but Glifex stays offline-friendly). Vendored — do not edit.\nuse std::collections::BTreeMap;\n\n#[derive(Clone, Debug, PartialEq)]\npub enum JVal {\n    Null,\n    Bool(bool),\n    Num(f64),\n    Str(String),\n    Arr(Vec<JVal>),\n    Obj(BTreeMap<String, JVal>),\n}\n\n#[allow(dead_code)]\nimpl JVal {\n    pub fn get(&self, key: &str) -> &JVal {\n        match self { JVal::Obj(m) => &m[key], _ => panic!(\"not an object\") }\n    }\n    pub fn as_str(&self) -> &str {\n        match self { JVal::Str(s) => s, _ => panic!(\"not a string\") }\n    }\n    pub fn as_num(&self) -> f64 {\n        match self { JVal::Num(n) => *n, _ => panic!(\"not a number\") }\n    }\n    pub fn as_arr(&self) -> &Vec<JVal> {\n        match self { JVal::Arr(a) => a, _ => panic!(\"not an array\") }\n    }\n    pub fn dump(&self) -> String {\n        match self {\n            JVal::Null => \"null\".into(),\n            JVal::Bool(b) => b.to_string(),\n            JVal::Num(n) => if n.fract() == 0.0 { format!(\"{}\", *n as i64) } else { n.to_string() },\n            JVal::Str(s) => format!(\"\\\"{}\\\"\", s),\n            JVal::Arr(a) => format!(\"[{}]\", a.iter().map(|v| v.dump()).collect::<Vec<_>>().join(\",\")),\n            JVal::Obj(m) => format!(\"{{{}}}\", m.iter().map(|(k, v)| format!(\"\\\"{}\\\":{}\", k, v.dump())).collect::<Vec<_>>().join(\",\")),\n        }\n    }\n}\n\npub fn parse(src: &str) -> JVal {\n    let b = src.as_bytes();\n    let mut i = 0;\n    value(b, &mut i)\n}\n\nfn ws(b: &[u8], i: &mut usize) { while *i < b.len() && b[*i].is_ascii_whitespace() { *i += 1 } }\n\nfn value(b: &[u8], i: &mut usize) -> JVal {\n    ws(b, i);\n    match b[*i] {\n        b'{' => { let mut m = BTreeMap::new(); *i += 1; ws(b, i);\n            if b[*i] == b'}' { *i += 1; return JVal::Obj(m); }\n            loop { ws(b, i); let k = string(b, i); ws(b, i); *i += 1;\n                m.insert(k, value(b, i)); ws(b, i);\n                if b[*i] == b',' { *i += 1; continue } *i += 1; break }\n            JVal::Obj(m) }\n        b'[' => { let mut a = Vec::new(); *i += 1; ws(b, i);\n            if b[*i] == b']' { *i += 1; return JVal::Arr(a); }\n            loop { a.push(value(b, i)); ws(b, i);\n                if b[*i] == b',' { *i += 1; continue } *i += 1; break }\n            JVal::Arr(a) }\n        b'\"' => JVal::Str(string(b, i)),\n        b't' => { *i += 4; JVal::Bool(true) }\n        b'f' => { *i += 5; JVal::Bool(false) }\n        b'n' => { *i += 4; JVal::Null }\n        _ => { let st = *i;\n            while *i < b.len() && (b[*i].is_ascii_digit() || b\"-+.eE\".contains(&b[*i])) { *i += 1 }\n            JVal::Num(std::str::from_utf8(&b[st..*i]).unwrap().parse().unwrap()) }\n    }\n}\n\nfn string(b: &[u8], i: &mut usize) -> String {\n    let mut out = String::new(); *i += 1;\n    while b[*i] != b'\"' {\n        let c = b[*i]; *i += 1;\n        if c == b'\\\\' { let e = b[*i]; *i += 1;\n            out.push(match e { b'n' => '\\n', b't' => '\\t', x => x as char }) }\n        else { out.push(c as char) }\n    }\n    *i += 1; out\n}\n"
           }
         },
         "typescript": {
@@ -743,6 +778,41 @@
             }
           }
         },
+        "rust": {
+          "practice": "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    let nums = c.get(\"nums\").as_arr();\n    let target = c.get(\"target\").as_num();\n    // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n    JVal::Arr(vec![])\n}\n",
+          "clean": "use crate::json::JVal;\nuse std::collections::HashMap;\n\npub fn solve(c: &JVal) -> JVal {\n    let nums = c.get(\"nums\").as_arr();\n    let target = c.get(\"target\").as_num();\n    let mut seen: HashMap<i64, usize> = HashMap::new();\n    for (i, n) in nums.iter().enumerate() {\n        let n = n.as_num() as i64;\n        let need = target as i64 - n;\n        if let Some(&j) = seen.get(&need) {\n            return JVal::Arr(vec![JVal::Num(j as f64), JVal::Num(i as f64)]);\n        }\n        seen.insert(n, i);\n    }\n    JVal::Arr(vec![])\n}\n",
+          "optimized": "use crate::json::JVal;\nuse std::collections::HashMap;\n\npub fn solve(c: &JVal) -> JVal {\n    let nums = c.get(\"nums\").as_arr();\n    let target = c.get(\"target\").as_num();\n    let mut seen: HashMap<i64, usize> = HashMap::new();\n    for (i, n) in nums.iter().enumerate() {\n        let n = n.as_num() as i64;\n        let need = target as i64 - n;\n        if let Some(&j) = seen.get(&need) {\n            return JVal::Arr(vec![JVal::Num(j as f64), JVal::Num(i as f64)]);\n        }\n        seen.insert(n, i);\n    }\n    JVal::Arr(vec![])\n}\n",
+          "brute-force": "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    let nums = c.get(\"nums\").as_arr();\n    let target = c.get(\"target\").as_num() as i64;\n    // Check every pair -- the obvious first approach, O(n^2).\n    for i in 0..nums.len() {\n        for j in (i + 1)..nums.len() {\n            if nums[i].as_num() as i64 + nums[j].as_num() as i64 == target {\n                return JVal::Arr(vec![JVal::Num(i as f64), JVal::Num(j as f64)]);\n            }\n        }\n    }\n    JVal::Arr(vec![])\n}\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop over every pair -- the O(n^2) baseline"
+            }
+          },
+          "support": {
+            "json.rs": "// Minimal JSON parser (dependency-free; the idiomatic path is serde_json via\n// cargo, but Glifex stays offline-friendly). Vendored — do not edit.\nuse std::collections::BTreeMap;\n\n#[derive(Clone, Debug, PartialEq)]\npub enum JVal {\n    Null,\n    Bool(bool),\n    Num(f64),\n    Str(String),\n    Arr(Vec<JVal>),\n    Obj(BTreeMap<String, JVal>),\n}\n\n#[allow(dead_code)]\nimpl JVal {\n    pub fn get(&self, key: &str) -> &JVal {\n        match self { JVal::Obj(m) => &m[key], _ => panic!(\"not an object\") }\n    }\n    pub fn as_str(&self) -> &str {\n        match self { JVal::Str(s) => s, _ => panic!(\"not a string\") }\n    }\n    pub fn as_num(&self) -> f64 {\n        match self { JVal::Num(n) => *n, _ => panic!(\"not a number\") }\n    }\n    pub fn as_arr(&self) -> &Vec<JVal> {\n        match self { JVal::Arr(a) => a, _ => panic!(\"not an array\") }\n    }\n    pub fn dump(&self) -> String {\n        match self {\n            JVal::Null => \"null\".into(),\n            JVal::Bool(b) => b.to_string(),\n            JVal::Num(n) => if n.fract() == 0.0 { format!(\"{}\", *n as i64) } else { n.to_string() },\n            JVal::Str(s) => format!(\"\\\"{}\\\"\", s),\n            JVal::Arr(a) => format!(\"[{}]\", a.iter().map(|v| v.dump()).collect::<Vec<_>>().join(\",\")),\n            JVal::Obj(m) => format!(\"{{{}}}\", m.iter().map(|(k, v)| format!(\"\\\"{}\\\":{}\", k, v.dump())).collect::<Vec<_>>().join(\",\")),\n        }\n    }\n}\n\npub fn parse(src: &str) -> JVal {\n    let b = src.as_bytes();\n    let mut i = 0;\n    value(b, &mut i)\n}\n\nfn ws(b: &[u8], i: &mut usize) { while *i < b.len() && b[*i].is_ascii_whitespace() { *i += 1 } }\n\nfn value(b: &[u8], i: &mut usize) -> JVal {\n    ws(b, i);\n    match b[*i] {\n        b'{' => { let mut m = BTreeMap::new(); *i += 1; ws(b, i);\n            if b[*i] == b'}' { *i += 1; return JVal::Obj(m); }\n            loop { ws(b, i); let k = string(b, i); ws(b, i); *i += 1;\n                m.insert(k, value(b, i)); ws(b, i);\n                if b[*i] == b',' { *i += 1; continue } *i += 1; break }\n            JVal::Obj(m) }\n        b'[' => { let mut a = Vec::new(); *i += 1; ws(b, i);\n            if b[*i] == b']' { *i += 1; return JVal::Arr(a); }\n            loop { a.push(value(b, i)); ws(b, i);\n                if b[*i] == b',' { *i += 1; continue } *i += 1; break }\n            JVal::Arr(a) }\n        b'\"' => JVal::Str(string(b, i)),\n        b't' => { *i += 4; JVal::Bool(true) }\n        b'f' => { *i += 5; JVal::Bool(false) }\n        b'n' => { *i += 4; JVal::Null }\n        _ => { let st = *i;\n            while *i < b.len() && (b[*i].is_ascii_digit() || b\"-+.eE\".contains(&b[*i])) { *i += 1 }\n            JVal::Num(std::str::from_utf8(&b[st..*i]).unwrap().parse().unwrap()) }\n    }\n}\n\nfn string(b: &[u8], i: &mut usize) -> String {\n    let mut out = String::new(); *i += 1;\n    while b[*i] != b'\"' {\n        let c = b[*i]; *i += 1;\n        if c == b'\\\\' { let e = b[*i]; *i += 1;\n            out.push(match e { b'n' => '\\n', b't' => '\\t', x => x as char }) }\n        else { out.push(c as char) }\n    }\n    *i += 1; out\n}\n"
+          }
+        },
         "typescript": {
           "practice": "export function solve(c: { nums: number[]; target: number }): number[] {\n  const nums = c.nums, target = c.target;\n  // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n  return [];\n}\n",
           "clean": "export function solve(c: { nums: number[]; target: number }): number[] {\n  const seen = new Map<number, number>();\n  for (let i = 0; i < c.nums.length; i++) {\n    const need = c.target - c.nums[i];\n    if (seen.has(need)) return [seen.get(need)!, i];\n    seen.set(c.nums[i], i);\n  }\n  return [];\n}\n",
@@ -1035,6 +1105,41 @@
               "space": "O(1)",
               "notes": null
             }
+          }
+        },
+        "rust": {
+          "practice": "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    let _n = c.get(\"n\").as_num() as i64;\n    // Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n    JVal::Num(0.0)\n}\n",
+          "clean": "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    let n = c.get(\"n\").as_num() as i64;\n    let (mut a, mut b) = (0i64, 1i64);\n    for _ in 0..n { let t = a + b; a = b; b = t; }\n    JVal::Num(a as f64)\n}\n",
+          "optimized": "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    let mut n = c.get(\"n\").as_num() as i64;\n    // Same O(n) window slide as clean, unrolled 2x (advances two Fib steps per\n    // loop check). Constant-factor win, stays in the declared O(n) class.\n    let (mut a, mut b) = (0i64, 1i64);\n    if n & 1 == 1 { let t = a + b; a = b; b = t; n -= 1; }\n    while n > 0 { let t = a + b; b = t + b; a = t; n -= 2; }\n    JVal::Num(a as f64)\n}\n",
+          "brute-force": "use crate::json::JVal;\n\nfn fib(n: i64) -> i64 {\n    if n < 2 { n } else { fib(n - 1) + fib(n - 2) }\n}\n\npub fn solve(c: &JVal) -> JVal {\n    let n = c.get(\"n\").as_num() as i64;\n    // Obvious approach: the naive recursive definition. O(phi^n) time, O(n) stack.\n    JVal::Num(fib(n) as f64)\n}\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(phi^n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "naive recursion -- the obvious definition; exponential time, linear call-stack depth"
+            }
+          },
+          "support": {
+            "json.rs": "// Minimal JSON parser (dependency-free; the idiomatic path is serde_json via\n// cargo, but Glifex stays offline-friendly). Vendored — do not edit.\nuse std::collections::BTreeMap;\n\n#[derive(Clone, Debug, PartialEq)]\npub enum JVal {\n    Null,\n    Bool(bool),\n    Num(f64),\n    Str(String),\n    Arr(Vec<JVal>),\n    Obj(BTreeMap<String, JVal>),\n}\n\n#[allow(dead_code)]\nimpl JVal {\n    pub fn get(&self, key: &str) -> &JVal {\n        match self { JVal::Obj(m) => &m[key], _ => panic!(\"not an object\") }\n    }\n    pub fn as_str(&self) -> &str {\n        match self { JVal::Str(s) => s, _ => panic!(\"not a string\") }\n    }\n    pub fn as_num(&self) -> f64 {\n        match self { JVal::Num(n) => *n, _ => panic!(\"not a number\") }\n    }\n    pub fn as_arr(&self) -> &Vec<JVal> {\n        match self { JVal::Arr(a) => a, _ => panic!(\"not an array\") }\n    }\n    pub fn dump(&self) -> String {\n        match self {\n            JVal::Null => \"null\".into(),\n            JVal::Bool(b) => b.to_string(),\n            JVal::Num(n) => if n.fract() == 0.0 { format!(\"{}\", *n as i64) } else { n.to_string() },\n            JVal::Str(s) => format!(\"\\\"{}\\\"\", s),\n            JVal::Arr(a) => format!(\"[{}]\", a.iter().map(|v| v.dump()).collect::<Vec<_>>().join(\",\")),\n            JVal::Obj(m) => format!(\"{{{}}}\", m.iter().map(|(k, v)| format!(\"\\\"{}\\\":{}\", k, v.dump())).collect::<Vec<_>>().join(\",\")),\n        }\n    }\n}\n\npub fn parse(src: &str) -> JVal {\n    let b = src.as_bytes();\n    let mut i = 0;\n    value(b, &mut i)\n}\n\nfn ws(b: &[u8], i: &mut usize) { while *i < b.len() && b[*i].is_ascii_whitespace() { *i += 1 } }\n\nfn value(b: &[u8], i: &mut usize) -> JVal {\n    ws(b, i);\n    match b[*i] {\n        b'{' => { let mut m = BTreeMap::new(); *i += 1; ws(b, i);\n            if b[*i] == b'}' { *i += 1; return JVal::Obj(m); }\n            loop { ws(b, i); let k = string(b, i); ws(b, i); *i += 1;\n                m.insert(k, value(b, i)); ws(b, i);\n                if b[*i] == b',' { *i += 1; continue } *i += 1; break }\n            JVal::Obj(m) }\n        b'[' => { let mut a = Vec::new(); *i += 1; ws(b, i);\n            if b[*i] == b']' { *i += 1; return JVal::Arr(a); }\n            loop { a.push(value(b, i)); ws(b, i);\n                if b[*i] == b',' { *i += 1; continue } *i += 1; break }\n            JVal::Arr(a) }\n        b'\"' => JVal::Str(string(b, i)),\n        b't' => { *i += 4; JVal::Bool(true) }\n        b'f' => { *i += 5; JVal::Bool(false) }\n        b'n' => { *i += 4; JVal::Null }\n        _ => { let st = *i;\n            while *i < b.len() && (b[*i].is_ascii_digit() || b\"-+.eE\".contains(&b[*i])) { *i += 1 }\n            JVal::Num(std::str::from_utf8(&b[st..*i]).unwrap().parse().unwrap()) }\n    }\n}\n\nfn string(b: &[u8], i: &mut usize) -> String {\n    let mut out = String::new(); *i += 1;\n    while b[*i] != b'\"' {\n        let c = b[*i]; *i += 1;\n        if c == b'\\\\' { let e = b[*i]; *i += 1;\n            out.push(match e { b'n' => '\\n', b't' => '\\t', x => x as char }) }\n        else { out.push(c as char) }\n    }\n    *i += 1; out\n}\n"
           }
         },
         "sm83": {
