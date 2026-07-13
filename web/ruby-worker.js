@@ -125,7 +125,40 @@ async function compile(source) {
     const r = vm.eval(`require "json"; JSON.generate(solve(JSON.parse(%q(${JSON.stringify(input)}))))`);
     return JSON.parse(r.toString());
   };
-  return { measure: (cases, opts) => caseLoop(callSolve, cases, opts) };
+  // L4 space. Ruby has no built-in peak-workspace counter, so heap is GC allocation
+  // VOLUME during solve (GC.stat total_allocated_bytes delta) -- an exact count but
+  // an upper bound on peak, hence flagged approximate. Stack is EXACT: max recursion
+  // depth via set_trace_func. Measured in separate runs (the tracer allocates, which
+  // would inflate the heap count). Helpers defined once; called per case by the hook.
+  let rbSpaceOk = false;
+  try {
+    vm.eval([
+      'require "json"',
+      'def __gx_heap(a)',
+      '  b = (GC.stat[:total_allocated_bytes] || 0)',
+      '  solve(a)',
+      '  (GC.stat[:total_allocated_bytes] || 0) - b',
+      'end',
+      'def __gx_stack(a)',
+      '  d = 0; m = 0',
+      '  set_trace_func(proc { |ev, *| if ev == "call"; d += 1; m = d if d > m; elsif ev == "return"; d -= 1 if d > 0; end })',
+      '  begin; solve(a); ensure; set_trace_func(nil); end',
+      '  m',
+      'end',
+    ].join("\n"));
+    rbSpaceOk = true;
+  } catch (e) { rbSpaceOk = false; }
+  const spaceOf = rbSpaceOk
+    ? (_cs, input) => {
+        try {
+          const arg = `JSON.parse(%q(${JSON.stringify(input)}))`;
+          const h = Number(vm.eval(`__gx_heap(${arg})`).toString());
+          const s = Number(vm.eval(`__gx_stack(${arg})`).toString());
+          return { heap: Number.isFinite(h) ? h : null, stack: Number.isFinite(s) ? s : null };
+        } catch (e) { return null; }
+      }
+    : null;
+  return { measure: (cases, opts) => caseLoop(callSolve, cases, spaceOf ? { ...(opts || {}), spaceOf } : opts), spaceApprox: true };
 }
 
 self.onmessage = async (e) => {

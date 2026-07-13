@@ -248,6 +248,7 @@ const GlifexLab = (() => {
     }
 
     const repRows = [];
+    let workerSpaceApprox = false;   // a runtime can declare its space metric approximate (e.g. Ruby: allocation volume, not a true peak)
     const repDurations = [];      // wall time for the WHOLE runOnce() call, one entry per rep
     let detMeta = null;
     const maxRetries = (C.LANG_OVERRIDES[lang] && C.LANG_OVERRIDES[lang].retryOnError) || 0;
@@ -266,6 +267,7 @@ const GlifexLab = (() => {
       repDurations.push(performance.now() - t0);
       if (out.error) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${esc(out.error)}</div>`));
       if (out.clockHz) detMeta = { clockHz: out.clockHz };
+      if (out.spaceApprox) workerSpaceApprox = true;
       const cErr = correctnessError(out.results);
       if (cErr) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${cErr}</div>`));
       repRows.push(out.results);
@@ -329,6 +331,7 @@ const GlifexLab = (() => {
       replacementBudgetSpent += dt;
       if (out.error) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${esc(out.error)}</div>`));
       if (out.clockHz) detMeta = { clockHz: out.clockHz };
+      if (out.spaceApprox) workerSpaceApprox = true;
       const cErr = correctnessError(out.results);
       if (cErr) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${cErr}</div>`));
       repRows[r] = out.results;
@@ -418,7 +421,7 @@ const GlifexLab = (() => {
       }
       const spaceStackJ = (declaredSpace && spaceStackSeries.ns.length >= 2)
         ? E.judgeSpaceUpper(spaceStackSeries.ns, spaceStackSeries.ys, declaredSpace, tier.tol) : null;
-      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, spaceStackSeries, spaceStackJ, declaredSpace, spaceApprox: jsLike, spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
+      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, spaceStackSeries, spaceStackJ, declaredSpace, spaceApprox: jsLike || workerSpaceApprox, spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
       if (boundMode === "empirical-match") {
         const variantBounds = {};
         for (const [variant, b] of Object.entries(langComplexity)) {

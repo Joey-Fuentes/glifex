@@ -97,7 +97,20 @@ async function runPhp(PhpWeb, source, cases) {
     "    } else {\n" +
     "      $__tval = (int)round($__dt * 1e9);\n" +
     "    }\n" +
-    "    $__o[] = ['i' => $__i, 'got' => $__got, 't' => $__tval];\n" +
+    // L4 EXACT heap: per-case peak workspace. memory_reset_peak_usage (PHP 8.2+)
+    // gives a true per-call peak; without it we emit null (honest) rather than a
+    // misleading cumulative figure. Delta above the pre-call baseline = the
+    // solve's own auxiliary workspace. PHP stack depth needs xdebug (absent), so
+    // no spaceStack -- heap-only, exact.
+    "    $__sp = null;\n" +
+    "    if (function_exists('memory_reset_peak_usage')) {\n" +
+    "      memory_reset_peak_usage();\n" +
+    "      $__b = memory_get_usage();\n" +
+    "      solve($__c['input']);\n" +
+    "      $__sp = memory_get_peak_usage() - $__b;\n" +
+    "      if ($__sp < 0) { $__sp = 0; }\n" +
+    "    }\n" +
+    "    $__o[] = ['i' => $__i, 'got' => $__got, 't' => $__tval, 'sp' => $__sp];\n" +
     "  }\n" +
     "  catch (\\Throwable $__e) { $__o[] = ['i' => $__i, 'err' => $__e->getMessage()]; }\n" +
     "}\n" +
@@ -122,7 +135,7 @@ async function runPhp(PhpWeb, source, cases) {
     const r = byI.get(i);
     if (!r) return { i, ok: false, error: "no result for case", expected: c.expected };
     if ("err" in r) return { i, ok: false, error: String(r.err), expected: c.expected };
-    return { i, ok: eq(r.got, c.expected), got: r.got, expected: c.expected, tNs: r.t != null && r.t > 0 ? r.t : null };
+    return { i, ok: eq(r.got, c.expected), got: r.got, expected: c.expected, tNs: r.t != null && r.t > 0 ? r.t : null, space: (r.sp != null && r.sp >= 0) ? r.sp : undefined };
   });
   const nsPerCase = cases.length ? (dt * 1e6) / cases.length : 0;
   return { results, nsPerCase };
