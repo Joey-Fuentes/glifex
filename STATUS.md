@@ -245,8 +245,11 @@ Gating: the C/C++ instrumentation is wasm-build-only (`#ifdef __wasm__` plus a
 worker-only `-include`), so the native `g++`/`gcc` reference verify (`glifex verify`)
 compiles the pristine harness and is unaffected.
 
-Still display-only (declared class shown, not measured): **C#, Go, Java** — no
-in-browser execution path to instrument.
+Still display-only (declared class shown, not measured): **Go, Java** — no
+in-browser execution path to instrument. **C#** now measures both (Bx-5d) —
+time via an adaptive-repeat `Stopwatch`, space via GC allocation volume — though
+its Lab classification still needs per-language ladder tuning (see the C# runtime
+section).
 
 ## ✅ Tracks & infrastructure
 
@@ -286,6 +289,18 @@ in-browser execution path to instrument.
   machine-readable health check). Build and deploy are separate jobs, so
   re-running a failed deploy is safe. Site footer links Privacy and Licenses;
   SECURITY.md + prepared THIRD_PARTY_NOTICES.md in place.
+
+## 🛠️ Vendor bundle export (manual)
+
+`web/vendor/**` — every runtime bundle (Python/Ruby/TypeScript/Postgres/WAT/
+customasm/CodeMirror plus the C/C++/C# toolchains) — is gitignored and built fresh
+in CI at deploy. To grab the **complete** bundle for all languages on demand (e.g.
+to reproduce a runtime locally), trigger the **`export-vendor-bundle`** workflow
+manually: Actions tab → *export-vendor-bundle* → *Run workflow*. It is
+`workflow_dispatch`-only and **never runs on push or PR**. It runs the full
+vendoring and uploads `web/vendor` as the `vendor-bundle-all-languages` artifact
+(~250MB — the C `clang.webc` alone is ~106MB); download it from the run's
+Artifacts. Use it, then it expires on its own (retention-limited).
 
 ## ⚠️ Still written but NOT executed
 
@@ -363,10 +378,24 @@ on monitors, so Roslyn's default concurrency traps), byte-image references via
 
 Vendored at deploy exactly like C/C++ — a `dotnet publish` step in `pages.yml`/`ci.yml`
 drops the AppBundle `_framework` into `web/vendor/csharp/` (~39MB, gitignored,
-lazy-loaded on first C# use). Timing/space are display-only for now (the harness
-emits no `[METRIC]`/`[SPACE]` lines), matching the ROADMAP L-track note. Evidence:
+lazy-loaded on first C# use).
+
+Runs **off the main thread** (Bx-5c): a module worker with a `self.window = self`
+shim so the .NET loader takes its normal web boot path, and `addEventListener`
+(not `self.onmessage`, which the loader installs itself during boot — assigning it
+clobbered the loader and hung `dotnet.create()`; root-caused in a real browser).
+
+**Complexity Lab time + space are measured** (Bx-5d): the harness times each
+`Solve` (adaptive-repeat `Stopwatch` past the clock grain → `[METRIC]`) and reports
+GC allocation volume (`GC.GetTotalAllocatedBytes` → `[SPACE]`, rendered as
+"allocation volume (approx)"). **Classification still needs per-language tuning:**
+real-O(n) workloads (e.g. two-sum → time O(n), space O(n)) classify correctly, but
+small-n problems like fib read O(1) because per-call overhead dominates at the
+shared ladder's tiny n (a known effect, also seen for JS/WAT). Tuning C#'s size
+ladders / overhead exclusion is a deferred follow-up. Evidence:
 `csharp-runtime-validate` (Node: all four variants × 001/002/003 compile+run,
-verdict-identical) and `csharp-smoke.spec.js` (real Chromium, problem 001 green).
+verdict-identical), `csharp-smoke.spec.js` (real Chromium), and a local-browser
+Analyze run (two-sum: time O(n) + space O(n)).
 
 ## Retro track: 6502 (Bx-4) + SM83 / Game Boy (Bx-5) -- live in production
 
