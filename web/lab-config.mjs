@@ -80,7 +80,7 @@ export const LANG_OVERRIDES = {
 export const PROBLEMS = {
   "001-anagram-detection": {
     sizeLabel: "string length n",
-    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] } },
+    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] }, detByLang: { "asm-x86_64": [32, 64, 128, 256, 512] } },
     declared: { upper: "O(n)", lower: "O(1)" },
     roles: { upper: "worst", lower: "best" },
     modes: [
@@ -92,7 +92,7 @@ export const PROBLEMS = {
 
   "002-two-sum": {
     sizeLabel: "array length n",
-    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] } },
+    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] }, detByLang: { "asm-x86_64": [32, 64, 128, 256, 512] } },
     declared: { upper: "O(n)", lower: "O(1)" },
     roles: { upper: "worst", lower: "best" },
     // Base array: distinct even values, shuffled; target = odd (sum of the
@@ -174,6 +174,11 @@ export const PROBLEMS = {
       // loadWat's callSolve() converts the resulting BigInt back to a
       // Number for the oracle comparison (see web/runtimes.js).
       wallByLang: { sm83: [6, 7, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 23, 24], "asm-6502": [6, 7, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 23, 24], rust: [24, 32, 40, 48, 56, 64, 72, 78] },
+      // x86-64 is single-stepped under Blink, so brute-force fib(n) must stay
+      // small enough to drive within the worker budget; its 64-bit result
+      // register has none of the retro u16 cap that holds the shared det
+      // ladder at 24, so it uses its own tighter range.
+      detByLang: { "asm-x86_64": [4, 8, 12, 16, 20] },
     },
     // Retro ladder tops out at 24: fib(25) = 75025 overflows the tracks'
     // u16 result contract. Wall ladder tops at 78: fib(78) is the last
@@ -214,8 +219,9 @@ export function buildPlan(cfg, tierId, lang, seedBase) {
   // A problem may need a NARROWER wall ladder for specific languages whose
   // result-encoding can't safely represent every value the shared ladder
   // would test (see 003-nth-fibonacci's wallByLang for why this exists).
-  const wallOverride = tierId === "wall" && cfg.sizes.wallByLang && cfg.sizes.wallByLang[lang];
-  const baseSizes = wallOverride || cfg.sizes[tierId] || cfg.sizes.wall;
+  const byLangTable = cfg.sizes[tierId + "ByLang"];
+  const byLang = byLangTable && byLangTable[lang];
+  const baseSizes = byLang || cfg.sizes[tierId] || cfg.sizes.wall;
   const sizes = baseSizes.slice(0, ov.maxSizes || 99);
   const plan = [];
   for (const mode of cfg.modes) {

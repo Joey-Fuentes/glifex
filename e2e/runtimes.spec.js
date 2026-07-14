@@ -65,7 +65,7 @@ test.describe("WASM runtimes smoke", () => {
     await page.locator("#editor").fill(source);
   }
 
-  for (const lang of ["typescript", "python", "ruby", "php"]) {
+  for (const lang of ["typescript", "python", "ruby", "php", "asm-x86_64"]) {
     test(`${lang} compiles-and-runs green`, async () => {
       test.setTimeout(120_000);   // first-load download+init is slow in CI
       await page.locator("#lang-select").selectOption(lang);
