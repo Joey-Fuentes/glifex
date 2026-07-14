@@ -1,0 +1,91 @@
+# THROWAWAY (v2): assembles a COMPLETE, runnable Java in-browser bundle and uploads it.
+# v1 shipped ECJ + Doppio's browser JS but MISSED the Java Class Library (Doppio cannot
+# run any Java without it) and BrowserFS (doppio.js's required runtime dep). v2 adds both,
+# pinned to the versions Doppio itself references. Delete workflow + branch after retrieval.
+#   * ECJ            -> Maven Central (latest release).
+#   * DoppioJVM      -> npm doppiojvm@0.5.0 (dist/release/doppio.js + listings.json).
+#   * BrowserFS      -> npm browserfs (doppio.js UMD resolves window.BrowserFS at load).
+#   * Java Class Lib -> plasma-umass/doppio_jcl release v3.2 java_home.tar.gz, the exact
+#                       asset Doppio's own console/download_jdk.ts pins. The npm postinstall
+#                       that normally fetches it is skipped by npm pack -- why v1 lacked it.
+name: export-java-vendor
+on:
+  push:
+    branches: [chore/export-java-vendor]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: ECJ (Eclipse Compiler for Java) from Maven Central
+        run: |
+          set -euo pipefail
+          mkdir -p out/java
+          META=$(mktemp)
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
+            https://repo1.maven.org/maven2/org/eclipse/jdt/ecj/maven-metadata.xml -o "$META"
+          ECJ_VER=$(grep -oP '(?<=<release>)[^<]+' "$META" | head -1 || true)
+          [ -n "$ECJ_VER" ] || ECJ_VER=$(grep -oP '(?<=<version>)[^<]+' "$META" | tail -1 || true)
+          test -n "$ECJ_VER" || { echo "could not resolve an ECJ version from Maven metadata"; exit 1; }
+          echo "ECJ version: $ECJ_VER"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
+            "https://repo1.maven.org/maven2/org/eclipse/jdt/ecj/${ECJ_VER}/ecj-${ECJ_VER}.jar" -o out/java/ecj.jar
+          test "$(stat -c%s out/java/ecj.jar)" -gt 1000000 || { echo "ecj.jar too small (fetch failed?)"; exit 1; }
+          echo "ecj.jar: $(du -h out/java/ecj.jar | cut -f1)"
+
+      - name: DoppioJVM browser build (npm doppiojvm@0.5.0) + BrowserFS
+        run: |
+          set -euo pipefail
+          mkdir -p out/java/doppio
+          npm pack doppiojvm@0.5.0
+          tar xzf doppiojvm-*.tgz
+          cp -r package/. out/java/doppio/
+          rm -rf package doppiojvm-*.tgz
+          test -f out/java/doppio/dist/release/doppio.js || { echo "doppio.js missing from npm package"; exit 1; }
+          test -f out/java/doppio/dist/release/listings.json || { echo "listings.json missing"; exit 1; }
+          echo "doppio.js: $(du -h out/java/doppio/dist/release/doppio.js | cut -f1)"
+          mkdir -p out/java/browserfs
+          npm pack browserfs
+          tar xzf browserfs-*.tgz
+          if [ -d package/dist ]; then cp -r package/dist/. out/java/browserfs/; else cp -r package/. out/java/browserfs/; fi
+          rm -rf package browserfs-*.tgz
+          echo "browserfs files:"; ls out/java/browserfs | head
+
+      - name: Java Class Library (pinned doppio_jcl v3.2) -- the piece v1 missed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p out/java/doppio/vendor
+          JCL=$(mktemp -d)
+          gh release download v3.2 --repo plasma-umass/doppio_jcl --pattern 'java_home.tar.gz' --dir "$JCL" \
+            || curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
+                 https://github.com/plasma-umass/doppio_jcl/releases/download/v3.2/java_home.tar.gz -o "$JCL/java_home.tar.gz"
+          tar xzf "$JCL/java_home.tar.gz" -C out/java/doppio/vendor
+          test -d out/java/doppio/vendor/java_home || { echo "java_home not extracted"; exit 1; }
+          mkdir -p out/java/doppio/vendor/java_home/lib
+          cp out/java/doppio/dist/doppio.jar out/java/doppio/vendor/java_home/lib/doppio.jar
+          JH_MB=$(du -sm out/java/doppio/vendor/java_home | cut -f1)
+          echo "java_home size: ${JH_MB} MB"
+          test "$JH_MB" -ge 20 || { echo "java_home suspiciously small (${JH_MB}MB) -- JCL incomplete?"; exit 1; }
+
+      - name: Manifest + inventory
+        run: |
+          set -euo pipefail
+          printf '{"runtime":"java","via":"ecj + doppiojvm@0.5.0 + browserfs + doppio_jcl@v3.2","note":"smoke locally before wiring; doppio.js UMD needs window.BrowserFS and a served vendor/java_home (listings.json)"}\n' > out/java/manifest.json
+          echo "=== out/java tree (head) ==="; find out/java -maxdepth 3 -type f | sort | head -60 || true
+          echo "file count: $(find out/java -type f | wc -l)"; du -sh out/java
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: java-vendor
+          path: out/java
+          retention-days: 3
+          compression-level: 6
