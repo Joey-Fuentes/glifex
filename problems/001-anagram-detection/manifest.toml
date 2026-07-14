@@ -8,7 +8,7 @@ python      = { variants = ["practice", "clean", "optimized"] }
 javascript  = { variants = ["practice", "clean", "optimized"] }
 typescript  = { variants = ["practice", "clean", "optimized"] }
 go          = { variants = ["practice", "clean", "optimized"] }
-java        = { variants = ["practice", "clean", "optimized"] }
+java        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 kotlin      = { variants = ["practice", "clean", "optimized"] }
 swift       = { variants = ["practice", "clean", "optimized"] }
 ruby        = { variants = ["practice", "clean", "optimized"] }
@@ -61,3 +61,8 @@ notes = "per-char count compare -- the naive O(n^2) baseline"
 time = "O(n^2)"
 space = "O(1)"
 notes = "naive per-character count compare -- the O(n^2) baseline"
+
+[complexity.java.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "per-character count comparison -- the obvious baseline Clean/Optimized improve on"

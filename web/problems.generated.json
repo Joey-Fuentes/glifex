@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-14T03:37:17.404Z",
+  "generatedAt": "2026-07-14T18:44:47.256Z",
   "displayNames": {
     "asm-6502": "6502 assembly",
     "asm-x86_64": "x86-64 assembly",
@@ -228,10 +228,10 @@
           }
         },
         "java": {
-          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String, Object> c) {\n        String s = (String) c.get(\"s\");\n        String t = (String) c.get(\"t\");\n        // Return true if s and t are anagrams of each other, false otherwise.\n        return false;\n    }\n}\n",
+          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String, Object> c) {\n        String s = (String) c.get(\"s\");\n        String t = (String) c.get(\"t\");\n        // TODO: return true if s and t are anagrams of each other, false otherwise.\n        return false;\n    }\n}\n",
           "clean": "import java.util.*;\npublic class Clean implements Solution {\n    public Object solve(Map<String, Object> c) {\n        char[] a = ((String) c.get(\"s\")).toCharArray();\n        char[] b = ((String) c.get(\"t\")).toCharArray();\n        Arrays.sort(a); Arrays.sort(b);\n        return Arrays.equals(a, b);\n    }\n}\n",
           "optimized": "import java.util.*;\npublic class Optimized implements Solution {\n    public Object solve(Map<String, Object> c) {\n        String s = (String) c.get(\"s\"), t = (String) c.get(\"t\");\n        if (s.length() != t.length()) return false;\n        int[] count = new int[128];\n        for (char ch : s.toCharArray()) count[ch]++;\n        for (char ch : t.toCharArray()) if (--count[ch] < 0) return false;\n        return true;\n    }\n}\n",
-          "brute-force": null,
+          "brute-force": "import java.util.*;\n// Brute force: for every character, compare how many times it occurs in each\n// string. The obvious first approach -- O(n^2) time, O(1) space -- the baseline\n// Clean/Optimized improve on. Non-public so it can share a file whose name\n// doesn't match the class (the bake stores it as Brute-force.java).\nclass BruteForce implements Solution {\n    public Object solve(Map<String, Object> c) {\n        String s = (String) c.get(\"s\");\n        String t = (String) c.get(\"t\");\n        if (s.length() != t.length()) return false;\n        for (int i = 0; i < s.length(); i++) {\n            char ch = s.charAt(i);\n            int cs = 0, ct = 0;\n            for (int j = 0; j < s.length(); j++) if (s.charAt(j) == ch) cs++;\n            for (int j = 0; j < t.length(); j++) if (t.charAt(j) == ch) ct++;\n            if (cs != ct) return false;\n        }\n        return true;\n    }\n}\n",
           "complexity": {
             "practice": {
               "upper": "O(n log n)",
@@ -250,6 +250,12 @@
               "lower": null,
               "space": "O(1)",
               "notes": "counting table; O(1) under the fixed-alphabet convention"
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "per-character count comparison -- the obvious baseline Clean/Optimized improve on"
             }
           }
         },
@@ -690,10 +696,10 @@
           }
         },
         "java": {
-          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n        return List.of();\n    }\n}\n",
+          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        // TODO: return [i, j] such that nums[i] + nums[j] == target.\n        return List.of();\n    }\n}\n",
           "clean": "import java.util.*;\npublic class Clean implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        Map<Long, Integer> seen = new HashMap<>();\n        for (int i = 0; i < nums.size(); i++) {\n            long n = ((Number) nums.get(i)).longValue();\n            if (seen.containsKey(target - n)) return List.of(seen.get(target - n), i);\n            seen.put(n, i);\n        }\n        return List.of();\n    }\n}\n",
           "optimized": "import java.util.*;\npublic class Optimized implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        Map<Long, Integer> seen = new HashMap<>();\n        for (int i = 0; i < nums.size(); i++) {\n            long n = ((Number) nums.get(i)).longValue();\n            if (seen.containsKey(target - n)) return List.of(seen.get(target - n), i);\n            seen.put(n, i);\n        }\n        return List.of();\n    }\n}\n",
-          "brute-force": null,
+          "brute-force": "import java.util.*;\n// Brute force: check every pair. The obvious first approach -- O(n^2) time,\n// O(1) space. Non-public so the file name (Brute-force.java) need not match.\nclass BruteForce implements Solution {\n    public Object solve(Map<String, Object> c) {\n        List<Object> nums = (List<Object>) c.get(\"nums\");\n        long target = ((Number) c.get(\"target\")).longValue();\n        for (int i = 0; i < nums.size(); i++) {\n            long a = ((Number) nums.get(i)).longValue();\n            for (int j = i + 1; j < nums.size(); j++) {\n                long b = ((Number) nums.get(j)).longValue();\n                if (a + b == target) return List.of(i, j);\n            }\n        }\n        return List.of();\n    }\n}\n",
           "complexity": {
             "practice": {
               "upper": "O(n)",
@@ -712,6 +718,12 @@
               "lower": null,
               "space": "O(n)",
               "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop over every pair -- the O(n^2) baseline"
             }
           }
         },
@@ -1123,6 +1135,38 @@
               "lower": null,
               "space": "O(1)",
               "notes": null
+            }
+          }
+        },
+        "java": {
+          "practice": "import java.util.*;\npublic class Practice implements Solution {\n    public Object solve(Map<String, Object> c) {\n        long n = ((Number) c.get(\"n\")).longValue();\n        // TODO: return the nth Fibonacci number (fib(0)=0, fib(1)=1, fib(2)=1, ...).\n        return 0L;\n    }\n}\n",
+          "clean": "import java.util.*;\npublic class Clean implements Solution {\n    public Object solve(Map<String, Object> c) {\n        long n = ((Number) c.get(\"n\")).longValue();\n        long a = 0, b = 1;\n        for (long i = 0; i < n; i++) { long t = a + b; a = b; b = t; }\n        return a;\n    }\n}\n",
+          "optimized": "import java.util.*;\n// Same O(n) window-slide as Clean, unrolled 2x: two Fibonacci steps per\n// loop-counter check (peel an odd n first). A constant-factor win that stays\n// in the declared O(n) class.\npublic class Optimized implements Solution {\n    public Object solve(Map<String, Object> c) {\n        long n = ((Number) c.get(\"n\")).longValue();\n        long a = 0, b = 1;\n        if ((n & 1) != 0) { long na = b, nb = a + b; a = na; b = nb; n -= 1; }\n        while (n > 0) { long t = a + b; b = t + b; a = t; n -= 2; }\n        return a;\n    }\n}\n",
+          "brute-force": "import java.util.*;\n// Brute force: the naive recursive definition. Exponential O(phi^n) time,\n// linear call-stack depth. The obvious statement of the problem, and the\n// baseline the O(n) Clean/Optimized improve on. Non-public (file is Brute-force.java).\nclass BruteForce implements Solution {\n    public Object solve(Map<String, Object> c) {\n        long n = ((Number) c.get(\"n\")).longValue();\n        return fib(n);\n    }\n    static long fib(long n) {\n        return n < 2 ? n : fib(n - 1) + fib(n - 2);\n    }\n}\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(phi^n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "naive recursion -- the obvious definition; exponential time, linear call-stack depth"
             }
           }
         },

@@ -93,10 +93,18 @@ function genDecode(sample) {
 function buildProgram(userSource, decodeBody) {
   let src = String(userSource || "");
   if (!/import\s+java\.util\./.test(src)) src = "import java.util.*;\n" + src;
+  // Solutions are named after their variant (Practice, Clean, Optimized, BruteForce, ...),
+  // not always "Practice". Detect the class that implements Solution (fall back to the
+  // first declared class) so we compile it under the matching filename, instantiate the
+  // right class, and set the right wasm entry point.
+  let cls = "Practice";
+  const m = src.match(/class\s+([A-Za-z_$][\w$]*)\s+implements\s+Solution\b/) ||
+            src.match(/(?:public\s+)?(?:final\s+)?class\s+([A-Za-z_$][\w$]*)/);
+  if (m) cls = m[1];
   src = src.replace(/\bimplements\s+Solution\b/, "");
   const harness =
-        '  public static void main(String[] __a){\n' +
-    '    Practice __sol=new Practice();\n' +
+    '  public static void main(String[] __a){\n' +
+    '    ' + cls + ' __sol=new ' + cls + '();\n' +
     '    for(int __i=0;__i<__a.length;__i++){\n' +
     '      String[] p=__a[__i].split("' + US + '",-1);\n' +
     '      Map<String,Object> in=new LinkedHashMap<>();\n' +
@@ -108,8 +116,8 @@ function buildProgram(userSource, decodeBody) {
     '    }\n' +
     '  }\n';
   const idx = src.lastIndexOf("}");
-  if (idx < 0) return src + "\n" + harness;
-  return src.slice(0, idx) + harness + "}\n";
+  const program = idx < 0 ? (src + "\n" + harness) : (src.slice(0, idx) + harness + "}\n");
+  return { program: program, cls: cls };
 }
 
 const cache = { source: null, app: null, order: null };
@@ -125,14 +133,14 @@ self.addEventListener("message", async (e) => {
 
     if (cache.source !== d.source) {
       const { decode, order } = genDecode(cases[0] && cases[0].input);
-      const program = buildProgram(d.source, decode);
+      const { program, cls } = buildProgram(d.source, decode);
       try { compiler.clearSourceFiles(); } catch (_) {}
       try { compiler.clearOutputFiles(); } catch (_) {}
       const diags = [];
       const reg = compiler.onDiagnostic((x) => {
         if (x && (x.severity === "error")) diags.push((x.lineNumber ? "line " + x.lineNumber + ": " : "") + (x.message || ""));
       });
-      compiler.addSourceFile("Practice.java", program);
+      compiler.addSourceFile(cls + ".java", program);
       let ok;
       try {
         ok = compiler.compile();
@@ -145,7 +153,7 @@ self.addEventListener("message", async (e) => {
         try { reg && reg.destroy && reg.destroy(); } catch (_) {}
       }
       if (!ok) return void self.postMessage({ id: "error", error: "Java compile error:\n" + diags.slice(0, 6).join("\n").slice(0, 800) });
-      if (!compiler.generateWebAssembly({ outputName: "app", mainClass: "Practice" }))
+      if (!compiler.generateWebAssembly({ outputName: "app", mainClass: cls }))
         return void self.postMessage({ id: "error", error: "Java code generation failed (TeaVM)." });
       const app = await loadWasm(compiler.getWebAssemblyOutputFile("app.wasm"));
       cache.source = d.source; cache.app = app; cache.order = order;
