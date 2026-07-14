@@ -692,7 +692,31 @@ const Runtimes = (() => {
     entry: 0x0100, inAddr: 0xC000, outAddr: 0xC010, maxSteps: 400000, haltName: "HLT",
     initSp: 0xF000, clockHz: 2000000,   // T-states / 2.000 MHz (original 8080; ROM-validated table)
   });
-  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
+  // -- x86-64 assembly: GNU as+ld assemble/link a real ELF, Blink (WASM) runs it --
+  // Two-instance rule (build in one Blink, drive in a fresh one) + a JS-driven
+  // call of the user's leaf function: proven live under headless Chromium. The
+  // worker returns exact retired-instruction counts, peak stack (poison-scan),
+  // and heap bytes (mmap/brk watch) -- no C harness, solve() runs isolated.
+  async function loadAsmX86() {
+    if (!(await vendored("asm-x86_64"))) return null;
+    const st = { worker: null };
+    return {
+      async run(source, cases) {
+        try {
+          const res = await callWorker(
+            st, "asm-x86-worker.js", { id: "run", source, cases },
+            30000, "Your x86-64 program took too long (over 30s) -- likely a runaway loop or far more instructions than expected on these inputs.",
+            { type: "module" });
+          if (res.id === "error") return { error: res.error };
+          const { id, ...out } = res;
+          return out;
+        } catch (e) { return { error: String((e && e.message) || e) }; }
+      },
+    };
+  }
+
+
+  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, "asm-x86_64": loadAsmX86, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed

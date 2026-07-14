@@ -1,7 +1,8 @@
 {
-  "generatedAt": "2026-07-13T22:20:20.232Z",
+  "generatedAt": "2026-07-14T03:37:17.404Z",
   "displayNames": {
     "asm-6502": "6502 assembly",
+    "asm-x86_64": "x86-64 assembly",
     "i8080": "Intel 8080 assembly",
     "sm83": "Game Boy assembly"
   },
@@ -70,6 +71,38 @@
         }
       ],
       "languages": {
+        "asm-x86_64": {
+          "practice": "# int practice(const char *s, const char *t)\n# rdi = s, rsi = t. Stub: always returns 0 (not an anagram).\n    .text\n    .globl practice\npractice:\n    xor     %eax, %eax\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "clean": "# int practice(const char *s, const char *t)\n# rdi = s, rsi = t. Counting table on the stack; returns 1 iff anagram.\n    .text\n    .globl clean\nclean:\n    sub     $1024, %rsp          # int count[256]\n    xor     %eax, %eax\n    mov     $128, %ecx           # zero 1024 bytes as 128 quadwords\n    mov     %rsp, %r8\n.Lzero:\n    movq    %rax, (%r8)\n    add     $8, %r8\n    dec     %ecx\n    jnz     .Lzero\n.Lcount_s:\n    movzbl  (%rdi), %eax\n    test    %eax, %eax\n    je      .Lcount_t\n    incl    (%rsp,%rax,4)\n    inc     %rdi\n    jmp     .Lcount_s\n.Lcount_t:\n    movzbl  (%rsi), %eax\n    test    %eax, %eax\n    je      .Lcheck\n    decl    (%rsp,%rax,4)\n    inc     %rsi\n    jmp     .Lcount_t\n.Lcheck:\n    mov     $256, %ecx\n    mov     %rsp, %r8\n.Lchk:\n    cmpl    $0, (%r8)\n    jne     .Lfail\n    add     $4, %r8\n    dec     %ecx\n    jnz     .Lchk\n    mov     $1, %eax\n    add     $1024, %rsp\n    ret\n.Lfail:\n    xor     %eax, %eax\n    add     $1024, %rsp\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "optimized": "# int optimized(const char *s, const char *t)\n# Early length check, then counting table with early exit on negative count.\n    .text\n    .globl optimized\noptimized:\n    mov     %rdi, %r9            # strlen(s)\n    xor     %rax, %rax\n.Llen_s:\n    cmpb    $0, (%r9)\n    je      .Llen_t\n    inc     %r9\n    jmp     .Llen_s\n.Llen_t:\n    sub     %rdi, %r9            # r9 = len(s)\n    mov     %rsi, %r10\n.Llt:\n    cmpb    $0, (%r10)\n    je      .Llt_done\n    inc     %r10\n    jmp     .Llt\n.Llt_done:\n    sub     %rsi, %r10           # r10 = len(t)\n    cmp     %r9, %r10\n    jne     .Lno\n    sub     $1024, %rsp\n    xor     %eax, %eax\n    mov     $128, %ecx\n    mov     %rsp, %r8\n.Lz:\n    movq    %rax, (%r8)\n    add     $8, %r8\n    dec     %ecx\n    jnz     .Lz\n.Lcs:\n    movzbl  (%rdi), %eax\n    test    %eax, %eax\n    je      .Lct\n    incl    (%rsp,%rax,4)\n    inc     %rdi\n    jmp     .Lcs\n.Lct:\n    movzbl  (%rsi), %eax\n    test    %eax, %eax\n    je      .Lyes\n    decl    (%rsp,%rax,4)\n    js      .Lno_pop             # went negative: not an anagram\n    inc     %rsi\n    jmp     .Lct\n.Lyes:\n    mov     $1, %eax\n    add     $1024, %rsp\n    ret\n.Lno_pop:\n    add     $1024, %rsp\n.Lno:\n    xor     %eax, %eax\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "brute-force": "# int brute_force(const char *s, const char *t)\n# Naive O(n*m): equal lengths, and every char of s occurs equally often in s and t.\n    .text\n    .globl brute_force\nbrute_force:\n    push    %rbx\n    push    %r12\n    push    %r13\n    push    %r14\n    mov     %rdi, %r12           # s\n    mov     %rsi, %r13           # t\n    # len(s)\n    xor     %rax, %rax\n.Lls:\n    cmpb    $0, (%r12,%rax)\n    je      .Lls_done\n    inc     %rax\n    jmp     .Lls\n.Lls_done:\n    mov     %rax, %r14           # r14 = len(s)\n    # len(t)\n    xor     %rax, %rax\n.Llt:\n    cmpb    $0, (%r13,%rax)\n    je      .Llt_done\n    inc     %rax\n    jmp     .Llt\n.Llt_done:\n    cmp     %rax, %r14           # len(s) == len(t)?\n    jne     .Lno\n    xor     %rbx, %rbx           # i = 0\n.Louter:\n    cmp     %r14, %rbx\n    jge     .Lyes\n    movzbl  (%r12,%rbx), %edi    # c = s[i]\n    # count c in s\n    xor     %rcx, %rcx           # cs\n    xor     %rax, %rax\n.Lcs:\n    cmp     %r14, %rax\n    jge     .Lcs_done\n    movzbl  (%r12,%rax), %edx\n    cmp     %edi, %edx\n    jne     .Lcs_next\n    inc     %rcx\n.Lcs_next:\n    inc     %rax\n    jmp     .Lcs\n.Lcs_done:\n    # count c in t\n    xor     %r8, %r8             # ct\n    xor     %rax, %rax\n.Lct:\n    cmp     %r14, %rax\n    jge     .Lct_done\n    movzbl  (%r13,%rax), %edx\n    cmp     %edi, %edx\n    jne     .Lct_next\n    inc     %r8\n.Lct_next:\n    inc     %rax\n    jmp     .Lct\n.Lct_done:\n    cmp     %rcx, %r8\n    jne     .Lno\n    inc     %rbx\n    jmp     .Louter\n.Lyes:\n    mov     $1, %eax\n    jmp     .Ldone\n.Lno:\n    xor     %eax, %eax\n.Ldone:\n    pop     %r14\n    pop     %r13\n    pop     %r12\n    pop     %rbx\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "asm practice already uses the counting table"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "naive per-character count compare -- the O(n^2) baseline"
+            }
+          }
+        },
         "c": {
           "practice": "#include \"solution.h\"\n\nJVal *solve(JVal *c) {\n    char *s = jget(c, \"s\")->str;\n    char *t = jget(c, \"t\")->str;\n    /* Return true if s and t are anagrams of each other, false otherwise. */\n    return jbool_(0);\n}\n",
           "clean": "#define solve __glifex_ref_clean\n#include \"solution.h\"\n\nstatic int cmpc(const void *a, const void *b) { return *(const char *)a - *(const char *)b; }\n\nJVal *solve(JVal *c) {\n    char *s = jstrdup(jget(c, \"s\")->str), *t = jstrdup(jget(c, \"t\")->str);\n    size_t ls = strlen(s), lt = strlen(t);\n    if (ls != lt) return jbool_(0);\n    qsort(s, ls, 1, cmpc); qsort(t, lt, 1, cmpc);\n    return jbool_(!strcmp(s, t));\n}\n",
@@ -488,6 +521,38 @@
         }
       ],
       "languages": {
+        "asm-x86_64": {
+          "practice": "# void practice(const long *nums, long n, long target, long *out)\n# rdi=nums, rsi=n, rdx=target, rcx=out\n# Fill out[0], out[1] with the indices (i < j) of the two nums summing to target.\n    .text\n    .globl practice\npractice:\n    movq    $-1, (%rcx)          # TODO: replace with your solution\n    movq    $-1, 8(%rcx)\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "clean": "# void clean(const long *nums, long n, long target, long *out)\n# Hash table (linear probing) in mmap'd memory. O(n) time, O(n) heap.\n# rdi=nums, rsi=n, rdx=target, rcx=out\n    .text\n    .globl clean\nclean:\n    push    %rbx\n    push    %rbp\n    push    %r12\n    push    %r13\n    push    %r14\n    push    %r15\n    mov     %rdi, %r12           # nums\n    mov     %rsi, %r13           # n\n    mov     %rdx, %r14           # target\n    mov     %rcx, %r15           # out\n    # size = smallest power of two >= 2n+1, min 16\n    mov     $16, %rbx\n    lea     1(%r13,%r13), %rax   # 2n+1\n.Lsz:\n    cmp     %rax, %rbx\n    jge     .Lsz_done\n    add     %rbx, %rbx\n    jmp     .Lsz\n.Lsz_done:\n    mov     %rbx, %rsi           # size\n    shl     $4, %rsi             # size*16 bytes\n    mov     $9, %rax             # mmap\n    xor     %rdi, %rdi\n    mov     $3, %rdx             # PROT_READ|PROT_WRITE\n    mov     $0x22, %r10          # MAP_PRIVATE|MAP_ANONYMOUS\n    mov     $-1, %r8\n    xor     %r9, %r9\n    syscall                      # rax = base (clobbers rcx, r11)\n    mov     %rax, %rbp           # table base\n    dec     %rbx                 # rbx = mask = size-1\n    xor     %r8, %r8             # i = 0\n.Lmain:\n    cmp     %r13, %r8\n    jge     .Lnone\n    mov     (%r12,%r8,8), %r9    # x = nums[i]\n    mov     %r14, %rdi\n    sub     %r9, %rdi            # need = target - x\n    mov     %rdi, %rcx\n    and     %rbx, %rcx           # idx = need & mask\n.Llook:\n    mov     %rcx, %rax\n    shl     $4, %rax\n    add     %rbp, %rax           # entry\n    mov     8(%rax), %rdx        # val\n    test    %rdx, %rdx\n    jz      .Linsert             # empty slot -> need not present\n    mov     (%rax), %rsi         # key\n    cmp     %rdi, %rsi\n    jne     .Llook_next\n    dec     %rdx                 # j = val-1\n    mov     %rdx, (%r15)\n    mov     %r8, 8(%r15)         # out = [j, i]\n    jmp     .Ldone\n.Llook_next:\n    inc     %rcx\n    and     %rbx, %rcx\n    jmp     .Llook\n.Linsert:\n    mov     %r9, %rcx\n    and     %rbx, %rcx           # idx = x & mask\n.Lins:\n    mov     %rcx, %rax\n    shl     $4, %rax\n    add     %rbp, %rax\n    mov     8(%rax), %rdx\n    test    %rdx, %rdx\n    jz      .Lins_do\n    inc     %rcx\n    and     %rbx, %rcx\n    jmp     .Lins\n.Lins_do:\n    mov     %r9, (%rax)          # key = x\n    lea     1(%r8), %rdx\n    mov     %rdx, 8(%rax)        # val = i+1\n    inc     %r8\n    jmp     .Lmain\n.Lnone:\n    movq    $-1, (%r15)\n    movq    $-1, 8(%r15)\n.Ldone:\n    pop     %r15\n    pop     %r14\n    pop     %r13\n    pop     %r12\n    pop     %rbp\n    pop     %rbx\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "optimized": "# void clean(const long *nums, long n, long target, long *out)\n# Hash table (linear probing) in mmap'd memory. O(n) time, O(n) heap.\n# rdi=nums, rsi=n, rdx=target, rcx=out\n    .text\n    .globl optimized\noptimized:\n    push    %rbx\n    push    %rbp\n    push    %r12\n    push    %r13\n    push    %r14\n    push    %r15\n    mov     %rdi, %r12           # nums\n    mov     %rsi, %r13           # n\n    mov     %rdx, %r14           # target\n    mov     %rcx, %r15           # out\n    # size = smallest power of two >= 2n+1, min 16\n    mov     $16, %rbx\n    lea     1(%r13,%r13), %rax   # 2n+1\n.Losz:\n    cmp     %rax, %rbx\n    jge     .Losz_done\n    add     %rbx, %rbx\n    jmp     .Losz\n.Losz_done:\n    mov     %rbx, %rsi           # size\n    shl     $4, %rsi             # size*16 bytes\n    mov     $9, %rax             # mmap\n    xor     %rdi, %rdi\n    mov     $3, %rdx             # PROT_READ|PROT_WRITE\n    mov     $0x22, %r10          # MAP_PRIVATE|MAP_ANONYMOUS\n    mov     $-1, %r8\n    xor     %r9, %r9\n    syscall                      # rax = base (clobbers rcx, r11)\n    mov     %rax, %rbp           # table base\n    dec     %rbx                 # rbx = mask = size-1\n    xor     %r8, %r8             # i = 0\n.Lomain:\n    cmp     %r13, %r8\n    jge     .Lonone\n    mov     (%r12,%r8,8), %r9    # x = nums[i]\n    mov     %r14, %rdi\n    sub     %r9, %rdi            # need = target - x\n    mov     %rdi, %rax\n    imul    $-1640531527, %rax, %rax   # x*0x9E3779B1 (mod 2^64)\n    shr     $16, %rax\n    and     %rbx, %rax\n    mov     %rax, %rcx           # idx = hash(need)\n.Lolook:\n    mov     %rcx, %rax\n    shl     $4, %rax\n    add     %rbp, %rax           # entry\n    mov     8(%rax), %rdx        # val\n    test    %rdx, %rdx\n    jz      .Loinsert             # empty slot -> need not present\n    mov     (%rax), %rsi         # key\n    cmp     %rdi, %rsi\n    jne     .Lolook_next\n    dec     %rdx                 # j = val-1\n    mov     %rdx, (%r15)\n    mov     %r8, 8(%r15)         # out = [j, i]\n    jmp     .Lodone\n.Lolook_next:\n    inc     %rcx\n    and     %rbx, %rcx\n    jmp     .Lolook\n.Loinsert:\n    mov     %r9, %rax\n    imul    $-1640531527, %rax, %rax\n    shr     $16, %rax\n    and     %rbx, %rax\n    mov     %rax, %rcx           # idx = hash(x)\n.Loins:\n    mov     %rcx, %rax\n    shl     $4, %rax\n    add     %rbp, %rax\n    mov     8(%rax), %rdx\n    test    %rdx, %rdx\n    jz      .Loins_do\n    inc     %rcx\n    and     %rbx, %rcx\n    jmp     .Loins\n.Loins_do:\n    mov     %r9, (%rax)          # key = x\n    lea     1(%r8), %rdx\n    mov     %rdx, 8(%rax)        # val = i+1\n    inc     %r8\n    jmp     .Lomain\n.Lonone:\n    movq    $-1, (%r15)\n    movq    $-1, 8(%r15)\n.Lodone:\n    pop     %r15\n    pop     %r14\n    pop     %r13\n    pop     %r12\n    pop     %rbp\n    pop     %rbx\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "brute-force": "# void brute_force(const long *nums, long n, long target, long *out)\n# rdi=nums, rsi=n, rdx=target, rcx=out\n    .text\n    .globl brute_force\nbrute_force:\n    xor     %r8, %r8             # i = 0\n.Lbo:\n    cmp     %rsi, %r8\n    jge     .Lbnone\n    lea     1(%r8), %r9          # j = i+1\n.Lbi:\n    cmp     %rsi, %r9\n    jge     .Lbi_done\n    mov     (%rdi,%r8,8), %rax\n    add     (%rdi,%r9,8), %rax\n    cmp     %rdx, %rax\n    jne     .Lbi_next\n    mov     %r8, (%rcx)\n    mov     %r9, 8(%rcx)\n    ret\n.Lbi_next:\n    inc     %r9\n    jmp     .Lbi\n.Lbi_done:\n    inc     %r8\n    jmp     .Lbo\n.Lbnone:\n    movq    $-1, (%rcx)\n    movq    $-1, 8(%rcx)\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop over every pair -- the O(n^2) baseline; clean/optimized use an mmap-backed hash table"
+            }
+          }
+        },
         "c": {
           "practice": "#include \"solution.h\"\n\nJVal *solve(JVal *c) {\n    JVal *nums = jget(c, \"nums\");\n    double target = jget(c, \"target\")->num;\n    /* Return the indices [i, j] (i < j) of the two numbers in nums that add up to target. */\n    return jarr_(0);\n}\n",
           "clean": "#define solve __glifex_ref_clean\n#include \"solution.h\"\n\n/* O(n): a simple hash table (open addressing, linear probing) mapping\n   each seen number to its index. Table size is computed from the\n   actual input (next power of 2 above 2n, keeping load factor under\n   50% for any n) rather than a fixed constant -- a fixed CAP\n   previously caused an infinite loop once more unique keys needed\n   inserting than the table had room for (trivially reached once the\n   Complexity Lab's ladder grew past a few thousand): the insertion\n   loop searches for an empty slot that no longer exists and cycles\n   forever. See optimized.c for a more heavily-tuned version. */\nJVal *solve(JVal *c) {\n    JVal *nums = jget(c, \"nums\");\n    double target = jget(c, \"target\")->num;\n\n    int n = nums->n;\n    int cap = 16;\n    while (cap < n * 2) cap <<= 1;\n    double *keys = malloc(cap * sizeof(double));\n    int *indices = malloc(cap * sizeof(int));\n    int *occupied = calloc(cap, sizeof(int));\n\n    for (int i = 0; i < n; i++) {\n        double need = target - nums->items[i]->num;\n\n        /* Look for `need` already in the table. */\n        unsigned slot = (unsigned)((long long)need) % cap;\n        while (occupied[slot]) {\n            if (keys[slot] == need) {\n                JVal *r = jarr_(2);\n                jpush_(r, jnum_(indices[slot]));\n                jpush_(r, jnum_(i));\n                return r;\n            }\n            slot = (slot + 1) % cap;\n        }\n\n        /* Not found -- insert this number for future lookups. */\n        double v = nums->items[i]->num;\n        slot = (unsigned)((long long)v) % cap;\n        while (occupied[slot] && keys[slot] != v) slot = (slot + 1) % cap;\n        keys[slot] = v;\n        indices[slot] = i;\n        occupied[slot] = 1;\n    }\n    return jarr_(0);\n}\n",
@@ -964,6 +1029,38 @@
               "lower": null,
               "space": "O(1)",
               "notes": null
+            }
+          }
+        },
+        "asm-x86_64": {
+          "practice": "# long practice(long n)  — rdi = n, return in rax\n# Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n    .text\n    .globl practice\npractice:\n    xor     %eax, %eax           # TODO: replace with your solution\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "clean": "# long clean(long n) — iterative\n    .text\n    .globl clean\nclean:\n    cmp     $2, %rdi\n    jl      .Lc_base\n    xor     %r8, %r8             # prev = fib(0)\n    mov     $1, %r9             # curr = fib(1)\n    mov     %rdi, %rcx          # i = n\n    dec     %rcx                # n-1 iterations\n.Lc_loop:\n    mov     %r8, %rax\n    add     %r9, %rax           # next = prev + curr\n    mov     %r9, %r8            # prev = curr\n    mov     %rax, %r9           # curr = next\n    dec     %rcx\n    jnz     .Lc_loop\n    mov     %r9, %rax\n    ret\n.Lc_base:\n    mov     %rdi, %rax\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "optimized": "# long optimized(long n) — fast doubling, O(log n)\n    .text\n    .globl optimized\noptimized:\n    test    %rdi, %rdi\n    jnz     .Lo_go\n    xor     %eax, %eax\n    ret\n.Lo_go:\n    mov     %rdi, %r11          # n\n    bsr     %rdi, %rcx          # rcx = index of highest set bit\n    xor     %r8, %r8            # a = fib(0) = 0\n    mov     $1, %r9             # b = fib(1) = 1\n.Lo_loop:\n    lea     (%r9,%r9), %rax     # 2b\n    sub     %r8, %rax           # 2b - a\n    imul    %r8, %rax           # c = a*(2b - a)\n    mov     %rax, %r10          # r10 = c\n    mov     %r8, %rax\n    imul    %r8, %rax           # a*a\n    mov     %r9, %rdx\n    imul    %r9, %rdx           # b*b\n    add     %rdx, %rax          # d = a*a + b*b\n    mov     %r11, %rdx\n    shr     %cl, %rdx           # n >> i\n    and     $1, %rdx\n    jz      .Lo_even\n    mov     %rax, %r8           # a = d\n    add     %r10, %rax          # c + d\n    mov     %rax, %r9           # b = c + d\n    jmp     .Lo_next\n.Lo_even:\n    mov     %r10, %r8           # a = c\n    mov     %rax, %r9           # b = d\n.Lo_next:\n    test    %rcx, %rcx\n    jz      .Lo_done\n    dec     %rcx\n    jmp     .Lo_loop\n.Lo_done:\n    mov     %r8, %rax           # return a\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "brute-force": "# long brute_force(long n) — naive recursion\n    .text\n    .globl brute_force\nbrute_force:\n    cmp     $2, %rdi\n    jl      .Lb_base\n    push    %rbx\n    push    %r12\n    mov     %rdi, %rbx\n    lea     -1(%rbx), %rdi\n    call    brute_force\n    mov     %rax, %r12\n    lea     -2(%rbx), %rdi\n    call    brute_force\n    add     %r12, %rax\n    pop     %r12\n    pop     %rbx\n    ret\n.Lb_base:\n    mov     %rdi, %rax\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(log n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "fast doubling"
+            },
+            "brute-force": {
+              "upper": "O(phi^n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "naive recursion -- exponential time, linear call-stack depth"
             }
           }
         },

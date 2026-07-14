@@ -44,3 +44,18 @@ are neither linked against nor distributed with the product. The
 `web/retro/8080.ruledef.asm` instruction table is first-party (MIT), authored
 from the Intel 8080 User's Manual, unlike the upstream customasm std ruledefs
 listed above.
+
+## x86-64 assembly track (browser)
+
+The x86-64 track assembles and links with the GNU assembler and linker, and executes
+the resulting ELF on the Blink emulator compiled to WebAssembly. All three are vendored
+at build time (`web/fetch-runtimes.mjs`) from `robalb/x86-64-playground`.
+
+- **Blink** (`blinkenlib.wasm`, `blinkenlib.js`) -- ISC License. Copyright Justine Tunney and the Blink contributors.
+- **GNU `as` and `ld`** (`gnu-as.elf`, `gnu-ld.elf`, GNU Binutils 2.43.50) -- **GPL-3.0-or-later**.
+  These are unmodified static builds distributed by `robalb/x86-64-playground`. In accordance
+  with the GPL, the corresponding source is the GNU Binutils 2.43.50 release
+  (https://ftp.gnu.org/gnu/binutils/); a copy of the source corresponding to these binaries is
+  available on written request. A future migration to a permissive assembler/linker
+  (`llvm-mc` + `lld`, Apache-2.0-with-LLVM-exception) is planned to remove this GPL dependency.
+
