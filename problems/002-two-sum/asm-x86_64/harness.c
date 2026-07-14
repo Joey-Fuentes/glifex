@@ -1,15 +1,15 @@
-/* Per-problem C shim for the assembly track. It owns JSON I/O and marshals to
- * the narrow C ABI signature the assembly implements:
- *     int <variant>(const char *s, const char *t);   // 1 = anagram
+/* Per-problem C shim for the assembly track (two-sum).
+ *     void <variant>(const long *nums, long n, long target, long *out);
+ *     out[0], out[1] = indices (i < j); {-1,-1} if none.
  */
 #define _POSIX_C_SOURCE 200809L
 #include "json.h"
 #include <time.h>
 
-extern int practice(const char *s, const char *t);
-extern int clean(const char *s, const char *t);
-extern int optimized(const char *s, const char *t);
-extern int brute_force(const char *s, const char *t);
+extern void practice(const long *nums, long n, long target, long *out);
+extern void clean(const long *nums, long n, long target, long *out);
+extern void optimized(const long *nums, long n, long target, long *out);
+extern void brute_force(const long *nums, long n, long target, long *out);
 
 static char *read_file(const char *path) {
     FILE *f = fopen(path, "rb");
@@ -20,11 +20,18 @@ static char *read_file(const char *path) {
     buf[n] = 0; fclose(f); return buf;
 }
 
+static long *to_arr(JVal *nums, long *n_out) {
+    long n = nums->n; *n_out = n;
+    long *a = malloc((n ? n : 1) * sizeof(long));
+    for (long k = 0; k < n; k++) a[k] = (long)nums->items[k]->num;
+    return a;
+}
+
 int main(int argc, char **argv) {
     const char *variant = argc > 1 ? argv[1] : "practice";
     int bench = argc > 2 && !strcmp(argv[2], "--bench");
     JVal *cases = json_parse(read_file("../test_cases.json"));
-    int (*fn)(const char *, const char *) =
+    void (*fn)(const long *, long, long, long *) =
         !strcmp(variant, "practice") ? practice :
         !strcmp(variant, "clean") ? clean :
         !strcmp(variant, "brute-force") ? brute_force : optimized;
@@ -35,7 +42,10 @@ int main(int argc, char **argv) {
             clock_gettime(CLOCK_MONOTONIC, &t0);
             for (int i = 0; i < cases->n; i++) {
                 JVal *in = jget(cases->items[i], "input");
-                fn(jget(in, "s")->str, jget(in, "t")->str);
+                long n; long *a = to_arr(jget(in, "nums"), &n);
+                long out[2] = {-1, -1};
+                fn(a, n, (long)jget(in, "target")->num, out);
+                free(a);
             }
             clock_gettime(CLOCK_MONOTONIC, &t1);
             double per = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / (cases->n ? cases->n : 1);
@@ -47,12 +57,16 @@ int main(int argc, char **argv) {
     int passed = 0;
     for (int i = 0; i < cases->n; i++) {
         JVal *in = jget(cases->items[i], "input");
-        int got = fn(jget(in, "s")->str, jget(in, "t")->str);
-        int exp = jget(cases->items[i], "expected")->b;
-        int ok = got == exp;
+        long n; long *a = to_arr(jget(in, "nums"), &n);
+        long out[2] = {-1, -1};
+        fn(a, n, (long)jget(in, "target")->num, out);
+        free(a);
+        JVal *exp = jget(cases->items[i], "expected");
+        long e0 = (long)exp->items[0]->num, e1 = (long)exp->items[1]->num;
+        int ok = out[0] == e0 && out[1] == e1;
         passed += ok;
         printf("  [%s] case %d", ok ? "PASS" : "FAIL", i);
-        if (!ok) printf("  expected=%d got=%d", exp, got);
+        if (!ok) printf("  expected=[%ld,%ld] got=[%ld,%ld]", e0, e1, out[0], out[1]);
         printf("\n");
     }
     printf("%d/%d passed\n", passed, cases->n);
