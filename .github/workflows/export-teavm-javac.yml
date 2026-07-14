@@ -1,0 +1,55 @@
+# THROWAWAY: vendor the prebuilt teavm-javac assets (OpenJDK javac + TeaVM, compiled to
+# WebAssembly) from teavm.org/playground so we can smoke the compile -> Doppio-execute
+# pipeline locally. Compile = teavm-javac (wasm javac); execute = DoppioJVM (already proven
+# to run precompiled classes with the full JCL). We snapshot upstream's UNVERSIONED playground
+# assets -- fast, ~0 build minutes. Productionizing would build teavm-javac from source at a
+# pinned commit (needs Java 21 + Gradle). Delete workflow + branch after retrieval.
+# v2: corrected size floors (compile-classlib is ~195KB, not >300KB) + content sniffing
+# (reject HTML fallbacks; verify wasm magic) so guards catch bad fetches without false alarms.
+name: export-teavm-javac
+on:
+  push:
+    branches: [chore/export-teavm-javac]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch teavm-javac prebuilt assets from teavm.org playground
+        run: |
+          set -euo pipefail
+          mkdir -p out/teavm-javac
+          base="https://teavm.org/playground"
+          fetch() {
+            url="$1"; dest="$2"; floor="$3"
+            curl -fSL --retry 6 --retry-delay 8 --retry-all-errors "$url" -o "$dest"
+            sz=$(stat -c%s "$dest")
+            echo "fetched $dest ($sz bytes)"
+            test "$sz" -ge "$floor" || { echo "$dest below floor $floor bytes -- bad fetch"; exit 1; }
+            if head -c 64 "$dest" | grep -qiE '<!doctype|<html'; then echo "$dest is HTML (SPA fallback?), not the asset"; exit 1; fi
+          }
+          fetch "$base/compiler.wasm"              out/teavm-javac/compiler.wasm              1000000
+          fetch "$base/compiler.wasm-runtime.js"   out/teavm-javac/compiler.wasm-runtime.js   2000
+          fetch "$base/compile-classlib-teavm.bin" out/teavm-javac/compile-classlib-teavm.bin 50000
+          fetch "$base/runtime-classlib-teavm.bin" out/teavm-javac/runtime-classlib-teavm.bin 50000
+          # compiler.wasm must start with the WebAssembly magic bytes (00 61 73 6d)
+          magic="$(head -c 4 out/teavm-javac/compiler.wasm | od -An -tx1 | tr -d ' \n')"
+          test "$magic" = "0061736d" || { echo "compiler.wasm missing wasm magic (got $magic)"; exit 1; }
+          echo "compiler.wasm magic ok"
+
+      - name: Manifest + inventory
+        run: |
+          set -euo pipefail
+          printf '{"runtime":"java-compiler","via":"teavm-javac (OpenJDK javac + TeaVM -> wasm)","source":"https://teavm.org/playground (unversioned snapshot)","fetched":"%s","note":"compile source with teavm-javac then getOutputJar -> .class; EXECUTE on DoppioJVM. MUST verify emitted bytecode major version <= 52 (Java 8) or Doppio cannot load it. License: bundles OpenJDK javac (GPLv2 + Classpath Exception)."}\n' "$(date -u +%FT%TZ)" > out/teavm-javac/manifest.json
+          echo "=== inventory ==="; ls -la out/teavm-javac; du -sh out/teavm-javac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teavm-javac-vendor
+          path: out/teavm-javac
+          retention-days: 3
+          compression-level: 6
