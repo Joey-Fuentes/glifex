@@ -124,6 +124,22 @@ const RUNTIMES = {
       { url: `${CDN}/npm/wabt/LICENSE`, save: "LICENSE", group: "watlic" },
     ],
   },
+  // Java (Bx-8): teavm-javac = OpenJDK javac + TeaVM, compiled to WebAssembly --
+  // an in-browser compile-and-run toolchain. Source is compiled, then run via
+  // TeaVM -> wasm (no persistent JVM). Single upstream source (teavm.org playground,
+  // an unversioned snapshot), so no CDN-fallback group. License: bundles OpenJDK
+  // javac (GPL-2.0 WITH Classpath-exception-2.0) + TeaVM (Apache-2.0); see
+  // THIRD_PARTY_NOTICES.md. Productionizing may build teavm-javac from source to pin.
+  java: {
+    version: "teavm-javac (playground snapshot)",
+    license: "GPL-2.0 WITH Classpath-exception-2.0 (OpenJDK javac) + Apache-2.0 (TeaVM)",
+    files: [
+      { url: "https://teavm.org/playground/compiler.wasm", save: "compiler.wasm", required: true },
+      { url: "https://teavm.org/playground/compiler.wasm-runtime.js", save: "compiler.wasm-runtime.js", required: true },
+      { url: "https://teavm.org/playground/compile-classlib-teavm.bin", save: "compile-classlib-teavm.bin", required: true },
+      { url: "https://teavm.org/playground/runtime-classlib-teavm.bin", save: "runtime-classlib-teavm.bin", required: true },
+    ],
+  },
 };
 
 async function fetchTo(url, destDir, saveAs) {

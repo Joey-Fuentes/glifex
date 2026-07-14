@@ -26,6 +26,7 @@ enabled via `node web/fetch-runtimes.mjs`.
 | rubri (LyonSyonII/rubri) | 1.78-dev | Miri-in-browser wrapper + prebuilt miri.wasm + sysroot rlibs that glifex's rust-worker vendors/adapts | MIT |
 | browser_wasi_shim (bjorn3) | bundled | JS WASI implementation + virtual FS used by the Rust worker; bundled into web/rust-worker.js | MIT OR Apache-2.0 |
 | Rust standard library (sysroot rlibs) | ~1.78.0-dev | precompiled std/core/alloc + deps Miri interprets against, vendored at web/vendor/rust/wasm-rustc/ | MIT OR Apache-2.0 |
+| teavm-javac (OpenJDK javac + TeaVM, WASM) | playground snapshot | in-browser Java compile-and-run for the Java track (Bx-8), vendored at web/vendor/java/ | GPL-2.0 WITH Classpath-exception-2.0 (OpenJDK javac) + Apache-2.0 (TeaVM) |
 
 Each project's full license text ships alongside its vendored files under
 `web/vendor/<name>/` once distributed. Nothing else on glifex.dev embeds
