@@ -23,7 +23,7 @@ what remains written-but-unrun.
 | JavaScript  | ✅ | ✅ | ✅ | also runs natively in the playground |
 | TypeScript  | ✅ | ✅ | ✅ | explicit-filename compile (cmd.exe doesn't glob) |
 | Go          | ✅ | ✅ | ✅ | root `go.mod` provides module context |
-| Java        | ✅ | ✅ | ✅ | vendored minimal JSON parser |
+| Java        | ✅ | ✅ | ✅ | in-browser via teavm-javac (compile in a worker); vendored minimal JSON parser (CLI) |
 | Kotlin      | ✅ | ✅ | ✅ | explicit source list (kotlinc.bat doesn't glob) |
 | Swift       | ✅ | ✅ | ⏭ tc | harness is `main.swift` (top-level statements rule); JSONSerialization-canonical compare defeats NSNumber bool/int bridging |
 | Ruby        | ✅ | ✅ | ✅ | passed native Windows first try |
@@ -245,8 +245,10 @@ Gating: the C/C++ instrumentation is wasm-build-only (`#ifdef __wasm__` plus a
 worker-only `-include`), so the native `g++`/`gcc` reference verify (`glifex verify`)
 compiles the pristine harness and is unaffected.
 
-Still display-only (declared class shown, not measured): **Go, Java** — no
-in-browser execution path to instrument. **C#** now measures both (Bx-5d) —
+Still display-only (declared class shown, not measured): **Go** — no in-browser
+execution path to instrument. **Java** now runs in-browser (teavm-javac worker) and
+measures **time** (per-case nanos, adaptive-repeat); its **space stays display-only**
+(no in-browser allocation instrumentation). **C#** now measures both (Bx-5d) —
 time via an adaptive-repeat `Stopwatch`, space via GC allocation volume — though
 its Lab classification still needs per-language ladder tuning (see the C# runtime
 section).
@@ -428,6 +430,32 @@ ladders / overhead exclusion is a deferred follow-up. Evidence:
 `csharp-runtime-validate` (Node: all four variants × 001/002/003 compile+run,
 verdict-identical), `csharp-smoke.spec.js` (real Chromium), and a local-browser
 Analyze run (two-sum: time O(n) + space O(n)).
+
+## ✅ Java runtime (Bx-8) — in-browser via teavm-javac (real javac on WasmGC)
+
+Live edit-run for Java in the browser — the **real `javac`**, AOT-compiled to WebAssembly
+(WasmGC) by TeaVM (the teavm-javac playground build), **not** DoppioJVM or GraalVM-wasm (the
+earlier plans). Vendored at deploy like the other runtimes (`web/vendor/java/`, gitignored).
+
+`web/java-worker.js` compiles in a Web Worker: it boots teavm-javac once (cached per source),
+**detects the class that `implements Solution`** (so any variant name — Practice / Clean /
+Optimized / BruteForce — runs, exactly like the other languages calling `solve`), strips the
+interface, injects a fixed timing `main`, compiles that one class, and runs it with the **test
+cases fed at runtime** as `main` args (US/GS field separators, printable result marker). Same
+result shape as the csharp/rust workers → the Complexity Lab + test runner drive it unchanged.
+
+**The compile ceiling is inherent, not a misconfig:** teavm-javac exhausts the browser's fixed
+JS call stack on deep compile-time recursion (annotations especially). We keep the harness within
+it (dropped `@SuppressWarnings`, minimal harness); within that headroom HashMap, Arrays.sort,
+generics, `List.of`, and naive recursion all compile+run. Full root-cause analysis + mitigations
+(known upstream limitation; no TeaVM stack knob; CheerpJ as the robust fallback for arbitrary
+Java): **docs/teavm-javac-compile-ceiling.md**.
+
+Corpus at 4 variants incl. 003 (brute-force uses the repo convention: file `Brute-force.java`,
+non-public `class BruteForce`; CLI Harness reflection PascalCases hyphen parts, mirroring C#).
+All 12 variants validated live in the worker (9 reference variants pass; 3 practice stubs don't).
+**Complexity Lab:** time measured (per-case nanos, adaptive-repeat); space display-only (no
+in-browser allocation instrumentation), like Go. CLI compiles with real javac (temurin 25 in CI).
 
 ## Retro track: 6502 (Bx-4) + SM83 / Game Boy (Bx-5) -- live in production
 
