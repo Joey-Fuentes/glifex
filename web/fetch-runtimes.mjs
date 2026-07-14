@@ -21,6 +21,7 @@ const CDN = "https://cdn.jsdelivr.net";
 const PHP_NPM = `${CDN}/npm/@webreflection/php`;
 const PHP_GH = `${CDN}/gh/seanmorris/php-wasm` + "@master";
 const RUNTIMES = {
+
   // 6502 assembly: customasm (Apache-2.0) as raw wasm. The 6502 CPU core is a
   // first-party, tested module committed at web/retro/cpu6502.mjs (not vendored).
   "asm-6502": {

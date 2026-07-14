@@ -69,6 +69,23 @@ jobs:
           MIN="libaddr2line-b8754aeb03c02354.rlib libadler-05c3545f6cd12159.rlib liballoc-0dab879bc41cd6bd.rlib libcfg_if-c7fd2cef50341546.rlib libcompiler_builtins-a99947d020d809d6.rlib libcore-4b8e8a815d049db3.rlib libgimli-598847d27d7a3cbf.rlib libhashbrown-d2ff91fdf93cacb2.rlib liblibc-dc63949c664c3fce.rlib libmemchr-2d3a423be1a6cb96.rlib libminiz_oxide-b109506a0ccc4c6a.rlib libobject-7b48def7544c748b.rlib libpanic_abort-c93441899b93b849.rlib libpanic_unwind-11d9ba05b60bf694.rlib librustc_demangle-59342a335246393d.rlib librustc_std_workspace_alloc-552b185085090ff6.rlib librustc_std_workspace_core-5d8a121daa7eeaa9.rlib librustc_std_workspace_std-97f43841ce452f7d.rlib libstd-bdedb7706a556da2.rlib libstd-bdedb7706a556da2.so libstd_detect-cca21eebc4281add.rlib libsysroot-f654e185be3ffebd.rlib libunwind-747b693f90af9445.rlib"
           for f in $MIN; do cp "$SRC/lib/rustlib/x86_64-unknown-linux-gnu/lib/$f" "$LIB/$f"; done
           echo '{"runtime":"rust","via":"miri-wasm (rubri/bjorn3)","rust":"1.78.0-dev","edition":"2021"}' > web/vendor/rust/manifest.json
+      - name: Vendor x86-64 toolchain (robalb/x86-64-playground, pinned)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          mkdir -p web/vendor/asm-x86_64
+          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.js"                 -o web/vendor/asm-x86_64/blinkenlib.js
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.wasm"               -o web/vendor/asm-x86_64/blinkenlib.wasm
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/assemblers/gnu-as.2.43.50.elf" -o web/vendor/asm-x86_64/gnu-as.elf
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/assemblers/gnu-ld.2.43.50.elf" -o web/vendor/asm-x86_64/gnu-ld.elf
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/LICENSE.txt" -o web/vendor/asm-x86_64/LICENSE-blink
+          echo "687b3d3cb033175d245c324c394d4587d9f459fb4f732eb2b340c097a8619063  web/vendor/asm-x86_64/blinkenlib.js"   | sha256sum -c -
+          echo "dd409970974929ab04d6b45978df01140d63ad2054ba7a550b6259e0a07f476a  web/vendor/asm-x86_64/blinkenlib.wasm" | sha256sum -c -
+          echo "908b557e21e8000596abe12828d929cf82dd9abcc3ee840dbaf9c503d8e32534  web/vendor/asm-x86_64/gnu-as.elf"      | sha256sum -c -
+          echo "8548fc86b738be62619889560995a127a9be6026ed4d6b21fe525c184d322206  web/vendor/asm-x86_64/gnu-ld.elf"      | sha256sum -c -
+          test "$(stat -c%s web/vendor/asm-x86_64/gnu-ld.elf)" -gt 1000000 || { echo "gnu-ld.elf too small (fetch failed?)"; exit 1; }
+          echo "{\"runtime\":\"asm-x86_64\",\"via\":\"robalb/x86-64-playground@$REF\",\"blink\":\"ISC\",\"binutils\":\"2.43.50 (GPL-3.0)\"}" > web/vendor/asm-x86_64/manifest.json
       - name: Summarize bundle
         run: |
           echo "=== web/vendor per-language sizes ==="; du -sh web/vendor/* 2>/dev/null | sort -h
