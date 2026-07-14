@@ -5,8 +5,8 @@
 > **Sequencing + some toolchain picks superseded (2026-07) -- see `ROADMAP.md` section Bx for the current order.**
 > A feasibility / verification-story review reprioritized the sequence: retro CPU-cores first (deterministic
 > SingleStepTests CI proof), C# early, Rust via **rubri** (Miri/MIR-interpreter in wasm, not `rustc`),
-> Java/Kotlin via **TeaVM + DoppioJVM** (Doppio runs the compiler + user bytecode; TeaVM speeds the fixed
-> compile step). Swift's candidate path is **Emscripten + MiniSwift** (subset, unverified). arm64 now has an
+> Java **shipped** in-browser via **teavm-javac** (TeaVM's real javac AOT-compiled to WasmGC; compile-in-worker,
+> cases fed at runtime) -- not the DoppioJVM/GraalVM paths first sketched here; Kotlin stays gated on a JVM-in-browser. Swift's candidate path is **Emscripten + MiniSwift** (subset, unverified). arm64 now has an
 > all-permissive path -- clang cross-assemble (Apache) + **arm-sandbox** (MIT aarch64 emulator) via Emscripten,
 > retiring the Unicorn/Keystone GPL route -- but stays spike-gated on arm-sandbox maturity (v0.1, incomplete
 > A64). Blink stays x86-64-guest-only; it never solved arm64. Zig/Go/Dart and Swift remain feasibility
@@ -65,7 +65,7 @@ Tiered by feasibility × fidelity × effort.
 
 **Go** — **gc-in-wasm** (decision: faithful over light). The real `gc` toolchain compiled to WASM, running in-browser with a virtual FS to compile user source → run. **Fidelity: high** (the real compiler). **Size: heavy** (toolchain + stdlib). Rejected alt: `yaegi` interpreter (lighter but interpreter-divergent — undercuts CLI-parity).
 
-**Java** — **GraalVM-wasm (javac + Espresso)**. GraalVM is building a WASM backend; a functional `javac`-in-browser demo exists, and Espresso is an OSS, TCK-passing JVM. Run javac on Espresso-in-wasm → bytecode → execute on Espresso-in-wasm. **Fidelity: high** (real OpenJDK-class, TCK). License: GraalVM CE (OpenJDK-style, OSS). **Status: 2026-immature** (no networking yet, "lots of work"). **Decision: track GraalVM-wasm; keep Java CLI-only (disclosed) until browser-ready.** Not CheerpJ — its free Community License forbids self-hosting (violates the offline rule); self-hosting needs a paid or branded-dedicated license.
+**Java** — **SHIPPED (2026) via teavm-javac**: TeaVM's real `javac` AOT-compiled to WebAssembly (WasmGC), compile-in-worker with cases fed at runtime (neither DoppioJVM nor GraalVM). Known inherent JS-call-stack **compile ceiling** (annotations / deep recursion) — root cause + mitigations: `docs/teavm-javac-compile-ceiling.md`. *Pre-ship analysis, kept for context:* **GraalVM-wasm (javac + Espresso)**. GraalVM is building a WASM backend; a functional `javac`-in-browser demo exists, and Espresso is an OSS, TCK-passing JVM. Run javac on Espresso-in-wasm → bytecode → execute on Espresso-in-wasm. **Fidelity: high** (real OpenJDK-class, TCK). License: GraalVM CE (OpenJDK-style, OSS). **Status: 2026-immature** (no networking yet, "lots of work"). **Decision (superseded — Java shipped via teavm-javac):** originally to track GraalVM-wasm and keep Java CLI-only until browser-ready. Not CheerpJ — its free Community License forbids self-hosting (violates the offline rule); self-hosting needs a paid or branded-dedicated license.
 
 **Kotlin** — `kotlinc` is JVM-based, so live in-browser Kotlin needs a **JVM-in-browser** to run the compiler — the same dependency as Java. **Gated with Java: CLI-only until GraalVM-wasm (Espresso) can host kotlinc.** Kotlin/Wasm and Kotlin/Native exist but their compilers still run on the JVM at build time.
 
@@ -100,7 +100,7 @@ Prereq: **B1** (regression-test the 5 existing browser runtimes) lands first —
 8. **x86-64** — Blink + clang-cross-assemble; introduces the ELF+syscall harness.
 9. **arm64** — Unicorn/qemu (GPL note); heaviest emulation.
 10. **Go** — gc-in-wasm (heavy).
-11. **Java** — when GraalVM-wasm is browser-ready; CLI-only until then.
+11. **Java** — SHIPPED in-browser via teavm-javac (real javac on WasmGC).
 12. **Kotlin** — with Java (shares the JVM-in-browser dependency); CLI-only until then.
 13. **Swift** — deferred; CLI-only + disclosed until in-browser swiftc is real.
 14. **Rust** — deferred; CLI-only + disclosed until an in-browser rustc exists.
@@ -115,7 +115,7 @@ Each target ships as its own PR (a `fetch-runtimes.mjs` entry + a `runtimes.js` 
 - Retro trio: CPU-core-only; no Game Boy hardware. *(J. Fuentes)*
 - Go: gc-in-wasm (faithful over light). *(J. Fuentes)*
 - Rust: CLI-only until in-browser rustc exists. *(research-confirmed)*
-- Java: pursue GraalVM-wasm OSS path; CLI-only until browser-ready; not CheerpJ (license). *(research-confirmed)*
+- Java: SHIPPED in-browser via teavm-javac (real javac AOT to WasmGC); GraalVM-wasm was the pre-ship plan. Known JS-call-stack compile ceiling (docs/teavm-javac-compile-ceiling.md). *(shipped)*
 - Kotlin: gated with Java (JVM-based compiler); CLI-only until GraalVM-wasm hosts kotlinc. *(research-confirmed)*
 - Swift: CLI-only until an in-browser swiftc is real (SwiftWasm is cross-compile today). *(research-confirmed)*
 - PHP / Zig / Dart: feasible now — php-wasm interpreter, self-hosted zig-in-wasm, client-side dart2wasm (WasmGC-only). *(research-confirmed)*
@@ -124,4 +124,4 @@ Each target ships as its own PR (a `fetch-runtimes.mjs` entry + a `runtimes.js` 
 
 Already in-browser: JavaScript, TypeScript, Python, Ruby, SQL (PGlite), frontend (HTML/CSS/JS).
 Feasible to add now: WAT, PHP, C, C++, C#, Zig, Dart, 6502, Z80, SM83.
-Gated/deferred: x86-64, arm64, Go, Java, Kotlin, Swift, Rust — each with the reason and revisit-trigger above. Every corpus language is accounted for: none is silently dropped; the gated ones stay CLI-only with in-UI disclosure until their path matures.
+Gated/deferred: x86-64, arm64, Go, Kotlin, Swift, Rust — each with the reason and revisit-trigger above. Every corpus language is accounted for: none is silently dropped; the gated ones stay CLI-only with in-UI disclosure until their path matures.

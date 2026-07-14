@@ -163,10 +163,25 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       like C#; fib stays overhead-dominated at its tiny n (same as JS/WAT). Track complete.
 - [ ] **Bx-7. x86-64** -- Blink emulator (ISC) on real ELF; assemble user asm -> ELF ->
       Linux-syscall harness. More pipeline than size. *Medium.*
-- [ ] **Bx-8. Java** -- TeaVM + DoppioJVM. DoppioJVM (a JVM written in JS) runs the compiler
-      (javac/ECJ) and the user's freshly-compiled bytecode in-browser; TeaVM can AOT the fixed
-      ECJ frontend to JS to speed the compile step (TeaVM can't execute dynamic user bytecode).
-      Sets up the JVM-in-browser base. *Medium; DoppioJVM looks largely unmaintained -- verify.*
+- [x] **Bx-8. Java** -- SHIPPED. Real `javac` in the browser via **teavm-javac** (TeaVM's
+      AOT-compiled javac on the WasmGC backend), *not* the originally-planned DoppioJVM/GraalVM.
+      Vendored playground snapshot at deploy (`web/vendor/java/`, gitignored, like the other
+      runtimes). `web/java-worker.js` compiles in a Web Worker: boots teavm-javac once (cached
+      per source), detects the class that `implements Solution` (any variant name --
+      Practice/Clean/Optimized/BruteForce -- runs, like the other languages calling `solve`),
+      strips the interface, injects a fixed timing `main`, compiles that one class, and runs it
+      with the test cases fed at **runtime** as `main` args (US/GS separators, printable result
+      marker) -- same result shape as the csharp/rust workers, so the Complexity Lab + test
+      runner drive it with no lab.js changes. **The compile ceiling is inherent, not a
+      misconfig:** teavm-javac exhausts the browser's fixed JS call stack on deep compile-time
+      recursion (annotations especially) -- root-cause analysis + mitigations in
+      docs/teavm-javac-compile-ceiling.md. We keep the harness within it (no `@SuppressWarnings`,
+      minimal harness); within that headroom HashMap, Arrays.sort, generics, `List.of`, and naive
+      recursion all compile+run. Corpus at 4 variants incl. 003 (brute-force uses the repo
+      convention: file `Brute-force.java`, non-public `class BruteForce`; the CLI Harness
+      reflection PascalCases hyphen parts, mirroring C#). Complexity Lab: time measured (per-case
+      nanos); space display-only (no in-browser allocation instrumentation). All 12 variants
+      validated live in the worker.
 - [ ] **Bx-9. Kotlin** -- same TeaVM + DoppioJVM base as Bx-8: run `kotlin-compiler-embeddable.jar`
       on DoppioJVM for source->bytecode, then execute. Gated on Bx-8. *Medium; kotlinc is huge +
       reflection-heavy, so it likely rides Doppio (TeaVM can't AOT it) and runs slow -- the risk.*
