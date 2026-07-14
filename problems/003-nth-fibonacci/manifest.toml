@@ -16,6 +16,7 @@ python      = { variants = ["practice", "clean", "optimized"] }
 ruby        = { variants = ["practice", "clean", "optimized"] }
 csharp      = { variants = ["practice", "brute-force", "clean", "optimized"] }
 rust        = { variants = ["practice", "brute-force", "clean", "optimized"] }
+asm-x86_64  = { variants = ["practice", "brute-force", "clean", "optimized"] }
 
 [complexity.default.practice]
 time = "O(n)"
@@ -36,3 +37,12 @@ notes = "naive recursion -- the obvious definition; exponential time, linear cal
 time = "O(phi^n)"
 space = "O(n)"
 notes = "naive recursion -- the obvious definition; exponential time, linear call-stack depth"
+
+[complexity.asm-x86_64.brute-force]
+time = "O(phi^n)"
+space = "O(n)"
+notes = "naive recursion -- exponential time, linear call-stack depth"
+[complexity.asm-x86_64.optimized]
+time = "O(log n)"
+space = "O(1)"
+notes = "fast doubling"
