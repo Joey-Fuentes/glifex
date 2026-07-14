@@ -716,7 +716,34 @@ const Runtimes = (() => {
   }
 
 
-  const LOADERS = { typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, "asm-x86_64": loadAsmX86, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
+  // Java (Bx-8): vendored teavm-javac (OpenJDK javac + TeaVM -> wasm) compiles the
+  // solution in a MODULE worker and runs it against cases fed at RUNTIME (cases are
+  // NOT baked into source -- teavm-javac's javac has a low compile ceiling). Off the
+  // main thread; the worker boots the compiler once and caches the compiled app per
+  // source, so the Complexity Lab's size-sweep only compiles on the first call.
+  async function loadJava() {
+    if (!(await vendored("java"))) return null;
+    const javaWorkerState = { worker: null };
+    const JAVA_TIMEOUT_MS = 120000;   // first run pays the one-time teavm-javac boot + compile
+    return {
+      async run(source, cases, lang) {
+        try {
+          const support = (lang && lang.support) || {};
+          const res = await window.callWorker(
+            javaWorkerState, "java-worker.js", { id: "run", source, cases, support },
+            JAVA_TIMEOUT_MS, "Java took too long (over 120s) -- the in-browser compiler may have stalled on this solution.",
+            { type: "module" });
+          if (res.id === "error") return { error: res.error };
+          const { id, ...out } = res;
+          return out;
+        } catch (e) {
+          return { error: String((e && e.message) || e) };
+        }
+      },
+    };
+  }
+
+  const LOADERS = { java: loadJava, typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, "asm-x86_64": loadAsmX86, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed
