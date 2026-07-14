@@ -1,0 +1,84 @@
+# THROWAWAY vendor-export job for Bx-7 (x86-64 in the browser).
+# Not part of CI or deploy, and NOT merged to main -- it lives only on its own
+# vendor-export branch and runs itself on push to that exact branch (same shape
+# as csharp-runtime-validate.yml). ci.yml fires on pull_request->main only, so
+# with no PR this triggers NOTHING else. It fetches the robalb/x86-64-playground
+# stack (a WASM port of the Blink x86-64-linux emulator, "blinkenlib", plus its
+# TS wrapper and whatever guest assembler/rootfs assets it ships) and uploads it
+# as ONE artifact so a network-less assistant sandbox can inspect the pieces and
+# decide the minimal served set. Round 1 is deliberately BROAD (whole clone minus
+# .git); a follow-up job grabs only the trimmed minimal set. Delete the branch
+# when done.
+name: export-x86_64-vendor
+on:
+  push:
+    branches:
+      - vendor-export/bx7-x86-20260713-2358
+
+permissions:
+  contents: read
+
+jobs:
+  grab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone x86-64-playground (shallow)
+        run: |
+          ok=0
+          for i in 1 2 3 4 5; do
+            git clone --depth 1 https://github.com/robalb/x86-64-playground xpg && { ok=1; break; }
+            echo "clone attempt $i failed; retry 15s"; sleep 15
+          done
+          [ "$ok" = 1 ] || { echo "clone failed after retries"; exit 1; }
+          rm -rf xpg/.git
+
+      - name: Inventory and license capture
+        run: |
+          cd xpg
+          echo "=== manifest (size sha16 path) ===" > manifest.txt
+          find . -type f -not -name manifest.txt -not -name licenses.txt -not -name tree.txt \
+            | LC_ALL=C sort \
+            | while IFS= read -r f; do
+                sz=$(stat -c%s "$f")
+                sh=$(sha256sum "$f" | cut -c1-16)
+                printf '%12d  %s  %s\n' "$sz" "$sh" "$f" >> manifest.txt
+              done
+          echo "=== directory tree ===" > tree.txt
+          find . -type d | LC_ALL=C sort >> tree.txt
+          echo "=== license / copying / notice / authors files ===" > licenses.txt
+          find . -type f \( -iname 'license*' -o -iname 'copying*' -o -iname 'notice*' \
+                            -o -iname '*license*' -o -iname 'authors*' \) \
+            | LC_ALL=C sort \
+            | while IFS= read -r f; do
+                echo "" >> licenses.txt
+                echo "########## $f ##########" >> licenses.txt
+                head -c 8000 "$f" >> licenses.txt
+                echo "" >> licenses.txt
+              done
+
+      - name: Report sizes and locate engine + toolchain assets
+        run: |
+          cd xpg
+          echo "=== total (minus .git) ==="; du -sh . | cut -f1
+          echo "=== per top-level entry ==="; du -sh ./* 2>/dev/null | sort -h || true
+          echo "=== all *.wasm ==="; find . -iname '*.wasm' -printf '%10s  %p\n' 2>/dev/null | sort -n || true
+          echo "=== blink assets ==="; find . -iname '*blink*' 2>/dev/null || true
+          echo "=== possible guest toolchain / rootfs / assembler assets ==="
+          find . \( -iname '*rootfs*' -o -iname '*sysroot*' -o -iname '*binutils*' \
+                    -o -iname '*nasm*' -o -iname '*fasm*' -o -iname '*.tar' -o -iname '*.img' \
+                    -o -iname '*.a' -o -iname 'as' -o -iname 'ld' -o -iname 'gcc' -o -iname 'cc' \) \
+            -printf '%10s  %p\n' 2>/dev/null | sort -n || true
+          MB=$(du -sm . | cut -f1)
+          echo "=== bundle size: ${MB} MB ==="
+          if [ "$MB" -gt 450 ]; then
+            echo "WARNING bundle is large (${MB} MB) -- still uploading, but a trimmed round 2 is advised"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86-playground-vendor-round1
+          path: xpg
+          retention-days: 14
+          compression-level: 6
+          if-no-files-found: error
