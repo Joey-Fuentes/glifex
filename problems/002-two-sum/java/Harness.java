@@ -6,7 +6,12 @@ public class Harness {
     @SuppressWarnings("unchecked")
     public static void main(String[] args) throws Exception {
         String variant = args.length > 0 ? args[0] : "practice";
-        String cls = variant.substring(0, 1).toUpperCase() + variant.substring(1);
+        // Map the variant id to its class name, PascalCasing each hyphen-separated
+        // part ("practice" -> "Practice", "brute-force" -> "BruteForce"), matching
+        // how the other capitalized-file languages (e.g. C#) resolve variants.
+        StringBuilder cb = new StringBuilder();
+        for (String part : variant.split("-")) cb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+        String cls = cb.toString();
         Solution sol = (Solution) Class.forName(cls).getDeclaredConstructor().newInstance();
         String raw = Files.readString(Paths.get("..", "test_cases.json"));
         List<Object> cases = (List<Object>) Json.parse(raw);

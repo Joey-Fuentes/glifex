@@ -13,6 +13,7 @@ i8080       = { variants = ["practice", "clean", "optimized"] }   # Intel 8080 a
 javascript  = { variants = ["practice", "clean", "optimized"] }   # L1-fib-manifest: JS clean/optimized added -- unblocks the Complexity Lab (oracle is always JS clean) on every language for this problem
 typescript  = { variants = ["practice", "clean", "optimized"] }
 python      = { variants = ["practice", "clean", "optimized"] }
+java        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 ruby        = { variants = ["practice", "clean", "optimized"] }
 csharp      = { variants = ["practice", "brute-force", "clean", "optimized"] }
 rust        = { variants = ["practice", "brute-force", "clean", "optimized"] }
@@ -46,3 +47,8 @@ notes = "naive recursion -- exponential time, linear call-stack depth"
 time = "O(log n)"
 space = "O(1)"
 notes = "fast doubling"
+
+[complexity.java.brute-force]
+time = "O(phi^n)"
+space = "O(n)"
+notes = "naive recursion -- the obvious definition; exponential time, linear call-stack depth"
