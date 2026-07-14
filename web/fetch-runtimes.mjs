@@ -21,22 +21,6 @@ const CDN = "https://cdn.jsdelivr.net";
 const PHP_NPM = `${CDN}/npm/@webreflection/php`;
 const PHP_GH = `${CDN}/gh/seanmorris/php-wasm` + "@master";
 const RUNTIMES = {
-  "asm-x86_64": {
-    version: "x86-64-playground (blink, ISC) + binutils 2.43.50 (GNU as/ld, GPLv3)",
-    license: "ISC (blink) + GPL-3.0 (GNU as/ld) -- see THIRD_PARTY_NOTICES.md",
-    files: [
-      { url: `${CDN}/gh/robalb/x86-64-playground@main/webapp/src/assets/blinkenlib.js`, save: "blinkenlib.js", group: "x86blinkjs" },
-      { url: "https://raw.githubusercontent.com/robalb/x86-64-playground/main/webapp/src/assets/blinkenlib.js", save: "blinkenlib.js", group: "x86blinkjs" },
-      { url: `${CDN}/gh/robalb/x86-64-playground@main/webapp/src/assets/blinkenlib.wasm`, save: "blinkenlib.wasm", group: "x86blinkwasm" },
-      { url: "https://raw.githubusercontent.com/robalb/x86-64-playground/main/webapp/src/assets/blinkenlib.wasm", save: "blinkenlib.wasm", group: "x86blinkwasm" },
-      { url: `${CDN}/gh/robalb/x86-64-playground@main/webapp/src/assets/assemblers/gnu-as.2.43.50.elf`, save: "gnu-as.elf", group: "x86as" },
-      { url: "https://raw.githubusercontent.com/robalb/x86-64-playground/main/webapp/src/assets/assemblers/gnu-as.2.43.50.elf", save: "gnu-as.elf", group: "x86as" },
-      { url: `${CDN}/gh/robalb/x86-64-playground@main/webapp/src/assets/assemblers/gnu-ld.2.43.50.elf`, save: "gnu-ld.elf", group: "x86ld" },
-      { url: "https://raw.githubusercontent.com/robalb/x86-64-playground/main/webapp/src/assets/assemblers/gnu-ld.2.43.50.elf", save: "gnu-ld.elf", group: "x86ld" },
-      { url: `${CDN}/gh/robalb/x86-64-playground@main/LICENSE`, save: "LICENSE-blink", group: "x86lic" },
-      { url: "https://raw.githubusercontent.com/robalb/x86-64-playground/main/LICENSE", save: "LICENSE-blink", group: "x86lic" },
-    ],
-  },
 
   // 6502 assembly: customasm (Apache-2.0) as raw wasm. The 6502 CPU core is a
   // first-party, tested module committed at web/retro/cpu6502.mjs (not vendored).
