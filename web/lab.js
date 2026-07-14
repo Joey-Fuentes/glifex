@@ -504,7 +504,7 @@ const GlifexLab = (() => {
 
   function render(panel, X) {
     const { cfg, tierId, tier, j, boundMode, totalRetries } = X;
-    const unit = tierId === "det" ? "cycles" : "ns";
+    const unit = tierId === "det" ? (X.lang === "asm-x86_64" ? "instructions" : "cycles") : "ns";
     const vline = (kind, html) => `<div class="lab-verdict ${kind}">${html}</div>`;
 
     let html = "";
@@ -789,7 +789,7 @@ const GlifexLab = (() => {
       &middot; oracle: javascript clean &middot; correctness-gated${overhead}
       &middot; ${new Date().toISOString().slice(0, 10)}`;
   }
-  const unitOf = (X) => (X.tierId === "det" ? "cycles" : "ns");
+  const unitOf = (X) => (X.tierId === "det" ? (X.lang === "asm-x86_64" ? "instructions" : "cycles") : "ns");
 
   function init() {
     const btn = $("#lab-btn");
