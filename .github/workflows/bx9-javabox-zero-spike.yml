@@ -1,0 +1,89 @@
+name: bx9-javabox-zero-spike
+
+# TEMP: follow JavaBox's README build EXACTLY, and find out precisely where it stops.
+#
+# Established by recon (all verified, none guessed):
+#   * build-direct.sh is an 89-line orchestrator that fetches NOTHING
+#   * build-jvm-wasm.sh assumes OPENJDK_DIR="$REPO_ROOT/openjdk" already exists
+#   * ./openjdk is a gitlink (mode 160000, commit 97a3d2372d457c5a72413df14bf08cf99545c695)
+#     with NO .gitmodules -> the URL is unregistered and the fork is not in his public repos
+#   * README Prerequisites list only emsdk + JDK 21 + Node -- no fork, no submodule
+# So the published repo is very likely NOT buildable by anyone but him. Step A proves that.
+#
+# Step B is the interesting one: substitute UPSTREAM openjdk/jdk21u into ./openjdk and run his
+# script anyway. configure will reject --openjdk-target=wasm32-unknown-emscripten, and THAT ERROR
+# sizes the port from the other side -- it tells us what the Emscripten OS abstraction layer had to
+# add, without needing his fork. His README says the port includes an OS abstraction layer, static
+# linking of libjvm/libjava/libjimage/libzip/libnio/libffi, and a static symbol table with binary
+# search REPLACING dlsym for JNI resolution. That is surgery, not a patch -- this measures it.
+
+on:
+  push:
+    branches: [ "spike/bx9-javabox-zero" ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build-attempt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Prereqs per the README (emsdk + JDK 21 + Node)
+        run: |
+          set -x
+          sudo apt-get update -qq && sudo apt-get install -y -qq autoconf zip unzip file build-essential
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk && ./emsdk install latest && ./emsdk activate latest
+          echo "source ~/emsdk/emsdk_env.sh" >> ~/.bashrc
+          . ~/emsdk/emsdk_env.sh && emcc --version | head -2
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: STEP A - can the repo be built as published?
+        run: |
+          set -x
+          git clone https://github.com/bmarti44/javabox jb
+          cd jb
+          echo "=============== submodule init (expected: fails, no .gitmodules) ==============="
+          git submodule update --init --recursive 2>&1 | head -20 || echo "EXIT=$? -- submodule init failed"
+          echo "=============== is ./openjdk populated? ==============="
+          ls -la openjdk/ 2>/dev/null | head -5 || echo "openjdk/ is EMPTY -> build-jvm-wasm.sh cannot run"
+          find openjdk -maxdepth 1 | head -5
+          echo "=============== so: buildable as published? ==============="
+          if [ -f openjdk/configure ]; then echo "YES -- openjdk tree present"; else echo "NO -- the fork is absent and unreferenced"; fi
+
+      - name: STEP B - substitute UPSTREAM jdk21u and let configure tell us what the port adds
+        continue-on-error: true
+        run: |
+          set -x
+          . ~/emsdk/emsdk_env.sh
+          cd jb
+          rm -rf openjdk
+          # blobless keeps this to ~2-3 min instead of a full ~1GB history
+          git clone --filter=blob:none --depth 1 https://github.com/openjdk/jdk21u openjdk 2>&1 | tail -2
+          ls openjdk/configure && echo "upstream jdk21u in place"
+          echo "=============== does UPSTREAM know wasm32-unknown-emscripten? ==============="
+          grep -rn "emscripten\|wasm32" openjdk/make/autoconf/platform.m4 2>/dev/null | head -10 || echo "  NOT in platform.m4 -> the fork must add the target triplet"
+          ls openjdk/src/hotspot/os/ 2>/dev/null
+          echo "  ^ upstream HotSpot OS ports. The fork adds an 'emscripten' one (or maps to linux)."
+          echo "=============== run HIS script against upstream ==============="
+          timeout 2400 ./build/build-jvm-wasm.sh 2>&1 | tail -60 || echo "EXIT=$?"
+          echo "=============== the configure log is the payload ==============="
+          tail -40 build/configure-emscripten.log 2>/dev/null || echo "(no configure log)"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: javabox-build-attempt
+          path: |
+            jb/build/configure-emscripten.log
+            jb/build/build-hotspot.log
+            jb/openjdk/build/**/configure.log
+            jb/openjdk/build/**/config.log
+          if-no-files-found: warn
