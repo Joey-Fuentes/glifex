@@ -1,0 +1,116 @@
+# THROWAWAY spike job -- DELETE THIS BRANCH when Bx-10 is decided.
+# Lives only on chore/export-vixl-spike-* and is never merged to main, exactly
+# like chore/export-rust-vendor and chore/export-java-vendor before it.
+#
+# Question it answers: can vixl::aarch64::Simulator (BSD-3) be compiled to wasm
+# and driven the way web/asm-x86-blink.mjs drives blinkenlib -- set registers,
+# jump to a symbol, single-step to ret, read x0? If yes, Bx-10 is a small track
+# on a permissive core. If no, we fall back to an ELF loader + syscall harness,
+# or re-open the GPL question (Unicorn.js).
+#
+# v2: run 1 died on a VIXL #error macro gate (VIXL_INCLUDE_TARGET_AARCH64), NOT
+# on pointer width. build.sh now auto-discovers the macro set in one run.
+#
+# The matrix tests BOTH memory models on purpose. The research assumed wasm32
+# is dead because VIXL wants LP64 -- but our guest addresses are wasm linear
+# memory offsets (< 4 GiB), so the truncation may well be lossless. Measure it.
+name: export-vixl-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-vixl-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mem: [wasm32, wasm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install aarch64 binutils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-aarch64-linux-gnu
+          aarch64-linux-gnu-as --version | head -1
+
+      - name: Assemble katas with the real aarch64 assembler
+        run: |
+          cd tools/vixl-spike/katas
+          for f in *.s; do
+            b="${f%.s}"
+            aarch64-linux-gnu-as "$f" -o "$b.o"
+            aarch64-linux-gnu-objcopy -O binary --only-section=.text "$b.o" "$b.bin"
+            echo "---- $b.bin  $(stat -c%s "$b.bin") bytes"
+            aarch64-linux-gnu-objdump -d "$b.o" | tail -n +4
+          done
+
+      - name: Clone VIXL
+        run: |
+          git clone --depth 1 https://github.com/Linaro/vixl.git "$HOME/vixl-src"
+          echo "vixl HEAD -> $(git -C "$HOME/vixl-src" rev-parse HEAD)"
+
+      - name: Probe VIXL headers
+        run: bash tools/vixl-spike/probe.sh "$HOME/vixl-src"
+
+      - name: Install emsdk
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          cd "$HOME/emsdk"
+          ./emsdk install latest
+          ./emsdk activate latest
+          . "$HOME/emsdk/emsdk_env.sh"
+          emcc --version | head -1
+
+      - name: Build the simulator for ${{ matrix.mem }}
+        continue-on-error: true
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          cd tools/vixl-spike
+          bash build.sh "${{ matrix.mem }}" "$HOME/vixl-src" "$GITHUB_WORKSPACE/out-${{ matrix.mem }}"
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Run the katas under node
+        continue-on-error: true
+        run: |
+          test -f "out-${{ matrix.mem }}/gx_vixl.mjs" || { echo "## no build to drive -- skipping katas"; exit 0; }
+          FLAGS=""
+          if [ "${{ matrix.mem }}" = "wasm64" ]; then
+            if node --experimental-wasm-memory64 -e "" 2>/dev/null; then
+              FLAGS="--experimental-wasm-memory64"
+              echo "## node needs the memory64 flag"
+            else
+              echo "## node accepts memory64 without a flag"
+            fi
+          fi
+          node $FLAGS tools/vixl-spike/drive.mjs "out-${{ matrix.mem }}" tools/vixl-spike/katas
+
+      - name: Summarise
+        if: always()
+        run: |
+          echo "## ---- spike summary (${{ matrix.mem }}) ----"
+          echo "vixl commit  $(git -C "$HOME/vixl-src" rev-parse HEAD 2>/dev/null || echo unknown)"
+          if [ -f "out-${{ matrix.mem }}/gx_vixl.wasm" ]; then
+            echo "wasm bytes   $(stat -c%s "out-${{ matrix.mem }}/gx_vixl.wasm")"
+            echo "mjs bytes    $(stat -c%s "out-${{ matrix.mem }}/gx_vixl.mjs")"
+            gzip -c "out-${{ matrix.mem }}/gx_vixl.wasm" | wc -c | sed 's/^/wasm gzipped /'
+          else
+            echo "wasm bytes   (build failed)"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vixl-spike-${{ matrix.mem }}
+          if-no-files-found: warn
+          path: |
+            out-${{ matrix.mem }}/
+            tools/vixl-spike/katas/*.bin
