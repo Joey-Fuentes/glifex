@@ -1,0 +1,159 @@
+# THROWAWAY spike job -- DELETE THIS BRANCH when Bx-10 is decided.
+# Lives only on chore/export-vixl-spike-* and is never merged to main, exactly
+# like chore/export-rust-vendor and chore/export-java-vendor before it.
+#
+# v4. Established so far:
+#   run 3  ROOT CAUSE. Emscripten's default stack is 64 KB; a static initializer
+#          in decoder-aarch64.cc needs a ~84 KB frame and overflows inside
+#          __wasm_call_ctors, before main. At -O2 the ctor frame fit and the
+#          overflow instead corrupted the stack later in gx_init -- which is the
+#          "memory access out of bounds" of run 2. One bug, two costumes.
+#          Fix is -sSTACK_SIZE=8MB. SAFE_HEAP dropped (it would false-positive on
+#          VIXL's raw host-pointer guest loads in the memops kata).
+#          Also confirmed run 3 -- the trap was NEVER in gx_init's own logic.
+#
+# Earlier:
+#   run 1  VIXL needs -DVIXL_INCLUDE_TARGET_AARCH64 (a #error gate, not LP64).
+#   run 2  VIXL BUILDS to wasm32 (1,770,491 B, uintptr=4) AND wasm64
+#          (1,877,700 B, 570 KB gzipped). Nobody had ever built VIXL to wasm.
+#          Both then trap "memory access out of bounds" inside gx_init(),
+#          before any guest instruction. IDENTICAL at 4- and 8-byte pointers,
+#          so the research's LP64 risk is NOT the cause. Cause unknown.
+#
+# v3 does two things at once, because a repo swap alone would just reproduce
+# the same trap and burn a round trip:
+#   1. Build from the CANONICAL repo -- gitlab.arm.com/runtimes/vixl. The
+#      GitHub mirror's HEAD 5992185 (2026-04-17) is literally "Update README
+#      for new repository". Clone both and report whether they differ.
+#   2. Diagnose the trap -- staged breadcrumbs in gx_init, a debug build with
+#      emscripten ASSERTIONS + SAFE_HEAP + VIXL_DEBUG, and a JS stack trace.
+name: export-vixl-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-vixl-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mem: [wasm32, wasm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install aarch64 binutils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-aarch64-linux-gnu
+          aarch64-linux-gnu-as --version | head -1
+
+      - name: Assemble katas with the real aarch64 assembler
+        run: |
+          cd tools/vixl-spike/katas
+          for f in *.s; do
+            b="${f%.s}"
+            aarch64-linux-gnu-as "$f" -o "$b.o"
+            aarch64-linux-gnu-objcopy -O binary --only-section=.text "$b.o" "$b.bin"
+            echo "---- $b.bin  $(stat -c%s "$b.bin") bytes"
+          done
+
+      - name: Clone VIXL from the canonical Arm GitLab
+        id: clone
+        continue-on-error: true
+        run: |
+          echo "## canonical -- gitlab.arm.com/runtimes/vixl"
+          if git clone --depth 1 https://gitlab.arm.com/runtimes/vixl.git "$HOME/vixl-src"; then
+            echo "VIXL_SRC=$HOME/vixl-src" >> "$GITHUB_ENV"
+            echo "VIXL_ORIGIN=gitlab.arm.com" >> "$GITHUB_ENV"
+            echo "## gitlab clone OK -> $(git -C "$HOME/vixl-src" rev-parse HEAD)"
+          else
+            echo "## GITLAB CLONE FAILED (anonymous access may be blocked)"
+            echo "## falling back to the GitHub mirror so the run still yields diagnosis"
+            git clone --depth 1 https://github.com/Linaro/vixl.git "$HOME/vixl-src"
+            echo "VIXL_SRC=$HOME/vixl-src" >> "$GITHUB_ENV"
+            echo "VIXL_ORIGIN=github-mirror-FALLBACK" >> "$GITHUB_ENV"
+          fi
+
+      - name: Compare canonical against the GitHub mirror
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/Linaro/vixl.git "$HOME/vixl-mirror" 2>/dev/null || true
+          A=$(git -C "$HOME/vixl-src" rev-parse HEAD 2>/dev/null || echo none)
+          B=$(git -C "$HOME/vixl-mirror" rev-parse HEAD 2>/dev/null || echo none)
+          echo "## building from  $VIXL_ORIGIN  -> $A"
+          echo "## github mirror                -> $B"
+          if [ "$A" = "$B" ]; then
+            echo "## VERDICT the mirror is IN SYNC with canonical"
+          else
+            echo "## VERDICT they DIFFER -- canonical is the right vendoring source"
+            git -C "$HOME/vixl-src" log -3 --date=short --format='  %h %cd %s' 2>/dev/null || true
+          fi
+
+      - name: Probe VIXL headers
+        continue-on-error: true
+        run: bash tools/vixl-spike/probe.sh "$VIXL_SRC"
+
+      - name: Install emsdk
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          cd "$HOME/emsdk"
+          ./emsdk install latest
+          ./emsdk activate latest
+          . "$HOME/emsdk/emsdk_env.sh"
+          emcc --version | head -1
+
+      - name: Build DEBUG for ${{ matrix.mem }}
+        continue-on-error: true
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          cd tools/vixl-spike
+          bash build.sh "${{ matrix.mem }}" "$VIXL_SRC" "$GITHUB_WORKSPACE/dbg-${{ matrix.mem }}" debug
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Drive the DEBUG build -- this is the diagnosis
+        continue-on-error: true
+        run: |
+          test -f "dbg-${{ matrix.mem }}/gx_vixl.mjs" || { echo "## no debug build"; exit 0; }
+          node tools/vixl-spike/drive.mjs "dbg-${{ matrix.mem }}" tools/vixl-spike/katas
+
+      - name: Build RELEASE for ${{ matrix.mem }}
+        continue-on-error: true
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          cd tools/vixl-spike
+          bash build.sh "${{ matrix.mem }}" "$VIXL_SRC" "$GITHUB_WORKSPACE/rel-${{ matrix.mem }}" release
+
+      - name: Drive the RELEASE build
+        continue-on-error: true
+        run: |
+          test -f "rel-${{ matrix.mem }}/gx_vixl.mjs" || { echo "## no release build"; exit 0; }
+          node tools/vixl-spike/drive.mjs "rel-${{ matrix.mem }}" tools/vixl-spike/katas
+
+      - name: Summarise
+        if: always()
+        run: |
+          echo "## ---- spike v3 summary (${{ matrix.mem }}) ----"
+          echo "source       ${VIXL_ORIGIN:-unknown}"
+          echo "vixl commit  $(git -C "$VIXL_SRC" rev-parse HEAD 2>/dev/null || echo unknown)"
+          if [ -f "rel-${{ matrix.mem }}/gx_vixl.wasm" ]; then
+            echo "release wasm $(stat -c%s "rel-${{ matrix.mem }}/gx_vixl.wasm") bytes"
+            gzip -c "rel-${{ matrix.mem }}/gx_vixl.wasm" | wc -c | sed 's/^/release gz  /'
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vixl-spike-${{ matrix.mem }}
+          if-no-files-found: warn
+          path: |
+            dbg-${{ matrix.mem }}/
+            rel-${{ matrix.mem }}/
+            tools/vixl-spike/katas/*.bin
