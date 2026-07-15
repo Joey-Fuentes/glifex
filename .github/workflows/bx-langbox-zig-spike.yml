@@ -1,0 +1,140 @@
+name: bx-langbox-zig-spike
+
+# TEMP feasibility spike: "real native toolchain inside emulated Linux in wasm" substrate,
+# starting with Zig (lightest case). Measures blob size + boot + in-guest compile time.
+# Push-triggered on the spike branch (scoped) + manual. NOT part of the CI gate.
+#
+# The c2w convert step compiles the Bochs emulator to wasm (~18 min cold). The blob is cached
+# (keyed on c2w tag + zig version + BUILD_REV), so runs that only tweak measurement are fast.
+# Bump BUILD_REV to force a rebuild after changing the image/test.
+
+on:
+  push:
+    branches: [ "spike/bx-langbox-zig" ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  zigbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ZIG_VERSION: "0.14.0"
+      C2W_TAG: "v0.8.4"
+      BUILD_REV: "2"
+    steps:
+      - name: Install wasmtime
+        run: |
+          curl -sSf https://wasmtime.dev/install.sh | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: Install container2wasm (c2w) ${{ env.C2W_TAG }}
+        run: |
+          set -x
+          API="https://api.github.com/repos/container2wasm/container2wasm/releases/tags/${C2W_TAG}"
+          echo "== assets for ${C2W_TAG} =="; curl -sSL "$API" | jq -r '.assets[].name'
+          URL=$(curl -sSL "$API" | jq -r '.assets[] | select(.name | test("linux.*(amd64|x86_64).*\\.tar\\.gz$")) | .browser_download_url' | head -1)
+          echo "chosen asset: $URL"; test -n "$URL"
+          curl -fsSL -o c2w.tgz "$URL"
+          tar -xzf c2w.tgz
+          sudo mv c2w /usr/local/bin/c2w 2>/dev/null || sudo mv "$(find . -type f -name c2w | head -1)" /usr/local/bin/c2w
+          sudo chmod +x /usr/local/bin/c2w
+          c2w --help 2>&1 | head -20 || echo "c2w --help failed"
+
+      - name: Cache the converted blob
+        id: blobcache
+        uses: actions/cache@v4
+        with:
+          path: out.wasm
+          key: zigbox-blob-${{ env.C2W_TAG }}-zig${{ env.ZIG_VERSION }}-rev${{ env.BUILD_REV }}
+
+      - name: Build the Alpine + Zig container
+        if: steps.blobcache.outputs.cache-hit != 'true'
+        run: |
+          set -x
+          mkdir -p ctx
+          cat > ctx/hello.zig <<'ZIG'
+          const std = @import("std");
+          pub fn main() void { std.debug.print("hello from zig in emulated linux\n", .{}); }
+          ZIG
+          cat > ctx/run-test.sh <<'SH'
+          #!/bin/sh
+          echo "== zig version =="; zig version
+          cd /work
+          echo "== compile cold =="; time zig build-exe hello.zig
+          echo "== run =="; time ./hello
+          echo "== compile warm =="; time zig build-exe hello.zig -femit-bin=hello2
+          echo "== done =="
+          SH
+          cat > ctx/Dockerfile <<DOCKER
+          FROM alpine:3.20
+          RUN apk add --no-cache curl xz
+          RUN curl -sSL https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz -o /tmp/z.tar.xz \
+              && mkdir -p /opt && tar -xJf /tmp/z.tar.xz -C /opt \
+              && ln -s /opt/zig-linux-x86_64-${ZIG_VERSION}/zig /usr/local/bin/zig && rm /tmp/z.tar.xz
+          COPY hello.zig /work/hello.zig
+          COPY run-test.sh /run-test.sh
+          RUN chmod +x /run-test.sh && zig version
+          CMD ["/bin/sh","/run-test.sh"]
+          DOCKER
+          DOCKER_BUILDKIT=1 docker build -t zigbox ./ctx
+
+      - name: "Convert container -> wasm (HEAVY - compiles the emulator)"
+        if: steps.blobcache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: |
+          set -x
+          # c2w's build clones its OWN source (SOURCE_REPO), which still defaults to the old
+          # github.com/ktock/container2wasm where the v0.8.4 tag is gone (moved to the org). Supply
+          # a local checkout of the CURRENT repo as build assets so it does not do that stale clone;
+          # also patch the repo's Dockerfile self-reference (leaving ktock/Bochs, ktock/qemu-wasm,
+          # ktock/tinyemu-c2w untouched -- those still exist).
+          git clone --depth 1 -b "${C2W_TAG}" https://github.com/container2wasm/container2wasm assets-src
+          sed -i 's#https://github.com/ktock/container2wasm#https://github.com/container2wasm/container2wasm#g' assets-src/Dockerfile || true
+          ( time timeout 5400 c2w --assets ./assets-src --dockerfile ./assets-src/Dockerfile zigbox out.wasm ) > c2w.log 2>&1 || true
+          tail -60 c2w.log || true
+          ls -la out.wasm 2>/dev/null && echo "BLOB SIZE:" && du -h out.wasm || echo "NO BLOB PRODUCED"
+
+      - name: Measure under wasmtime (PTY-captured, guest self-times the compile)
+        continue-on-error: true
+        run: |
+          set -x
+          if [ ! -f out.wasm ]; then echo "no blob -- skipping measurement"; exit 0; fi
+          echo "blob size:"; du -h out.wasm
+          # The c2w guest console needs a controlling TTY, so capture via `script`. Run the image's
+          # DEFAULT CMD (no arg override) -- run-test.sh wraps `time` around compile/run INSIDE the
+          # guest, giving durations independent of wasmtime's module-load overhead.
+          echo "===== full run: default CMD (version + compile-cold + run + compile-warm) ====="
+          ( time script -qefc "timeout 600 wasmtime out.wasm" guest-run.log ) > wall-run.log 2>&1 || true
+          echo "---- guest console ----"; cat guest-run.log || true
+          echo "---- wall time for the whole invocation ----"; cat wall-run.log || true
+          # Baseline: trivial command override, to check arg-passing AND isolate boot+load overhead.
+          echo "===== baseline: uname (override), PTY-captured ====="
+          ( time script -qefc "timeout 300 wasmtime out.wasm uname -a" guest-uname.log ) > wall-uname.log 2>&1 || true
+          cat guest-uname.log || true; cat wall-uname.log || true
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "==== SPIKE SUMMARY (zig) ===="
+          [ -f out.wasm ] && du -h out.wasm || echo "blob: (none)"
+          echo "cache-hit: ${{ steps.blobcache.outputs.cache-hit }}"
+          echo "-- in-guest compile timings (from guest-run.log) --"
+          grep -E 'compile|real|user|sys|zig|hello' guest-run.log 2>/dev/null || echo "(no guest-run.log output)"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bx-langbox-zig
+          path: |
+            out.wasm
+            c2w.log
+            guest-run.log
+            wall-run.log
+            guest-uname.log
+            wall-uname.log
+            ctx/**
+          if-no-files-found: warn
