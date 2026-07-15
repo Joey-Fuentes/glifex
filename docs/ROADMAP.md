@@ -161,8 +161,16 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       line (validated: panic -> editor line, E0308 -> editor line). STACK is not measurable under
       Miri (abstract stack model; no poison-scan; std::backtrace unsupported), so space is heap-only
       like C#; fib stays overhead-dominated at its tiny n (same as JS/WAT). Track complete.
-- [ ] **Bx-7. x86-64** -- Blink emulator (ISC) on real ELF; assemble user asm -> ELF ->
-      Linux-syscall harness. More pipeline than size. *Medium.*
+- [x] **Bx-7. x86-64** -- SHIPPED (checkbox was stale). **Blink** (ISC) built to wasm and
+      vendored at `web/vendor/asm-x86_64/` (`blinkenlib.js`); `web/asm-x86-blink.mjs` is a minimal
+      port of x86-64-playground's `blink.ts`. The user's AT&T/SysV asm is assembled + linked by the
+      **guest `as`/`ld` running under Blink itself**, then -- the novel part -- `asm-x86-worker.js`
+      drives the guest function directly: set registers + guest memory, jump `rip` to the symbol,
+      single-step to its `ret`, read `rax`. No C, no libc, no ELF-loader/syscall harness needed.
+      Emulated x86-64 runs uniformly regardless of the user's real CPU, so an ARM-laptop user can
+      run x86-64 asm they cannot execute natively. CLI is arch-scoped (see STATUS: browser ✅,
+      arch ⏭, ABI ⏭ -- hand-written SysV AT&T; the Windows x64 ABI differs in rcx/rdx, scoped by
+      design).
 - [x] **Bx-8. Java** -- SHIPPED. Real `javac` in the browser via **teavm-javac** (TeaVM's
       AOT-compiled javac on the WasmGC backend), *not* the originally-planned DoppioJVM/GraalVM.
       Vendored playground snapshot at deploy (`web/vendor/java/`, gitignored, like the other
@@ -182,22 +190,79 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       reflection PascalCases hyphen parts, mirroring C#). Complexity Lab: time measured (per-case
       nanos); space display-only (no in-browser allocation instrumentation). All 12 variants
       validated live in the worker.
-- [ ] **Bx-9. Kotlin** -- same TeaVM + DoppioJVM base as Bx-8: run `kotlin-compiler-embeddable.jar`
-      on DoppioJVM for source->bytecode, then execute. Gated on Bx-8. *Medium; kotlinc is huge +
-      reflection-heavy, so it likely rides Doppio (TeaVM can't AOT it) and runs slow -- the risk.*
+- [ ] **Bx-9. Kotlin** -- BLOCKED in-browser; CLI-only. The original plan (TeaVM/Doppio) is dead,
+      and the risk called out here was correct -- just understated. Every vehicle was tested, not
+      guessed:
+      **TeaVM cannot AOT kotlinc.** CI-proven: kotlin-compiler-embeddable 2.4.10 + teavm-maven-plugin
+      0.15.0 aborts with **121 distinct unresolved JDK classes** -- `java.util.concurrent`(+locks,
+      atomic), `kotlinx.coroutines`, `javax.xml.stream`, `java.lang.management`, `java.awt`/`beans`.
+      Structural (TeaVM's classlib is a JDK *subset*, and it restricts reflection/classloaders/JNI/
+      threading), not shimmable; near-exact precedent = Dotty/Scala-3 at ~1,643 errors. Details in
+      docs/teavm-javac-compile-ceiling.md.
+      **teavm-javac cannot host it:** its javac classpath is the fixed SDK `.bin`; `addJarFile` feeds
+      only the TeaVM stage. **DoppioJVM:** unmaintained, will not load Java 21 bytecode.
+      **CheerpJ runs real kotlinc** but is a *runtime, not a baker* -- nothing to vendor -- and its
+      Community License forbids self-hosting, so it breaks offline + no-runtime-fetch.
+      **Emulated Linux (the "langbox")** works and is ON HOLD -- real kotlinc in a browser tab, no
+      server, measured at ~1015s/compile under a flat ~300x emulator tax. Full measurements +
+      upstream mechanics in **docs/langbox.md**.
+      *The finding that outlives all of it:* **kotlinc is ~94% startup** (one JVM, repeated compiles,
+      native: 3595ms -> 368 -> 246 -> **230ms**). A resident compiler daemon removes almost the whole
+      cost, wherever Kotlin eventually runs. Not the heap (-Xmx256m == 4GB), not `-include-runtime`,
+      not `.kts`, not the guest JIT -- all measured, all ~flat.
+      *Most promising path:* **minikotlin** (minikotlin.run) -- a from-scratch Kotlin->WasmGC compiler
+      **written in C and itself compiled to wasm**, so `.kt` in / running `.wasm` out, entirely
+      client-side. That is the shape glifex already ships for eight languages: no emulation, no
+      ~300x, no ~800MB. A subset (though a substantial one: vtables via `call_ref`, interfaces,
+      data/sealed/enum, smart-casts via `ref.test`, generics, coroutines with real continuations,
+      657 frontend tests) -- so CLI-divergence to disclose, like MiniSwift. **Not yet public**;
+      author states "soon" and has a track record (his Swift frontend `toprakdeviren/msf` is MIT on
+      GitHub). *Revisit triggers: minikotlin source published, OR an OSS offline self-hostable
+      JVM-in-browser appears (or CheerpJ's licence changes), OR JetBrains self-hosts kotlinc via
+      Kotlin/Wasm -- note that last one is architecturally hard: Kotlin/Wasm's stdlib has no `java.*`
+      at all and kotlinc embeds IntelliJ-core Java source.*
 - [ ] **Bx-10. arm64** -- all-permissive path (retires the Unicorn/Keystone GPL route): assemble with
       clang cross-target `aarch64-linux` (Apache) -> ELF, execute on **arm-sandbox** (MIT aarch64 emulator)
       built to wasm via Emscripten. *Spike first: arm-sandbox is v0.1 + "incomplete A64" + solo -- Emscripten
       the core, run ~3 clang-assembled katas, measure missing instrs. Confirm the vendored clang has AArch64.*
 - [ ] **Bx-11. Zig** -- self-hosted zig-compiler-in-wasm. *Spike first:* a turnkey offline
       client-side compile artifact is unproven; feasibility spike before it earns a slot.
+      *Langbox spike done (2026-07-15, ON HOLD -- see docs/langbox.md):* real `zig` 0.14.0 inside
+      emulated Alpine ran in-browser (`zig version` answered), but `zig build-exe hello.zig` wedged
+      the guest -- LLVM backend, likely OOM, on a small VM under a ~300x tax. Zig was dropped from
+      the spike in favour of a gcc/kotlinc ladder that isolates the cost. Note `zig1.wasm` exists in
+      Zig's own bootstrap chain -- a wasm build of the compiler -- which is worth a look before any
+      emulated route.
 - [ ] **Bx-12. Go** -- gc toolchain in wasm (faithful over light). *Spike first:* heavy +
       unpackaged for offline client-side; prove the path before committing.
-- [ ] **Bx-13. Dart** -- dart2wasm. *Spike first:* dart2wasm is a host build-time compiler; a
-      client-side (in-browser) compile path is unproven. WasmGC-only if/when it exists.
-- [ ] **Bx-14. Swift** -- Emscripten + MiniSwift: MiniSwift built to wasm via Emscripten, run
-      in-browser -- sidesteps the missing in-browser `swiftc` (like rubri does for Rust).
-      *Subset, not real swiftc -> CLI-divergence to disclose; MiniSwift scope unverified -- confirm.*
+      *Langbox (ON HOLD, docs/langbox.md)* would run the real `go` toolchain but at ~300x with a
+      ~400MB SDK on top of a ~400MB substrate, and Go compiles are one-shot (no daemon to amortise
+      startup, unlike the JVM). The `gc` compiler is written in Go and Go targets `wasip1`, so
+      **self-hosting is the path to check first** -- same argument that makes Bx-13 tractable.
+- [ ] **Bx-13. Dart** -- **likely the easiest remaining track, not the hardest.** The note below
+      was right that *dart2wasm* is a host build-time tool -- but the client-side path is not
+      unproven, it **shipped**: Google's `try.dartlang.org` (2013) compiled Dart to JS **in the
+      browser, offline**, by running **dart2js on itself** -- dart2js is written in Dart, so it
+      self-hosts to JS and the browser runs the output natively. The structural reason this works
+      for Dart and not Kotlin: **no JVM underneath.** kotlinc needs a JDK (121 missing classes);
+      dart2js needs only Dart's core libs. The blocker shrinks to a `dart:io` shim (virtual FS),
+      not a runtime port. No emulation, no ~300x, no vendored VM -- the same shape as the eight
+      tracks glifex already ships.
+      *Spike:* self-compile a modern dart2js (or dart2wasm, the modern equivalent) to JS/wasm and
+      measure the artifact size + compile time; try.dartlang.org was retired (DartPad went
+      server-side) and today's compiler is bigger and leans harder on `dart:io`.
+- [ ] **Bx-14. Swift** -- Emscripten + MiniSwift, but **the scope caveat resolved badly: MiniSwift
+      (`toprakdeviren/msf`, MIT, C11, no deps, 280+ tests, has a `make wasm` target) is a FRONTEND
+      ONLY** -- "Lexer -> Parser -> Sema -> typed AST. No LLVM, no codegen, no runtime." It cannot
+      emit or execute anything, so **it cannot back a Swift track** (glifex must run code and check
+      results). This entry needs a new plan.
+      *Still useful today:* msf built to wasm would give real in-editor Swift **diagnostics** (type
+      errors, resolved types) for a language glifex otherwise cannot touch -- a legitimate half-track.
+      *Watch:* the same author's **minikotlin** is a full from-scratch compiler *with* a WasmGC
+      backend (see Bx-9). If he applies that backend to msf's frontend, Bx-14 becomes real. Other
+      options remain SwiftWasm (compiles Swift *to* wasm at build time -- does not put `swiftc` in
+      the browser) or the langbox (ON HOLD; `swiftc` is the heaviest possible tenant -- LLVM,
+      glibc/Ubuntu-oriented, one-shot compiles, ~300x). See docs/langbox.md.
 
 ### L -- Complexity Lab (browser face of C3; the falsifier doctrine applies)
 
