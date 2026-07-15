@@ -210,14 +210,39 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       native: 3595ms -> 368 -> 246 -> **230ms**). A resident compiler daemon removes almost the whole
       cost, wherever Kotlin eventually runs. Not the heap (-Xmx256m == 4GB), not `-include-runtime`,
       not `.kts`, not the guest JIT -- all measured, all ~flat.
-      *Most promising path:* **minikotlin** (minikotlin.run) -- a from-scratch Kotlin->WasmGC compiler
+      *Most promising path:* **OpenJDK Zero compiled straight to wasm** -- no QEMU, no Alpine, no
+      emulator at all. The same author whose QEMU+Alpine JavaBox was the langbox precedent has since
+      done exactly this ("no longer using alpine linux and QEMU, compiled OpenJDK Zero to
+      WebAssembly"). **Zero** is the interpreter-only HotSpot build with no assembler for any arch,
+      so **no JIT -> no self-modifying code -> the SIGSEGV that killed our resident daemon cannot
+      occur** (that crash was a consequence of JIT-under-emulation, not a bug to fix); and with no
+      QEMU there is no TCI, which *is* the ~300x. ~75MB (3MB code + 72MB data) vs the langbox's
+      435MB; 256/512MB vs QEMU's 3000MB heap; boot target ~3-5s vs ~55s. The link has **no
+      ASYNCIFY**: real pthreads + `-mtail-call` (what a bytecode interpreter's dispatch loop wants)
+      + a SharedArrayBuffer/`Atomics.wait` stdin ring. A real JVM in wasm unblocks the whole family:
+      Kotlin, **and un-ceilings Bx-8 Java** (teavm-javac's JS-call-stack limit is a TeaVM artifact --
+      Zero has none), plus Scala/Clojure/Groovy. The port is **~26 files** in OpenJDK's standard
+      porting dirs (`src/hotspot/os/emscripten/` ~15, `src/hotspot/os_cpu/emscripten_zero/` ~11) --
+      textbook shape, not smeared across the JDK; upstream already ships `os/linux/` +
+      `os_cpu/linux_zero/` to copy from. **Blocked on one accident:** his `openjdk` gitlink
+      (`97a3d2372d457c5a72413df14bf08cf99545c695`, branch `wasm-emscripten`) has **no `.gitmodules`**
+      -- `git add` instead of `git submodule add` -- so the fork is unreferenced, unpublished, and
+      the repo cannot be built by anyone but him (issue filed). *Caveat from his own Known
+      Constraints:* **"JVM internal threads (Finalizer, GC) may fail to start"** under Emscripten
+      pthreads -- fine for javac/Doom, but kotlinc is aggressively multi-threaded (we measured
+      user 37m > real 22m), so **Bx-8 Java un-ceilinged is the safer first tenant**. Not yet
+      validated on our own numbers: his benchmark script *measures* rather than reports, so
+      "actually fast now" is still his claim -- his live deploy could be measured without the fork.
+      Full writeup in **docs/langbox.md**.
+      *Fallback path:* **minikotlin** (minikotlin.run) -- a from-scratch Kotlin->WasmGC compiler
       **written in C and itself compiled to wasm**, so `.kt` in / running `.wasm` out, entirely
       client-side. That is the shape glifex already ships for eight languages: no emulation, no
       ~300x, no ~800MB. A subset (though a substantial one: vtables via `call_ref`, interfaces,
       data/sealed/enum, smart-casts via `ref.test`, generics, coroutines with real continuations,
       657 frontend tests) -- so CLI-divergence to disclose, like MiniSwift. **Not yet public**;
       author states "soon" and has a track record (his Swift frontend `toprakdeviren/msf` is MIT on
-      GitHub). *Revisit triggers: minikotlin source published, OR an OSS offline self-hostable
+      GitHub). *Revisit triggers: the OpenJDK wasm-emscripten fork is published (or someone lands
+      `wasm32-unknown-emscripten` upstream), OR minikotlin source published, OR an OSS offline self-hostable
       JVM-in-browser appears (or CheerpJ's licence changes), OR JetBrains self-hosts kotlinc via
       Kotlin/Wasm -- note that last one is architecturally hard: Kotlin/Wasm's stdlib has no `java.*`
       at all and kotlinc embeds IntelliJ-core Java source.*
