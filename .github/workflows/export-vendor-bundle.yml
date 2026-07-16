@@ -91,6 +91,26 @@ jobs:
           rm -f web/vendor/asm-arm64/binutils-configure.log web/vendor/asm-arm64/binutils-make.log
           ls -la web/vendor/asm-arm64
 
+      - name: Vendor riscv64 toolchain (libriscv wasm32 + musl binutils, pinned)
+        run: |
+          sudo apt-get install -y binutils-riscv64-linux-gnu >/dev/null
+          . tools/riscv-toolchain/pins.env
+          if [ ! -d "$HOME/emsdk" ]; then
+            git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+            (cd "$HOME/emsdk" && ./emsdk install "$EMSDK_VERSION" && ./emsdk activate "$EMSDK_VERSION")
+          fi
+          . "$HOME/emsdk/emsdk_env.sh"
+          export EMSDK="$HOME/emsdk"
+          mkdir -p web/vendor/asm-riscv64
+          bash tools/riscv-toolchain/build-binutils.sh "$PWD/web/vendor/asm-riscv64"
+          bash tools/riscv-toolchain/build-libriscv.sh "$PWD/web/vendor/asm-riscv64"
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$BLINKENLIB_REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.js"   -o web/vendor/asm-riscv64/blinkenlib.js
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.wasm" -o web/vendor/asm-riscv64/blinkenlib.wasm
+          echo "{\"runtime\":\"asm-riscv64\",\"libriscv\":\"$LIBRISCV_COMMIT\",\"binutils\":\"$BINUTILS_VERSION (musl-static, GPL-3.0, guest)\",\"blink\":\"ISC\",\"libriscv_license\":\"BSD-3-Clause\",\"ext_c\":\"ON (mandatory)\"}" > web/vendor/asm-riscv64/manifest.json
+          rm -f web/vendor/asm-riscv64/*.log
+          ls -la web/vendor/asm-riscv64
+
       - name: Vendor x86-64 toolchain (robalb/x86-64-playground, pinned)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
