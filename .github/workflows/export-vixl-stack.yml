@@ -1,0 +1,104 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once the SimStack size is chosen.
+# chore/export-vixl-stack-* only, never merged.
+#
+# QUESTION: VIXL's guest stack is 8 KB usable. Measured, not guessed -- the 9th
+# KB traps with "Attempt to write to stack guard region ...
+# simulator-aarch64.h:420". That is tiny for assembly: 001's clean.s spends 1 KB
+# on a counting table without thinking, and 002 needs ~32 KB for a hash table at
+# the Lab's n=1024.
+#
+# WHY IT IS SMALL, from VIXL's own README: "VIXL was developed for JavaScript
+# engines". The simulator exists so JIT authors can run generated code FRAGMENTS
+# on an x86 dev box; a JIT'd function has a small known frame. It is a default
+# tuned for a different workload, not a safety limit.
+#
+# Simulator(decoder, stream, SimStack(N).Allocate()) takes an explicit stack, so
+# the size is a one-line change -- but it is in a BUILD input, so it cannot be
+# tested locally (no emcc, no network in the sandbox). Hence CI.
+#
+# WHAT MUST COME BACK:
+#   1. usable depth per size -- does SimStack(N) actually give N?
+#   2. DOES THE GUARD SURVIVE? If a resized stack stops trapping and silently
+#      corrupts instead, that is WORSE than 8 KB and the idea dies here.
+#   3. gx_init cost per size. It is already 771 ms; if Allocate() zeroes the
+#      region, 1 MB may add real per-worker boot time.
+#   4. do the katas still pass on each build.
+#
+# The probe FILLS AND READS BACK the whole claimed region. An earlier probe that
+# only touched [sp] reported "4 MB OK" -- it had sailed past the guard into
+# unrelated memory. A check that cannot fail is not a check.
+name: export-vixl-stack
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-vixl-stack-*]
+
+permissions:
+  contents: read
+
+jobs:
+  stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools binutils-aarch64-linux-gnu build-essential texinfo bison flex file
+
+      - name: Install emsdk
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          cd "$HOME/emsdk" && ./emsdk install latest && ./emsdk activate latest
+          . "$HOME/emsdk/emsdk_env.sh" && emcc --version | head -1
+
+      - name: Clone VIXL at the pinned commit
+        run: |
+          git clone https://gitlab.arm.com/runtimes/vixl.git "$HOME/vixl-src"
+          git -C "$HOME/vixl-src" checkout -q d61a1e74fcc15c86059e326f4326c825fb6b4635
+          echo "## vixl $(git -C "$HOME/vixl-src" rev-parse --short HEAD)"
+
+      - name: Report VIXL's own default and its rationale
+        continue-on-error: true
+        run: |
+          echo "## the SimStack declaration -- what IS the default?"
+          grep -n -B4 -A24 "class SimStack" "$HOME/vixl-src/src/aarch64/simulator-aarch64.h" | head -40
+          echo
+          echo "## the guard that fired at 9 KB (simulator-aarch64.h around line 420)"
+          sed -n '408,430p' "$HOME/vixl-src/src/aarch64/simulator-aarch64.h"
+
+      - name: Build one wasm per stack size
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          bash tools/vixl-stack/build-one.sh "$HOME/vixl-src" "$GITHUB_WORKSPACE/sb" default
+          bash tools/vixl-stack/build-one.sh "$HOME/vixl-src" "$GITHUB_WORKSPACE/sb" k64   65536
+          bash tools/vixl-stack/build-one.sh "$HOME/vixl-src" "$GITHUB_WORKSPACE/sb" k256  262144
+          bash tools/vixl-stack/build-one.sh "$HOME/vixl-src" "$GITHUB_WORKSPACE/sb" m1   1048576
+
+      - name: Assemble the probe
+        run: |
+          # Stock cross-as is enough here: the probe is a trivial .s and this
+          # question is about VIXL, not the toolchain. Using stock also keeps
+          # the spike independent of whether PR1 has merged.
+          aarch64-linux-gnu-as tools/vixl-stack/stack-probe.s -o "${TMPDIR:-/tmp}/p.o"
+          aarch64-linux-gnu-ld "${TMPDIR:-/tmp}/p.o" -o "$GITHUB_WORKSPACE/sb/probe.elf" -z max-page-size=4096 -e probe
+          echo "## probe.elf $(stat -c%s "$GITHUB_WORKSPACE/sb/probe.elf") bytes"
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Probe every build
+        run: |
+          for L in default k64 k256 m1; do
+            echo "============================================================"
+            node tools/vixl-stack/probe.mjs "$GITHUB_WORKSPACE/sb" "$L" "$GITHUB_WORKSPACE/sb/probe.elf" || echo "## $L probe exited non-zero"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vixl-stack
+          if-no-files-found: warn
+          path: sb/
