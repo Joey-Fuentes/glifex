@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-16T05:21:40.613Z",
+  "generatedAt": "2026-07-16T10:03:06.331Z",
   "displayNames": {
     "asm-6502": "6502 assembly",
     "asm-x86_64": "x86-64 assembly",
@@ -94,6 +94,38 @@
               "lower": null,
               "space": "O(1)",
               "notes": "counting table; O(1) under the fixed-alphabet convention"
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "naive per-character count compare -- the O(n^2) baseline"
+            }
+          }
+        },
+        "asm-riscv64": {
+          "practice": "# int practice(const char *s, const char *t)\n# a0 = s, a1 = t. Stub: always returns 0 (not an anagram).\n    .text\n    .globl practice\npractice:\n    li      a0, 0\n    ret\n",
+          "clean": "# int clean(const char *s, const char *t)\n# a0 = s, a1 = t. Counting table on the stack; returns 1 iff anagram.\n    .text\n    .globl clean\nclean:\n    addi    sp, sp, -1024            # int count[256]\n    mv      t0, sp\n    li      t1, 128                  # zero as 128 doublewords\n1:  sd      zero, 0(t0)\n    addi    t0, t0, 8\n    addi    t1, t1, -1\n    bnez    t1, 1b\n2:  lbu     t1, 0(a0)                # count s\n    beqz    t1, 3f\n    slli    t2, t1, 2\n    add     t2, sp, t2\n    lw      t3, 0(t2)\n    addi    t3, t3, 1\n    sw      t3, 0(t2)\n    addi    a0, a0, 1\n    j       2b\n3:  lbu     t1, 0(a1)                # discount t\n    beqz    t1, 4f\n    slli    t2, t1, 2\n    add     t2, sp, t2\n    lw      t3, 0(t2)\n    addi    t3, t3, -1\n    sw      t3, 0(t2)\n    addi    a1, a1, 1\n    j       3b\n4:  mv      t0, sp                   # all counts must be zero\n    li      t1, 256\n5:  lw      t3, 0(t0)\n    bnez    t3, 6f\n    addi    t0, t0, 4\n    addi    t1, t1, -1\n    bnez    t1, 5b\n    li      a0, 1\n    addi    sp, sp, 1024\n    ret\n6:  li      a0, 0\n    addi    sp, sp, 1024\n    ret\n",
+          "optimized": "# int optimized(const char *s, const char *t)\n# a0 = s, a1 = t. Same counting table as clean, plus an EARLY EXIT: the moment\n# a slot goes negative, t holds a character s never had, so they cannot be\n# anagrams and there is no point reading the rest.\n#\n# On the \"worst\" family -- a true anagram -- nothing ever goes negative, so this\n# is clean plus one branch per character of t and the two run neck and neck.\n# That is the honest behaviour: an early exit cannot help an input with no early\n# exit in it. It wins on the \"random\" and \"best\" families, which is where the\n# Lab's lower bound lives.\n#\n# (An earlier attempt tracked a live-slot counter to skip the final 256-slot\n# sweep. It won at n=32 and LOST by n=256: it trades a fixed ~1000-instruction\n# sweep for ~6 instructions per character, so it grows FASTER than clean. A\n# growth lab is exactly the wrong place to optimise a constant at the cost of a\n# slope.)\n    .text\n    .globl optimized\noptimized:\n    addi    sp, sp, -1024            # int count[256]\n    mv      t0, sp\n    li      t1, 128\n1:  sd      zero, 0(t0)\n    addi    t0, t0, 8\n    addi    t1, t1, -1\n    bnez    t1, 1b\n2:  lbu     t1, 0(a0)                # count s up\n    beqz    t1, 3f\n    slli    t2, t1, 2\n    add     t2, sp, t2\n    lw      t3, 0(t2)\n    addi    t3, t3, 1\n    sw      t3, 0(t2)\n    addi    a0, a0, 1\n    j       2b\n3:  lbu     t1, 0(a1)                # discount t\n    beqz    t1, 4f\n    slli    t2, t1, 2\n    add     t2, sp, t2\n    lw      t3, 0(t2)\n    addi    t3, t3, -1\n    bltz    t3, 6f                   # negative -> t has a char s never had\n    sw      t3, 0(t2)\n    addi    a1, a1, 1\n    j       3b\n4:  mv      t0, sp                   # all counts must be zero\n    li      t1, 256\n5:  lw      t3, 0(t0)\n    bnez    t3, 6f\n    addi    t0, t0, 4\n    addi    t1, t1, -1\n    bnez    t1, 5b\n    li      a0, 1\n    addi    sp, sp, 1024\n    ret\n6:  li      a0, 0\n    addi    sp, sp, 1024\n    ret\n",
+          "brute-force": "# int brute_force(const char *s, const char *t)\n# Naive O(n*m): equal lengths, and every char of s occurs equally often in s\n# and t. No table -- rescan both strings for each character of s.\n    .text\n    .globl brute_force\nbrute_force:\n    mv      t0, a0                   # strlen(s)\n    li      t1, 0\n1:  lbu     t2, 0(t0)\n    beqz    t2, 2f\n    addi    t0, t0, 1\n    addi    t1, t1, 1\n    j       1b\n2:  mv      t0, a1                   # strlen(t)\n    li      t2, 0\n3:  lbu     t3, 0(t0)\n    beqz    t3, 4f\n    addi    t0, t0, 1\n    addi    t2, t2, 1\n    j       3b\n4:  bne     t1, t2, 9f               # different lengths -> not an anagram\n    mv      t0, a0                   # for each char c of s\n5:  lbu     t1, 0(t0)\n    beqz    t1, 8f                   # end of s -> every count matched\n    li      t2, 0                    # count c in s\n    mv      t3, a0\n6:  lbu     t4, 0(t3)\n    beqz    t4, 61f\n    bne     t4, t1, 62f\n    addi    t2, t2, 1\n62: addi    t3, t3, 1\n    j       6b\n61: li      t5, 0                    # count c in t\n    mv      t3, a1\n7:  lbu     t4, 0(t3)\n    beqz    t4, 71f\n    bne     t4, t1, 72f\n    addi    t5, t5, 1\n72: addi    t3, t3, 1\n    j       7b\n71: bne     t2, t5, 9f               # counts differ -> not an anagram\n    addi    t0, t0, 1\n    j       5b\n8:  li      a0, 1\n    ret\n9:  li      a0, 0\n    ret\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "same counting table as clean, plus an early exit the moment a slot goes negative. Ties clean on a true anagram (nothing to exit early from) and wins ~35% on the length-mismatch family"
             },
             "brute-force": {
               "upper": "O(n^2)",
@@ -582,6 +614,38 @@
               "lower": null,
               "space": "O(n)",
               "notes": "same hash map as clean, Fibonacci multiply-shift hash instead of masking the low bits -- shorter probe chains on clustered inputs"
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "every pair, no allocation -- the O(n^2) baseline"
+            }
+          }
+        },
+        "asm-riscv64": {
+          "practice": "# void practice(const long *nums, long n, long target, long *out)\n# a0 = nums, a1 = n, a2 = target, a3 = out\n# Fill out[0], out[1] with the indices (i < j) of the two nums summing to\n# target. Write -1, -1 if there is no such pair.\n    .text\n    .globl practice\npractice:\n    li      t0, -1\n    sd      t0, 0(a3)\n    sd      t0, 8(a3)\n    ret\n",
+          "clean": "# void clean(const long *nums, long n, long target, long *out)\n# a0=nums, a1=n, a2=target, a3=out\n#\n# Single-pass hash map with linear probing, in a STACK-allocated table:\n# cap = next power of two >= 2n, 16 bytes per slot (key, index+1). A slot with\n# index 0 is empty, so index+1 is stored and 0 is the sentinel -- nums may\n# legitimately contain 0.\n#\n# O(n) time, O(n) space. The table is on the stack rather than the heap because\n# the browser runs this on libriscv, which simulates a CPU and not a kernel --\n# there is no mmap behind an ecall. At the Lab's top rung (n=512) the table is\n# 16 KB. See docs/libriscv-riscv64.md.\n    .text\n    .globl clean\nclean:\n    addi    sp, sp, -16\n    sd      s0, 8(sp)\n    mv      s0, sp                   # frame anchor: restore sp from here\n    slli    t0, a1, 1                # 2n\n    li      t1, 16\n    bge     t0, t1, 1f\n    mv      t0, t1                   # floor: tiny inputs still get a table\n1:  li      t1, 1                    # cap = next pow2 >= 2n\n2:  bge     t1, t0, 3f\n    slli    t1, t1, 1\n    j       2b\n3:  addi    t2, t1, -1               # mask\n    slli    t3, t1, 4                # cap * 16 bytes\n    sub     sp, sp, t3\n    andi    sp, sp, -16              # 16-byte aligned table base\n    mv      t3, sp                   # zero it\n    mv      t4, t1\n4:  sd      zero, 0(t3)\n    sd      zero, 8(t3)\n    addi    t3, t3, 16\n    addi    t4, t4, -1\n    bnez    t4, 4b\n    li      t0, 0                    # i = 0\n5:  bge     t0, a1, 12f\n    slli    t3, t0, 3\n    add     t3, a0, t3\n    ld      t4, 0(t3)                # v = nums[i]\n    sub     t5, a2, t4               # want = target - v\n    and     t6, t5, t2               # probe for want\n6:  slli    t3, t6, 4\n    add     t3, sp, t3\n    ld      a4, 8(t3)                # stored index+1 (0 = empty)\n    beqz    a4, 9f                   # empty -> want not seen yet\n    ld      a5, 0(t3)\n    bne     a5, t5, 7f\n    addi    a4, a4, -1               # stored index+1\n    sd      a4, 0(a3)                # out[0] = earlier index\n    sd      t0, 8(a3)                # out[1] = i\n    j       13f\n7:  addi    t6, t6, 1\n    and     t6, t6, t2\n    j       6b\n9:  and     t6, t4, t2               # insert v -> i\n10: slli    t3, t6, 4\n    add     t3, sp, t3\n    ld      a4, 8(t3)\n    beqz    a4, 11f\n    addi    t6, t6, 1\n    and     t6, t6, t2\n    j       10b\n11: sd      t4, 0(t3)\n    addi    a4, t0, 1\n    sd      a4, 8(t3)\n    addi    t0, t0, 1\n    j       5b\n12: li      t3, -1\n    sd      t3, 0(a3)\n    sd      t3, 8(a3)\n13: mv      sp, s0\n    ld      s0, 8(sp)\n    addi    sp, sp, 16\n    ret\n",
+          "optimized": "# void optimized(const long *nums, long n, long target, long *out)\n# a0=nums, a1=n, a2=target, a3=out\n#\n# The same single-pass hash map as clean, but with a Fibonacci (multiply-shift)\n# hash instead of masking the low bits. Masking clusters badly on the inputs this\n# problem attracts -- consecutive or evenly-spaced values collide into adjacent\n# slots and linear probing degrades. Multiplying by the 64-bit golden ratio and\n# taking the HIGH bits spreads them, so the probe chains stay short. Same O(n)\n# time and O(n) space; fewer instructions per lookup in practice.\n#\n# Single-pass hash map with linear probing, in a STACK-allocated table:\n# cap = next power of two >= 2n, 16 bytes per slot (key, index+1). A slot with\n# index 0 is empty, so index+1 is stored and 0 is the sentinel -- nums may\n# legitimately contain 0.\n#\n# O(n) time, O(n) space. The table is on the stack rather than the heap because\n# the browser runs this on libriscv, which simulates a CPU and not a kernel --\n# there is no mmap behind an ecall. At the Lab's top rung (n=512) the table is\n# 16 KB. See docs/libriscv-riscv64.md.\n    .text\n    .globl optimized\noptimized:\n    addi    sp, sp, -16\n    sd      s0, 8(sp)\n    mv      s0, sp                   # frame anchor: restore sp from here\n    slli    t0, a1, 1                # 2n\n    li      t1, 16\n    bge     t0, t1, 1f\n    mv      t0, t1                   # floor: tiny inputs still get a table\n1:  li      t1, 1                    # cap = next pow2 >= 2n\n2:  bge     t1, t0, 3f\n    slli    t1, t1, 1\n    j       2b\n3:  addi    t2, t1, -1               # mask, for wrapping the probe\n    # shift = 64 - log2(cap), for the multiply-shift hash\n    li      a6, 0\n    mv      a7, t1\n31: srli    a7, a7, 1\n    beqz    a7, 32f\n    addi    a6, a6, 1\n    j       31b\n32: li      a7, 64\n    sub     a6, a7, a6               # a6 = 64 - bits\n    li      a7, 0x9E3779B9           # 2^64 / phi, built in two halves\n    slli    a7, a7, 32\n    li      t3, 0x7F4A7C15\n    add     a7, a7, t3               # a7 = 0x9E3779B97F4A7C15\n    slli    t3, t1, 4                # cap * 16 bytes\n    sub     sp, sp, t3\n    andi    sp, sp, -16              # 16-byte aligned table base\n    mv      t3, sp                   # zero it\n    mv      t4, t1\n4:  sd      zero, 0(t3)\n    sd      zero, 8(t3)\n    addi    t3, t3, 16\n    addi    t4, t4, -1\n    bnez    t4, 4b\n    li      t0, 0                    # i = 0\n5:  bge     t0, a1, 12f\n    slli    t3, t0, 3\n    add     t3, a0, t3\n    ld      t4, 0(t3)                # v = nums[i]\n    sub     t5, a2, t4               # want = target - v\n    mul     t6, t5, a7               # Fibonacci hash: (want * phi) >> shift\n    srl     t6, t6, a6\n6:  slli    t3, t6, 4\n    add     t3, sp, t3\n    ld      a4, 8(t3)                # stored index+1 (0 = empty)\n    beqz    a4, 9f                   # empty -> want not seen yet\n    ld      a5, 0(t3)\n    bne     a5, t5, 7f\n    addi    a4, a4, -1               # stored index+1\n    sd      a4, 0(a3)                # out[0] = earlier index\n    sd      t0, 8(a3)                # out[1] = i\n    j       13f\n7:  addi    t6, t6, 1\n    and     t6, t6, t2\n    j       6b\n9:  mul     t6, t4, a7               # insert v -> i, same hash\n    srl     t6, t6, a6\n10: slli    t3, t6, 4\n    add     t3, sp, t3\n    ld      a4, 8(t3)\n    beqz    a4, 11f\n    addi    t6, t6, 1\n    and     t6, t6, t2\n    j       10b\n11: sd      t4, 0(t3)\n    addi    a4, t0, 1\n    sd      a4, 8(t3)\n    addi    t0, t0, 1\n    j       5b\n12: li      t3, -1\n    sd      t3, 0(a3)\n    sd      t3, 8(a3)\n13: mv      sp, s0\n    ld      s0, 8(sp)\n    addi    sp, sp, 16\n    ret\n",
+          "brute-force": "# void brute_force(const long *nums, long n, long target, long *out)\n# a0=nums, a1=n, a2=target, a3=out\n# Every pair, no allocation. O(n^2) time, O(1) space -- the baseline clean and\n# optimized improve on.\n    .text\n    .globl brute_force\nbrute_force:\n    li      t0, 0                    # i = 0\n1:  bge     t0, a1, 4f\n    addi    t1, t0, 1                # j = i + 1\n2:  bge     t1, a1, 3f\n    slli    t2, t0, 3\n    add     t2, a0, t2\n    ld      t3, 0(t2)                # nums[i]\n    slli    t2, t1, 3\n    add     t2, a0, t2\n    ld      t4, 0(t2)                # nums[j]\n    add     t3, t3, t4\n    bne     t3, a2, 5f\n    sd      t0, 0(a3)                # out[0] = i\n    sd      t1, 8(a3)                # out[1] = j\n    ret\n5:  addi    t1, t1, 1\n    j       2b\n3:  addi    t0, t0, 1\n    j       1b\n4:  li      t0, -1\n    sd      t0, 0(a3)\n    sd      t0, 8(a3)\n    ret\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "same stack-allocated hash map as clean, Fibonacci multiply-shift hash instead of masking the low bits -- shorter probe chains on clustered inputs"
             },
             "brute-force": {
               "upper": "O(n^2)",
@@ -1131,6 +1195,38 @@
               "lower": null,
               "space": "O(1)",
               "notes": "fast doubling"
+            },
+            "brute-force": {
+              "upper": "O(phi^n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "naive recursion -- exponential time, linear call-stack depth"
+            }
+          }
+        },
+        "asm-riscv64": {
+          "practice": "# long practice(long n)\n# a0 = n. Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n    .text\n    .globl practice\npractice:\n    li      a0, 0                    # TODO: replace with your solution\n    ret\n",
+          "clean": "# long clean(long n) -- iterative\n# a0 = n, returns fib(n) in a0. O(n) time, O(1) space.\n    .text\n    .globl clean\nclean:\n    li      t0, 2\n    blt     a0, t0, 2f               # fib(0)=0, fib(1)=1 -- n is its own answer\n    li      t1, 0                    # prev = fib(0)\n    li      t2, 1                    # curr = fib(1)\n    addi    t3, a0, -1               # n-1 iterations\n1:  add     t4, t1, t2               # next = prev + curr\n    mv      t1, t2\n    mv      t2, t4\n    addi    t3, t3, -1\n    bnez    t3, 1b\n    mv      a0, t2\n    ret\n2:  ret\n",
+          "optimized": "# long optimized(long n) -- fast doubling, O(log n) time, O(1) space\n#   fib(2k)   = fib(k) * (2*fib(k+1) - fib(k))\n#   fib(2k+1) = fib(k)^2 + fib(k+1)^2\n# Walk the bits of n from the top down, maintaining a = fib(k), b = fib(k+1).\n#\n# NOTE FOR RV64G: there is no count-leading-zeros -- clz is in Zbb, not in the G\n# set, unlike aarch64. A loop that searches for the MSB from bit 63 costs ~60\n# wasted iterations and made this variant SLOWER than clean at the Lab's sizes\n# (371 instructions vs clean's 102).\n#\n# No search is needed. A leading ZERO bit is a no-op for fast doubling: with\n# a=0, b=1 it computes d = 0*(2*1-0) = 0 and e = 0^2 + 1^2 = 1, leaving a=0, b=1\n# unchanged. And fib(93) is the largest Fibonacci number that fits in an\n# unsigned 64-bit result, so n < 128 and the MSB is never above bit 6. Starting\n# there costs 7 fixed iterations and no search at all.\n    .text\n    .globl optimized\noptimized:\n    beqz    a0, 4f                   # fib(0) = 0\n    li      t0, 0                    # a = fib(0)\n    li      t1, 1                    # b = fib(1)\n    # Find the MSB index without clz: a 3-step unrolled binary search. Costs ~9\n    # instructions and buys back the iterations a fixed start would waste --\n    # fib(93) is the largest that fits in u64, so n < 128 and the MSB is <= 6.\n    mv      t6, a0\n    li      t2, 0\n    li      t3, 16\n    bltu    t6, t3, 1f\n    addi    t2, t2, 4\n    srli    t6, t6, 4\n1:  li      t3, 4\n    bltu    t6, t3, 2f\n    addi    t2, t2, 2\n    srli    t6, t6, 2\n2:  li      t3, 2\n    bltu    t6, t3, 3f\n    addi    t2, t2, 1\n3:  slli    t3, t1, 1                # 2b\n    sub     t3, t3, t0               # 2b - a\n    mul     t3, t0, t3               # d = a * (2b - a)   == fib(2k)\n    mul     t4, t0, t0               # a^2\n    mul     t5, t1, t1               # b^2\n    add     t4, t4, t5               # e = a^2 + b^2      == fib(2k+1)\n    srl     t5, a0, t2               # current bit of n\n    andi    t5, t5, 1\n    beqz    t5, 5f\n    mv      t0, t4                   # bit set:   a = e\n    add     t1, t3, t4               #            b = d + e\n    j       6f\n5:  mv      t0, t3                   # bit clear: a = d\n    mv      t1, t4                   #            b = e\n6:  addi    t2, t2, -1\n    bgez    t2, 3b\n    mv      a0, t0\n    ret\n4:  li      a0, 0\n    ret\n",
+          "brute-force": "# long brute_force(long n) -- naive recursion\n# The obvious definition: fib(n) = fib(n-1) + fib(n-2).\n# O(phi^n) time, O(n) call-stack depth.\n    .text\n    .globl brute_force\nbrute_force:\n    li      t0, 2\n    blt     a0, t0, 2f               # fib(0)=0, fib(1)=1\n    addi    sp, sp, -32              # ra + two callee-saved regs\n    sd      ra, 24(sp)\n    sd      s0, 16(sp)\n    sd      s1, 8(sp)\n    mv      s0, a0                   # keep n\n    addi    a0, s0, -1\n    call    brute_force              # fib(n-1)\n    mv      s1, a0\n    addi    a0, s0, -2\n    call    brute_force              # fib(n-2)\n    add     a0, a0, s1\n    ld      s1, 8(sp)\n    ld      s0, 16(sp)\n    ld      ra, 24(sp)\n    addi    sp, sp, 32\n    ret\n2:  ret\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(log n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "fast doubling. RV64G has no count-leading-zeros (clz is Zbb, unlike aarch64), so the MSB comes from a 3-step binary search -- fib(93) is the largest that fits in u64, so n < 128"
             },
             "brute-force": {
               "upper": "O(phi^n)",
