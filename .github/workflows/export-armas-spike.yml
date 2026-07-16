@@ -1,0 +1,90 @@
+# THROWAWAY spike job -- DELETE THIS BRANCH when Bx-10 is decided.
+# chore/export-armas-spike-* only, never merged.
+#
+# Bx-10 assembler half. State:
+#   VIXL         DONE  wasm32, 2 MB, 7/7 katas in Chromium, ~0.9 M insn/s
+#   our as       byte-identical to stock; static when linked -no-pie
+#   Blink        boots it in 105 ms in a Worker and EXECS it -- then the guest
+#                floods "unsupported syscall: __syscall_mprotect" forever
+#
+# Run 6 dissected the reference guest and killed the glibc and RELRO theories:
+# gnu-as.elf is static GLIBC with RELRO and works fine. The only difference left
+# is the HOST TOOLCHAIN -- reference is GCC 11.2/11.4 (Ubuntu 22.04, glibc 2.35)
+# at 2,135,928 bytes; ours is GCC 13.3 (Ubuntu 24.04, glibc 2.39) at 4,186,864,
+# nearly double. So build on BOTH runners, ship both, and let the local Blink
+# rig decide. Matrix over runners is the only honest way to test a host-toolchain
+# hypothesis.
+name: export-armas-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-armas-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  armas:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: u2204
+          - os: ubuntu-latest
+            label: u2404
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-aarch64-linux-gnu build-essential texinfo bison flex file
+
+      - name: Fetch the known-good Blink guest
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/armas-out/ref"
+          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/assemblers/gnu-as.2.43.50.elf" -o "$GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf"
+          echo "908b557e21e8000596abe12828d929cf82dd9abcc3ee840dbaf9c503d8e32534  $GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf" | sha256sum -c -
+
+      - name: Build the aarch64 assembler on ${{ matrix.label }}
+        continue-on-error: true
+        run: bash tools/armas-spike/build-variants.sh "$GITHUB_WORKSPACE/armas-out" "${{ matrix.label }}"
+
+      - name: Dissect ours against the reference
+        continue-on-error: true
+        run: |
+          bash tools/armas-spike/dissect.sh "$GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf" "REFERENCE (works under blinkenlib)"
+          echo
+          bash tools/armas-spike/dissect.sh "$GITHUB_WORKSPACE/armas-out/as-${{ matrix.label }}.elf" "OURS on ${{ matrix.label }}"
+
+      - name: Verify it still emits correct aarch64
+        continue-on-error: true
+        run: |
+          F="$GITHUB_WORKSPACE/armas-out/as-${{ matrix.label }}.elf"
+          test -f "$F" || exit 0
+          "$F" tools/armas-spike/katas/add.s -o "${TMPDIR:-/tmp}/a.o"
+          aarch64-linux-gnu-objcopy -O binary --only-section=.text "${TMPDIR:-/tmp}/a.o" "${TMPDIR:-/tmp}/a.bin"
+          echo "  .text sha $(sha256sum "${TMPDIR:-/tmp}/a.bin" | cut -c1-16)  (run 6 got 03039bd23d144842 on every variant)"
+
+      - name: Vendor blinkenlib
+        if: matrix.label == 'u2204'
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/armas-out/blink"
+          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/blinkenlib.js"   -o "$GITHUB_WORKSPACE/armas-out/blink/blinkenlib.js"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/blinkenlib.wasm" -o "$GITHUB_WORKSPACE/armas-out/blink/blinkenlib.wasm"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: armas-spike-${{ matrix.label }}
+          if-no-files-found: warn
+          path: |
+            armas-out/
+            tools/armas-spike/katas/*.s
