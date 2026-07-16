@@ -285,6 +285,45 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       `docs/ci-dependency-hardening.md`. *Cheapest first step: a scheduled
       cold-vendor canary with no cache, so the next break surfaces on a Tuesday
       instead of at the next cache-key bump.*
+- [ ] **Bx-10b. RISC-V RV64GC** -- Bx-10s continuation. **SPIKE DONE, both halves
+      PROVEN; track not yet built.** Full record, numbers and gotchas:
+      `docs/libriscv-riscv64.md`. Emulator is **libriscv** (BSD-3, ~256 files,
+      built for embedding) compiled to **wasm32**; it already had a wasm example
+      in-tree, so unlike VIXL it started from a working build. Measured in CI:
+      add a0=12 in 2 instructions, loop a0=55 in 29, auipc a0=0x1122334455667788
+      in 4 -- driven register-by-register, so the Bx-7 -> Bx-10 pattern
+      (`reg`/`jump`/`step_one`, `ra=0` sentinel) ports a **third** time.
+      `instruction_counter()` is NATIVE, so the det-tier metric is free where
+      VIXL made us count by hand. The **assembler half already transferred**:
+      Bx-10s musl recipe with one triple changed -> riscv64 as+ld, musl-static,
+      1.94 MB (smaller than arm64s 2.85 MB), run as guest ELFs under the
+      already-vendored Blink.
+      *RV64GC specifics that do NOT inherit from aarch64:* the C extension
+      compresses AUTOMATICALLY (plain `add a0,a0,a1 / ret` -> two 2-byte
+      instructions), so `insns != bytes/4` and **`RISCV_EXT_C=ON` is MANDATORY**
+      -- libriscvs own wasm example ships it OFF and REJECTS a compressed ELF at
+      load. RISC-V **linker relaxation** puts relocations on even local branches,
+      so more katas need `ld` than on aarch64. `auipc`/`addi` survives
+      relocation, so the corpus needs no position-independence constraint.
+      *Remaining: vendor step, worker + loader, corpus 001/002/003 x 4, units +
+      smoke. The Lab ladder arrives free from #100s det fallback. Three things to
+      fix on the way in: the vendor cache key hashes tools/arm64-toolchain/** and
+      must generalise; lab.js unit selector is a hand-kept list that needs
+      DERIVING before a third entry; blinkenlib would be vendored a third time.*
+- [ ] **Further architectures** -- s390x, powerpc64le, MIPS. Not tracks yet; the
+      shape is proven twice over and the marginal cost is now mostly *the
+      emulator*. Descending confidence: **powerpc64le** (first-class Linux
+      target; LE only -- BE is a different problem), **s390x** (IBM-maintained,
+      but emulators tend to be machine-shaped rather than function drivers),
+      **MIPS** (needs disambiguating first: mips/mipsel/mips64/mips64el x
+      o32/n32/n64 -- "MIPS" is not a spec). Each needs the same decisive probe
+      that picked VIXL and libriscv: *can it set registers, jump to a symbol,
+      single-step to ret, read the result?* -- not "can it boot Linux".
+      Per-arch gotchas do NOT transfer: comment chars differ (`#` vs `//`),
+      `insns != bytes/4` is not universal (s390x is 2/4/6-byte variable-length),
+      and relocation behaviour must be re-measured -- adrp and auipc both
+      relocating freely is two data points, not a law. See
+      `docs/libriscv-riscv64.md` section 7.
 - [ ] **BUG (Bx-7). x86-64 cannot reach its own Lab ladder ceiling.** Found by
       `e2e/lab-ladder-ceiling.spec.js`, confirmed on the live site:
       `asm-x86_64` 002 at n=512 blows loadAsmX86 30s worker budget
