@@ -1,0 +1,141 @@
+# THROWAWAY spike -- RISC-V RV64GC, the demonstration run. Never merged.
+#
+# EVERYTHING BELOW WAS DONE BY HAND FIRST, on a real box, and worked:
+#   add    steps=2   icount=2   a0=12                    (two COMPRESSED instrs)
+#   loop   steps=29  icount=29  a0=55                    (the Pixel kata)
+#   auipc  steps=4   icount=4   a0=0x1122334455667788    (relocation boundary)
+# This job reproduces it in CI so it is on the record rather than in a chat log.
+#
+# WHAT IT PROVES
+#   1. libriscv builds to wasm32 -- their example AND our wrapper.
+#   2. RISCV_EXT_C=ON works. Their example ships it OFF, and RV64GC compresses
+#      AUTOMATICALLY (plain "add a0,a0,a1 / ret" assembles to two 2-BYTE
+#      instructions: 952e, 8082). Had EXT_C been unusable under wasm the track
+#      would have been RV64G, and calling it RV64GC would have been a lie.
+#   3. The blinkenlib pattern ports a THIRD time: set registers, jump to a
+#      symbol, single-step to ret, read a0. Same shape as Bx-7's Blink driver and
+#      Bx-10's VIXL driver.
+#   4. auipc/addi -- RISC-V's adrp/:lo12: -- survives libriscv's addressing, so
+#      the corpus needs NO position-independence constraint. Same conclusion as
+#      Bx-10, measured rather than inherited.
+#   5. instruction_counter() is NATIVE. VIXL made us count steps by hand; here
+#      the det-tier metric is free.
+#
+# THINGS THAT COST ROUND TRIPS, all recorded in the scripts:
+#   - RISC-V's as uses '#' for comments; aarch64 uses '//'. Every kata failed once.
+#   - -fexceptions must be on the COMPILE step or a throw dies as "table index is
+#     out of bounds" inside an invoke_* trampoline, naming a table not a cause.
+#   - RISCV_BINARY_TRANSLATION=OFF: the translator dispatches through indirect
+#     calls, impossible in wasm.
+#   - add_subdirectory(../../lib) is RELATIVE -- build in their tree, not a copy.
+#   - Do NOT rename gx_rv.wasm: the .mjs hardcodes findWasmBinary().
+#   - Their examples/wasm/build.sh is STALE (points at a cmake/wasm.cmake that
+#     does not exist). emcmake is what works.
+name: export-riscv-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-riscv-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-riscv64-linux-gnu build-essential cmake file
+          echo "## $(riscv64-linux-gnu-as --version | head -1)"
+
+      - name: Install emsdk
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          cd "$HOME/emsdk" && ./emsdk install latest >/dev/null && ./emsdk activate latest >/dev/null
+          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
+          . "$HOME/emsdk/emsdk_env.sh" && echo "## $(emcc --version | head -1)"
+
+      - name: Provenance -- exactly what is being built
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/libriscv/libriscv.git "$HOME/rv-libriscv" 2>/dev/null
+          cd "$HOME/rv-libriscv"
+          echo "## libriscv $(git rev-parse HEAD)"
+          echo "## dated    $(git log -1 --format=%cd --date=short)"
+          echo "## license  $(head -1 LICENSE 2>/dev/null)"
+          echo "## size     $(du -sh . | cut -f1), $(find . -name '*.cpp' -o -name '*.hpp' | wc -l) C++ files"
+          echo
+          echo "## the API this spike drives, from the real headers:"
+          grep -n "auto& reg(uint32_t idx)" lib/libriscv/cpu.hpp | sed 's/^/     /'
+          grep -n "void step_one" lib/libriscv/cpu.hpp | sed 's/^/     /'
+          grep -n "address_t pc() const" lib/libriscv/cpu.hpp | sed 's/^/     /'
+
+      - name: Build with EXT_C=ON -- the config the track needs
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          bash tools/riscv-spike/build.sh "$GITHUB_WORKSPACE/rv" ON
+
+      - name: Build with EXT_C=OFF -- their shipped config, for comparison
+        continue-on-error: true
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          bash tools/riscv-spike/build.sh "$GITHUB_WORKSPACE/rv" OFF
+
+      - name: Assemble and link the katas, and show the encoding
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/rv/katas"
+          for f in tools/riscv-spike/katas/*.s; do
+            b=$(basename "$f" .s)
+            riscv64-linux-gnu-as -march=rv64gc -mabi=lp64d "$f" -o "${TMPDIR:-/tmp}/$b.o"
+            riscv64-linux-gnu-ld "${TMPDIR:-/tmp}/$b.o" -o "$GITHUB_WORKSPACE/rv/katas/$b.elf" -e kata -z max-page-size=4096
+            R=$(riscv64-linux-gnu-objdump -r "${TMPDIR:-/tmp}/$b.o" 2>/dev/null | grep -c R_RISCV || true)
+            echo "---- $b   elf=$(stat -c%s "$GITHUB_WORKSPACE/rv/katas/$b.elf") bytes   relocs=$R"
+            # A 4-hex-digit opcode column means a 2-BYTE compressed instruction.
+            riscv64-linux-gnu-objdump -d "$GITHUB_WORKSPACE/rv/katas/$b.elf" | sed -n '/<kata>:/,/^$/p' | head -10 | sed 's/^/     /'
+          done
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: THE GATE -- drive RV64GC on the EXT_C=ON build
+        run: |
+          echo "## add    -- a0=7, a1=5 -> 12"
+          node tools/riscv-spike/drive.mjs "$GITHUB_WORKSPACE/rv/ON" "$GITHUB_WORKSPACE/rv/katas/add.elf" 12 7 5
+          echo "## loop   -- sum of squares 1..5 -> 55 (the kata that ran on the Pixel)"
+          node tools/riscv-spike/drive.mjs "$GITHUB_WORKSPACE/rv/ON" "$GITHUB_WORKSPACE/rv/katas/loop.elf" 55 0 5
+          echo "## auipc  -- the adrp/:lo12: relocation boundary -> 0x1122334455667788"
+          node tools/riscv-spike/drive.mjs "$GITHUB_WORKSPACE/rv/ON" "$GITHUB_WORKSPACE/rv/katas/auipc.elf" 1234605616436508552 0 0
+
+      - name: And what EXT_C=OFF does with the same compressed kata
+        continue-on-error: true
+        run: |
+          test -d "$GITHUB_WORKSPACE/rv/OFF" || { echo "## no EXT_C=OFF build"; exit 0; }
+          echo "## Their shipped config, handed the SAME rv64gc kata. If this fails,"
+          echo "## that is why the track needs EXT_C=ON rather than their defaults."
+          node tools/riscv-spike/drive.mjs "$GITHUB_WORKSPACE/rv/OFF" "$GITHUB_WORKSPACE/rv/katas/add.elf" 12 7 5 \
+            || echo "   ^^ EXT_C=OFF cannot decode compressed instructions -- expected, and the point"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## ---- what this run demonstrates ----"
+          echo "##   libriscv (BSD-3) builds to wasm32 and executes RV64GC"
+          echo "##   driven register-by-register: reg(), jump(), step_one(), ra=0 sentinel"
+          echo "##   instruction_counter() is native -- the det-tier metric is free"
+          echo "##   auipc/addi survives, so the corpus needs no PIC constraint"
+          echo "##   the assembler half already transferred: musl-static riscv64 binutils, 1.94 MB"
+          ls -la "$GITHUB_WORKSPACE/rv"/*/*.wasm 2>/dev/null | awk '{print "##   "$5, $9}'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: riscv-spike-demo
+          if-no-files-found: warn
+          path: |
+            rv/
+            tools/riscv-spike/katas/*.s
