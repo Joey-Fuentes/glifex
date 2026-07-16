@@ -1,0 +1,112 @@
+# THROWAWAY spike job -- DELETE THIS BRANCH when Bx-10 is decided.
+# Lives only on chore/export-armas-spike-* and is never merged to main, like
+# chore/export-rust-vendor / chore/export-java-vendor / chore/export-vixl-spike-*.
+#
+# Bx-10 arm64, the ASSEMBLER half. The emulator half is DONE -- VIXL builds to
+# wasm32 (2,088,513 B) and passes 7/7 katas in Chromium at ~0.9 M insn/s.
+#
+# This job does NOT try to run Blink. Blink's driver is requestAnimationFrame-
+# driven (see web/asm-x86-blink.mjs), so it needs a real page, and the local
+# sandbox already has Playwright + Chromium working. So CI does the part only CI
+# can do -- BUILD the toolchain with network -- and uploads it for local Blink
+# integration at zero round-trip cost. Same division of labour that closed VIXL.
+#
+# What it answers, none of which needs Blink:
+#   1. Is Debian's binutils-aarch64-linux-gnu dynamically linked? (If so, no
+#      .deb shortcut -- Blink-in-a-tab has no loader or libc.)
+#   2. Can we build a STATIC, x86-64-HOST, aarch64-TARGET gas+ld? Blink emulates
+#      x86-64, so the assembler must BE x86-64 while EMITTING aarch64. Bx-7's
+#      vendored gnu-as.elf targets x86-64 and is useless to us.
+#   3. Does our as produce byte-identical .text to stock? (Keeps CI's native as
+#      valid as ground truth forever after.)
+#   5. Assemble+link a freestanding Hello Joe with OUR toolchain. v2 produced
+#      ET_EXEC and the Pixel refused it (unexpected e_type: 2) -- Android needs
+#      ET_DYN, a PIE. v3 links -static -pie --no-dynamic-linker and GATES on
+#      e_type, which v2's guards never checked. Note qemu passed v2 happily:
+#      qemu is not Android. Scouting for the unplanned native-download track.
+#      Old wording follows --
+#      prove under qemu-aarch64 that it actually EXECUTES (exit 55 = the loop
+#      kata). Byte-diffing vs stock proves AGREEMENT, not correctness. This is
+#      also the only thing here that exercises ld. Off the critical path for
+#      the browser track -- Blink and VIXL are untouched -- but cheap.
+#   4. WHICH KATAS CARRY RELOCATIONS -- the real design boundary. VIXL executes
+#      from malloc'd wasm offsets, so it can only run position-independent .text
+#      lifted from a .o. Anything needing a link wants a fixed vaddr we cannot
+#      honour.
+name: export-armas-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-armas-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  armas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stock cross binutils, build deps and qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-aarch64-linux-gnu build-essential texinfo bison flex file qemu-user-static
+
+      - name: Prove whether the Debian package is dynamically linked
+        run: |
+          P=$(command -v aarch64-linux-gnu-as)
+          echo "## stock as path  $P"
+          echo "## stock as size  $(stat -c%s "$(readlink -f "$P")") bytes"
+          echo "## stock as file  $(file -b "$(readlink -f "$P")")"
+          if file -b "$(readlink -f "$P")" | grep -q "statically linked"; then
+            echo "## VERDICT stock is STATIC -- a .deb shortcut may be viable after all"
+          else
+            echo "## VERDICT stock is DYNAMIC -- confirms we must build our own static as"
+          fi
+
+      - name: Build static aarch64-target binutils
+        id: build
+        continue-on-error: true
+        run: bash tools/armas-spike/build-binutils.sh "$GITHUB_WORKSPACE/armas-out"
+
+      - name: Compare our as against stock and inventory relocations
+        continue-on-error: true
+        run: bash tools/armas-spike/compare.sh "$GITHUB_WORKSPACE/armas-out" tools/armas-spike/katas "$GITHUB_WORKSPACE/armas-out/katas"
+
+      - name: Vendor blinkenlib (same pin production uses)
+        continue-on-error: true
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/armas-out/blink"
+          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/blinkenlib.js"   -o "$GITHUB_WORKSPACE/armas-out/blink/blinkenlib.js"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/blinkenlib.wasm" -o "$GITHUB_WORKSPACE/armas-out/blink/blinkenlib.wasm"
+          echo "687b3d3cb033175d245c324c394d4587d9f459fb4f732eb2b340c097a8619063  $GITHUB_WORKSPACE/armas-out/blink/blinkenlib.js"   | sha256sum -c -
+          echo "dd409970974929ab04d6b45978df01140d63ad2054ba7a550b6259e0a07f476a  $GITHUB_WORKSPACE/armas-out/blink/blinkenlib.wasm" | sha256sum -c -
+          echo "## blinkenlib pinned at $REF and sha-verified -- identical to what pages.yml ships"
+
+      - name: Summarise
+        if: always()
+        run: |
+          echo "## ---- armas spike summary ----"
+          ls -la "$GITHUB_WORKSPACE/armas-out" 2>/dev/null | grep -v "^total\|^d" || echo "(no output)"
+          for f in aarch64-as.elf aarch64-ld.elf; do
+            P="$GITHUB_WORKSPACE/armas-out/$f"
+            test -f "$P" && echo "$f  $(stat -c%s "$P") bytes  |  gz $(gzip -c "$P" | wc -c)"
+          done
+
+      - name: Build five Hello Joe link variants and dump their ELF headers
+        continue-on-error: true
+        run: bash tools/armas-spike/make-hello.sh "$GITHUB_WORKSPACE/armas-out" tools/armas-spike/hello/hello-joe.s "$GITHUB_WORKSPACE/armas-out/hello" tools/armas-spike/hello
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: armas-spike
+          if-no-files-found: warn
+          path: |
+            armas-out/
+            tools/armas-spike/katas/*.s
+            tools/armas-spike/hello/*.s
