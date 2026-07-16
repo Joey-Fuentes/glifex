@@ -20,7 +20,7 @@ php         = { variants = ["practice", "clean", "optimized"] }
 dart        = { variants = ["practice", "clean", "optimized"] }
 zig         = { variants = ["practice", "clean", "optimized"] }
 asm-x86_64  = { variants = ["practice", "brute-force", "clean", "optimized"] }
-asm-arm64   = { variants = ["practice", "clean", "optimized"] }
+asm-arm64   = { variants = ["practice", "brute-force", "clean", "optimized"] }
 
 [exclusions]
 wat = "not-applicable: string inputs; WAT's contract is numeric-only"
@@ -58,6 +58,10 @@ space = "O(1)"
 notes = "per-char count compare -- the naive O(n^2) baseline"
 
 [complexity.asm-x86_64.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "naive per-character count compare -- the O(n^2) baseline"
+[complexity.asm-arm64.brute-force]
 time = "O(n^2)"
 space = "O(1)"
 notes = "naive per-character count compare -- the O(n^2) baseline"

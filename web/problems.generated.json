@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-16T03:11:45.485Z",
+  "generatedAt": "2026-07-16T03:44:33.450Z",
   "displayNames": {
     "asm-6502": "6502 assembly",
     "asm-x86_64": "x86-64 assembly",
@@ -75,7 +75,7 @@
           "practice": "// int practice(const char *s, const char *t)\n// x0 = s, x1 = t. Stub: always returns 0 (not an anagram).\n    .text\n    .globl practice\n.globl _practice\npractice:\n_practice:\n    mov     w0, #0\n    ret\n",
           "clean": "// int practice(const char *s, const char *t)\n// x0 = s, x1 = t. Counting table on the stack; returns 1 iff anagram.\n    .text\n    .globl clean\n.globl _clean\nclean:\n_clean:\n    sub     sp, sp, #1024        // int count[256]\n    mov     x8, sp\n    mov     x9, #128             // zero as 128 doublewords\n1:  str     xzr, [x8], #8\n    subs    x9, x9, #1\n    b.ne    1b\n2:  ldrb    w9, [x0], #1         // count s\n    cbz     w9, 3f\n    add     x10, sp, w9, uxtw #2\n    ldr     w11, [x10]\n    add     w11, w11, #1\n    str     w11, [x10]\n    b       2b\n3:  ldrb    w9, [x1], #1         // discount t\n    cbz     w9, 4f\n    add     x10, sp, w9, uxtw #2\n    ldr     w11, [x10]\n    sub     w11, w11, #1\n    str     w11, [x10]\n    b       3b\n4:  mov     x8, sp               // all counts must be zero\n    mov     x9, #256\n5:  ldr     w11, [x8], #4\n    cbnz    w11, 6f\n    subs    x9, x9, #1\n    b.ne    5b\n    mov     w0, #1\n    add     sp, sp, #1024\n    ret\n6:  mov     w0, #0\n    add     sp, sp, #1024\n    ret\n",
           "optimized": "// int practice(const char *s, const char *t)\n// x0 = s, x1 = t. Counting table on the stack; returns 1 iff anagram.\n    .text\n    .globl optimized\n.globl _optimized\noptimized:\n_optimized:\n    sub     sp, sp, #1024        // int count[256]\n    mov     x8, sp\n    mov     x9, #128             // zero as 128 doublewords\n1:  str     xzr, [x8], #8\n    subs    x9, x9, #1\n    b.ne    1b\n2:  ldrb    w9, [x0], #1         // count s\n    cbz     w9, 3f\n    add     x10, sp, w9, uxtw #2\n    ldr     w11, [x10]\n    add     w11, w11, #1\n    str     w11, [x10]\n    b       2b\n3:  ldrb    w9, [x1], #1         // discount t\n    cbz     w9, 4f\n    add     x10, sp, w9, uxtw #2\n    ldr     w11, [x10]\n    sub     w11, w11, #1\n    str     w11, [x10]\n    b       3b\n4:  mov     x8, sp               // all counts must be zero\n    mov     x9, #256\n5:  ldr     w11, [x8], #4\n    cbnz    w11, 6f\n    subs    x9, x9, #1\n    b.ne    5b\n    mov     w0, #1\n    add     sp, sp, #1024\n    ret\n6:  mov     w0, #0\n    add     sp, sp, #1024\n    ret\n",
-          "brute-force": null,
+          "brute-force": "// int brute_force(const char *s, const char *t)\n// Naive O(n*m): equal lengths, and every char of s occurs equally often in\n// s and t. No table -- rescan both strings for each character of s.\n    .text\n    .globl brute_force\n.globl _brute_force\nbrute_force:\n_brute_force:\n    mov     x2, x0                   // strlen(s)\n1:  ldrb    w3, [x2], #1\n    cbnz    w3, 1b\n    sub     x2, x2, x0\n    sub     x2, x2, #1\n    mov     x3, x1                   // strlen(t)\n2:  ldrb    w4, [x3], #1\n    cbnz    w4, 2b\n    sub     x3, x3, x1\n    sub     x3, x3, #1\n    cmp     x2, x3\n    b.ne    9f                       // different lengths -> not an anagram\n    mov     x4, x0                   // for each char c of s\n3:  ldrb    w5, [x4], #1\n    cbz     w5, 8f                   // end of s -> every count matched\n    mov     x6, #0                   // count c in s\n    mov     x7, x0\n4:  ldrb    w8, [x7], #1\n    cbz     w8, 5f\n    cmp     w8, w5\n    cinc    x6, x6, eq\n    b       4b\n5:  mov     x9, #0                   // count c in t\n    mov     x10, x1\n6:  ldrb    w8, [x10], #1\n    cbz     w8, 7f\n    cmp     w8, w5\n    cinc    x9, x9, eq\n    b       6b\n7:  cmp     x6, x9\n    b.ne    9f                       // counts differ -> not an anagram\n    b       3b\n8:  mov     w0, #1\n    ret\n9:  mov     w0, #0\n    ret\n",
           "complexity": {
             "practice": {
               "upper": "O(n)",
@@ -94,6 +94,12 @@
               "lower": null,
               "space": "O(1)",
               "notes": "counting table; O(1) under the fixed-alphabet convention"
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "naive per-character count compare -- the O(n^2) baseline"
             }
           }
         },
@@ -1067,6 +1073,38 @@
               "lower": null,
               "space": "O(1)",
               "notes": null
+            }
+          }
+        },
+        "asm-arm64": {
+          "practice": "// long practice(long n)\n// x0 = n. Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n    .text\n    .globl practice\n.globl _practice\npractice:\n_practice:\n    mov     x0, #0                   // TODO: replace with your solution\n    ret\n",
+          "clean": "// long clean(long n) -- iterative\n// x0 = n, returns fib(n) in x0. O(n) time, O(1) space.\n    .text\n    .globl clean\n.globl _clean\nclean:\n_clean:\n    cmp     x0, #2\n    b.lt    2f                       // fib(0)=0, fib(1)=1 -- n is its own answer\n    mov     x1, #0                   // prev = fib(0)\n    mov     x2, #1                   // curr = fib(1)\n    sub     x3, x0, #1               // n-1 iterations\n1:  add     x4, x1, x2               // next = prev + curr\n    mov     x1, x2\n    mov     x2, x4\n    subs    x3, x3, #1\n    b.ne    1b\n    mov     x0, x2\n    ret\n2:  ret\n",
+          "optimized": "// long optimized(long n) -- fast doubling, O(log n) time, O(1) space\n//   fib(2k)   = fib(k) * (2*fib(k+1) - fib(k))\n//   fib(2k+1) = fib(k)^2 + fib(k+1)^2\n// Walk the bits of n from the MSB down, maintaining a = fib(k), b = fib(k+1).\n    .text\n    .globl optimized\n.globl _optimized\noptimized:\n_optimized:\n    cbz     x0, 4f                   // fib(0) = 0\n    mov     x1, #0                   // a = fib(0)\n    mov     x2, #1                   // b = fib(1)\n    clz     x3, x0\n    mov     x4, #63\n    sub     x4, x4, x3               // x4 = index of the most significant set bit\n1:  lsl     x5, x2, #1               // 2b\n    sub     x5, x5, x1               // 2b - a\n    mul     x5, x1, x5               // d = a * (2b - a)   == fib(2k)\n    mul     x6, x1, x1               // a^2\n    madd    x6, x2, x2, x6           // e = a^2 + b^2      == fib(2k+1)\n    lsr     x7, x0, x4               // current bit of n\n    tbz     x7, #0, 2f\n    mov     x1, x6                   // bit set:   a = e\n    add     x2, x5, x6               //            b = d + e\n    b       3f\n2:  mov     x1, x5                   // bit clear: a = d\n    mov     x2, x6                   //            b = e\n3:  subs    x4, x4, #1\n    b.ge    1b                       // signed: stops after bit 0\n    mov     x0, x1\n    ret\n4:  mov     x0, #0\n    ret\n",
+          "brute-force": "// long brute_force(long n) -- naive recursion\n// The obvious definition: fib(n) = fib(n-1) + fib(n-2).\n// O(phi^n) time, O(n) call-stack depth.\n    .text\n    .globl brute_force\n.globl _brute_force\nbrute_force:\n_brute_force:\n    cmp     x0, #2\n    b.lt    2f                       // fib(0)=0, fib(1)=1\n    stp     x29, x30, [sp, #-32]!    // AAPCS64 frame; x30 is the return address\n    mov     x29, sp\n    stp     x19, x20, [sp, #16]      // callee-saved: we clobber them across bl\n    mov     x19, x0                  // keep n\n    sub     x0, x19, #1\n    bl      brute_force              // fib(n-1)\n    mov     x20, x0\n    sub     x0, x19, #2\n    bl      brute_force              // fib(n-2)\n    add     x0, x0, x20\n    ldp     x19, x20, [sp, #16]\n    ldp     x29, x30, [sp], #32\n    ret\n2:  ret\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(log n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "fast doubling"
+            },
+            "brute-force": {
+              "upper": "O(phi^n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "naive recursion -- exponential time, linear call-stack depth"
             }
           }
         },
