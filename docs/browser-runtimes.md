@@ -6,10 +6,12 @@
 > A feasibility / verification-story review reprioritized the sequence: retro CPU-cores first (deterministic
 > SingleStepTests CI proof), C# early, Rust via **rubri** (Miri/MIR-interpreter in wasm, not `rustc`),
 > Java **shipped** in-browser via **teavm-javac** (TeaVM's real javac AOT-compiled to WasmGC; compile-in-worker,
-> cases fed at runtime) -- not the DoppioJVM/GraalVM paths first sketched here; Kotlin stays gated on a JVM-in-browser. Swift's candidate path is **Emscripten + MiniSwift** (subset, unverified). arm64 now has an
-> all-permissive path -- clang cross-assemble (Apache) + **arm-sandbox** (MIT aarch64 emulator) via Emscripten,
-> retiring the Unicorn/Keystone GPL route -- but stays spike-gated on arm-sandbox maturity (v0.1, incomplete
-> A64). Blink stays x86-64-guest-only; it never solved arm64. Zig/Go/Dart and Swift remain feasibility
+> cases fed at runtime) -- not the DoppioJVM/GraalVM paths first sketched here; Kotlin stays gated on a JVM-in-browser. Swift's candidate path is **Emscripten + MiniSwift** (subset, unverified). arm64's spike is
+> **DONE and the path is proven** (`docs/vixl-arm64.md`): **VIXL** (BSD-3, Arm/Linaro) built to wasm32
+> executes the code, and GNU as+ld cross-targeting aarch64 run as musl-static guests **under Blink** to
+> assemble it -- not arm-sandbox, not clang, and the Unicorn/Keystone GPL route is retired for real.
+> Blink is still x86-64-guest-only and still never emulates arm64 -- it runs the *assembler*, which is an
+> x86-64 binary that *emits* aarch64. Zig/Go/Dart and Swift remain feasibility
 > *spikes*. Also: PHP and C/C++ browser runtimes already shipped (Bx-2/Bx-3, verified in STATUS) -- the old
 > "feasible to add now" wording below predates that. These toolchain calls are under active re-research
 > (J. Fuentes, in parallel); the per-target notes and "Decisions locked" below will be reconciled once it
@@ -61,7 +63,7 @@ Tiered by feasibility × fidelity × effort.
 
 **x86-64** — assemble the user's AT&T/SysV asm with clang cross-targeting `x86_64-linux` (reuses the C/C++ toolchain) → ELF → execute on **Blink** compiled to WASM (ISC, ~177kb, runs real x86-64-Linux ELF, WASM-proven by `x86-64-playground`). **Fidelity: high** (real machine code on a faithful emulator; Linux syscalls back the stdio harness). Lighter than expected, but the assemble→ELF→emulate→syscall/ABI harness pipeline is more involved. Bonus: emulated x86-64 runs uniformly regardless of the user's real CPU — an ARM-laptop user can finally run x86-64 asm they can't test natively.
 
-**arm64** — assemble with clang cross-targeting `aarch64-linux` → execute on an arm64 emulator (**Unicorn Engine**, QEMU-based, multi-arch — **GPLv2, license note**) or qemu-aarch64-in-wasm. **Fidelity: high.** Heavier than x86-64; GPL tooling.
+**arm64** — **PROVEN, see `docs/vixl-arm64.md`.** Assemble+link with GNU `as`/`ld` cross-targeting aarch64, run as **musl-static x86-64 guests under Blink** (the Bx-7 emulator, already vendored) → execute the result on **VIXL**'s AArch64 Simulator (BSD-3, Arm/Linaro) compiled to **wasm32** (2.09 MB, ~0.92 M insn/s). **Fidelity: high.** All-permissive; no Unicorn, no qemu, no GPL in the linked page. ~3.1 s/solve, no COI needed.
 
 **Go** — **gc-in-wasm** (decision: faithful over light). The real `gc` toolchain compiled to WASM, running in-browser with a virtual FS to compile user source → run. **Fidelity: high** (the real compiler). **Size: heavy** (toolchain + stdlib). Rejected alt: `yaegi` interpreter (lighter but interpreter-divergent — undercuts CLI-parity).
 
@@ -98,7 +100,7 @@ Prereq: **B1** (regression-test the 5 existing browser runtimes) lands first —
 6. **Retro trio (6502 / Z80 / SM83)** — small, provable, distinctive; establishes the CPU-core harness. (Could move earlier — small and high-value.)
 7. **Dart** — dart2wasm client-side (WasmGC caveat).
 8. **x86-64** — Blink + clang-cross-assemble; introduces the ELF+syscall harness.
-9. **arm64** — Unicorn/qemu (GPL note); heaviest emulation.
+9. **arm64** — VIXL-in-wasm32 + GNU as/ld under Blink; all-permissive, spike proven (`docs/vixl-arm64.md`).
 10. **Go** — gc-in-wasm (heavy).
 11. **Java** — SHIPPED in-browser via teavm-javac (real javac on WasmGC).
 12. **Kotlin** — with Java (shares the JVM-in-browser dependency); CLI-only until then.
