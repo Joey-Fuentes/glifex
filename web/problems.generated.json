@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-14T18:44:47.256Z",
+  "generatedAt": "2026-07-16T03:11:45.485Z",
   "displayNames": {
     "asm-6502": "6502 assembly",
     "asm-x86_64": "x86-64 assembly",
@@ -71,6 +71,32 @@
         }
       ],
       "languages": {
+        "asm-arm64": {
+          "practice": "// int practice(const char *s, const char *t)\n// x0 = s, x1 = t. Stub: always returns 0 (not an anagram).\n    .text\n    .globl practice\n.globl _practice\npractice:\n_practice:\n    mov     w0, #0\n    ret\n",
+          "clean": "// int practice(const char *s, const char *t)\n// x0 = s, x1 = t. Counting table on the stack; returns 1 iff anagram.\n    .text\n    .globl clean\n.globl _clean\nclean:\n_clean:\n    sub     sp, sp, #1024        // int count[256]\n    mov     x8, sp\n    mov     x9, #128             // zero as 128 doublewords\n1:  str     xzr, [x8], #8\n    subs    x9, x9, #1\n    b.ne    1b\n2:  ldrb    w9, [x0], #1         // count s\n    cbz     w9, 3f\n    add     x10, sp, w9, uxtw #2\n    ldr     w11, [x10]\n    add     w11, w11, #1\n    str     w11, [x10]\n    b       2b\n3:  ldrb    w9, [x1], #1         // discount t\n    cbz     w9, 4f\n    add     x10, sp, w9, uxtw #2\n    ldr     w11, [x10]\n    sub     w11, w11, #1\n    str     w11, [x10]\n    b       3b\n4:  mov     x8, sp               // all counts must be zero\n    mov     x9, #256\n5:  ldr     w11, [x8], #4\n    cbnz    w11, 6f\n    subs    x9, x9, #1\n    b.ne    5b\n    mov     w0, #1\n    add     sp, sp, #1024\n    ret\n6:  mov     w0, #0\n    add     sp, sp, #1024\n    ret\n",
+          "optimized": "// int practice(const char *s, const char *t)\n// x0 = s, x1 = t. Counting table on the stack; returns 1 iff anagram.\n    .text\n    .globl optimized\n.globl _optimized\noptimized:\n_optimized:\n    sub     sp, sp, #1024        // int count[256]\n    mov     x8, sp\n    mov     x9, #128             // zero as 128 doublewords\n1:  str     xzr, [x8], #8\n    subs    x9, x9, #1\n    b.ne    1b\n2:  ldrb    w9, [x0], #1         // count s\n    cbz     w9, 3f\n    add     x10, sp, w9, uxtw #2\n    ldr     w11, [x10]\n    add     w11, w11, #1\n    str     w11, [x10]\n    b       2b\n3:  ldrb    w9, [x1], #1         // discount t\n    cbz     w9, 4f\n    add     x10, sp, w9, uxtw #2\n    ldr     w11, [x10]\n    sub     w11, w11, #1\n    str     w11, [x10]\n    b       3b\n4:  mov     x8, sp               // all counts must be zero\n    mov     x9, #256\n5:  ldr     w11, [x8], #4\n    cbnz    w11, 6f\n    subs    x9, x9, #1\n    b.ne    5b\n    mov     w0, #1\n    add     sp, sp, #1024\n    ret\n6:  mov     w0, #0\n    add     sp, sp, #1024\n    ret\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
+          }
+        },
         "asm-x86_64": {
           "practice": "# int practice(const char *s, const char *t)\n# rdi = s, rsi = t. Stub: always returns 0 (not an anagram).\n    .text\n    .globl practice\npractice:\n    xor     %eax, %eax\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
           "clean": "# int practice(const char *s, const char *t)\n# rdi = s, rsi = t. Counting table on the stack; returns 1 iff anagram.\n    .text\n    .globl clean\nclean:\n    sub     $1024, %rsp          # int count[256]\n    xor     %eax, %eax\n    mov     $128, %ecx           # zero 1024 bytes as 128 quadwords\n    mov     %rsp, %r8\n.Lzero:\n    movq    %rax, (%r8)\n    add     $8, %r8\n    dec     %ecx\n    jnz     .Lzero\n.Lcount_s:\n    movzbl  (%rdi), %eax\n    test    %eax, %eax\n    je      .Lcount_t\n    incl    (%rsp,%rax,4)\n    inc     %rdi\n    jmp     .Lcount_s\n.Lcount_t:\n    movzbl  (%rsi), %eax\n    test    %eax, %eax\n    je      .Lcheck\n    decl    (%rsp,%rax,4)\n    inc     %rsi\n    jmp     .Lcount_t\n.Lcheck:\n    mov     $256, %ecx\n    mov     %rsp, %r8\n.Lchk:\n    cmpl    $0, (%r8)\n    jne     .Lfail\n    add     $4, %r8\n    dec     %ecx\n    jnz     .Lchk\n    mov     $1, %eax\n    add     $1024, %rsp\n    ret\n.Lfail:\n    xor     %eax, %eax\n    add     $1024, %rsp\n    ret\n    .section .note.GNU-stack,\"\",@progbits\n",
