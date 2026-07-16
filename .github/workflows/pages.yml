@@ -141,6 +141,12 @@ jobs:
           ls -la web/vendor/asm-arm64
           test "$(stat -c%s web/vendor/asm-arm64/gx_vixl.wasm)" -gt 1000000 || { echo "gx_vixl.wasm too small"; exit 1; }
           test "$(stat -c%s web/vendor/asm-arm64/aarch64-as.elf)" -gt 1000000 || { echo "aarch64-as.elf too small"; exit 1; }
+          # A size check proves the fetch worked, not that the runtime is CORRECT.
+          # The guest stack being 1 MB is a RUNTIME property: the source says
+          # 1 << 20, but only the artifact can say what it does. If it ever
+          # silently reverts to VIXL's 8 KB default, 002's hash table breaks
+          # around n=256 and looks like a hash bug, not a stack bug.
+          node tools/arm64-toolchain/verify-stack.mjs web/vendor/asm-arm64
       - name: Mark vendor complete (cached for future runs)
         run: touch web/vendor/.vendor-complete
       - run: node web/build.mjs
