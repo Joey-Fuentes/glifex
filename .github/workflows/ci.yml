@@ -48,6 +48,8 @@ jobs:
             || (echo "::error::web/problems.generated.json is stale — run 'node web/build.mjs' and commit" && exit 1)
       - name: Corpus integrity (declared+runnable languages are baked)
         run: node web/corpus-integrity.test.mjs
+      - name: Vendor pipelines are in sync
+        run: node web/vendor-sync.test.mjs
       - name: Complexity Lab engine battery (L1)
         run: node web/lab-engine.test.mjs
       - name: JS runtime battery (compile-once/measure-many)

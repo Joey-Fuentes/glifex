@@ -69,6 +69,28 @@ jobs:
           MIN="libaddr2line-b8754aeb03c02354.rlib libadler-05c3545f6cd12159.rlib liballoc-0dab879bc41cd6bd.rlib libcfg_if-c7fd2cef50341546.rlib libcompiler_builtins-a99947d020d809d6.rlib libcore-4b8e8a815d049db3.rlib libgimli-598847d27d7a3cbf.rlib libhashbrown-d2ff91fdf93cacb2.rlib liblibc-dc63949c664c3fce.rlib libmemchr-2d3a423be1a6cb96.rlib libminiz_oxide-b109506a0ccc4c6a.rlib libobject-7b48def7544c748b.rlib libpanic_abort-c93441899b93b849.rlib libpanic_unwind-11d9ba05b60bf694.rlib librustc_demangle-59342a335246393d.rlib librustc_std_workspace_alloc-552b185085090ff6.rlib librustc_std_workspace_core-5d8a121daa7eeaa9.rlib librustc_std_workspace_std-97f43841ce452f7d.rlib libstd-bdedb7706a556da2.rlib libstd-bdedb7706a556da2.so libstd_detect-cca21eebc4281add.rlib libsysroot-f654e185be3ffebd.rlib libunwind-747b693f90af9445.rlib"
           for f in $MIN; do cp "$SRC/lib/rustlib/x86_64-unknown-linux-gnu/lib/$f" "$LIB/$f"; done
           echo '{"runtime":"rust","via":"miri-wasm (rubri/bjorn3)","rust":"1.78.0-dev","edition":"2021"}' > web/vendor/rust/manifest.json
+      - name: Vendor arm64 toolchain (VIXL wasm32 + musl binutils, pinned)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools binutils-aarch64-linux-gnu texinfo bison flex
+          . tools/arm64-toolchain/pins.env
+          if [ ! -d "$HOME/emsdk" ]; then
+            git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+            (cd "$HOME/emsdk" && ./emsdk install "$EMSDK_VERSION" && ./emsdk activate "$EMSDK_VERSION")
+          fi
+          . "$HOME/emsdk/emsdk_env.sh"
+          mkdir -p web/vendor/asm-arm64
+          bash tools/arm64-toolchain/build-binutils.sh "$PWD/web/vendor/asm-arm64"
+          bash tools/arm64-toolchain/build-vixl.sh     "$PWD/web/vendor/asm-arm64"
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$BLINKENLIB_REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.js"   -o web/vendor/asm-arm64/blinkenlib.js
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.wasm" -o web/vendor/asm-arm64/blinkenlib.wasm
+          echo "$BLINKENLIB_JS_SHA256  web/vendor/asm-arm64/blinkenlib.js"   | sha256sum -c -
+          echo "$BLINKENLIB_WASM_SHA256  web/vendor/asm-arm64/blinkenlib.wasm" | sha256sum -c -
+          echo "{\"runtime\":\"asm-arm64\",\"vixl\":\"$VIXL_COMMIT\",\"binutils\":\"$BINUTILS_VERSION (musl-static, GPL-3.0, guest)\",\"blink\":\"ISC\",\"vixl_license\":\"BSD-3-Clause\"}" > web/vendor/asm-arm64/manifest.json
+          rm -f web/vendor/asm-arm64/binutils-configure.log web/vendor/asm-arm64/binutils-make.log
+          ls -la web/vendor/asm-arm64
+
       - name: Vendor x86-64 toolchain (robalb/x86-64-playground, pinned)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
