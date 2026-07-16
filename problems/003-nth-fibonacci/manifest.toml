@@ -18,6 +18,7 @@ ruby        = { variants = ["practice", "clean", "optimized"] }
 csharp      = { variants = ["practice", "brute-force", "clean", "optimized"] }
 rust        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 asm-x86_64  = { variants = ["practice", "brute-force", "clean", "optimized"] }
+asm-arm64   = { variants = ["practice", "brute-force", "clean", "optimized"] }   # AAPCS64 (browser: guest as+ld under Blink, executed on VIXL)
 
 [complexity.default.practice]
 time = "O(n)"
@@ -44,6 +45,14 @@ time = "O(phi^n)"
 space = "O(n)"
 notes = "naive recursion -- exponential time, linear call-stack depth"
 [complexity.asm-x86_64.optimized]
+time = "O(log n)"
+space = "O(1)"
+notes = "fast doubling"
+[complexity.asm-arm64.brute-force]
+time = "O(phi^n)"
+space = "O(n)"
+notes = "naive recursion -- exponential time, linear call-stack depth"
+[complexity.asm-arm64.optimized]
 time = "O(log n)"
 space = "O(1)"
 notes = "fast doubling"
