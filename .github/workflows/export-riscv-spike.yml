@@ -1,0 +1,124 @@
+# THROWAWAY spike round 6 -- RISC-V RV64GC. Never merged.
+#
+# FOUR ROUNDS OF ME WRITING A BUILD NEXT TO ONE THAT ALREADY WORKS:
+#   r3  hand-rolled emcc            -> missing generated libriscv_settings.h
+#   r4  my own CMakeLists           -> missing -fexceptions, "table index out of bounds"
+#   r5  my own CMakeLists + copy    -> add_subdirectory(../../lib) is RELATIVE; the copy broke it
+# Round 5 finally PRINTED their examples/wasm/build.sh, which is 30 lines and was
+# in the repo I cloned in round 1. It sets:
+#   -DCMAKE_TOOLCHAIN_FILE=../cmake/wasm.cmake
+#   -DRISCV_32I=OFF -DRISCV_64I=ON -DRISCV_EXT_C=OFF -DRISCV_EXT_V=OFF
+#   -DRISCV_MEMORY_TRAPS=OFF -DRISCV_BINARY_TRANSLATION=OFF
+#   -DRISCV_EXPERIMENTAL=ON -DRISCV_ENCOMPASSING_ARENA=ON -DRISCV_ENCOMPASSING_ARENA_BITS=28
+# RISCV_BINARY_TRANSLATION=OFF is almost certainly round 4's table error: the
+# translator dispatches through indirect calls, which cannot work in wasm.
+#
+# THE REAL QUESTION, at last. libriscv defaults RISCV_EXT_C to ON; their wasm
+# example turns it OFF. But round 1 MEASURED that -march=rv64gc compresses
+# AUTOMATICALLY -- plain "add a0,a0,a1 / ret" became two 2-BYTE instructions. So
+# their proven config cannot decode what our assembler emits by default. This
+# round builds BOTH and assembles the kata BOTH ways:
+#   EXT_C=OFF + -march=rv64g   -> the control: does the pattern drive at all?
+#   EXT_C=ON  + -march=rv64gc  -> the question: does wasm decode compressed?
+# ON works  -> RV64GC is fine.
+# ON breaks -> the track is RV64G (and the C in RV64GC is a lie we should not
+#              tell), or libriscv is not the emulator and Spike -- still UNJUDGED,
+#              because round 1 probed for set_XPR/get_XPR, names I invented --
+#              finally gets the look it deserves.
+#
+# Every step is continue-on-error now. Round 5's build was not, so when it failed
+# the control never ran and the katas never assembled: one signal instead of four.
+# That is Bx-10's own rule -- a self-check bug must not be fatal to independent
+# work -- and I did not apply it here.
+name: export-riscv-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-riscv-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-riscv64-linux-gnu build-essential cmake file
+          riscv64-linux-gnu-as --version | head -1
+
+      - name: Install emsdk
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          cd "$HOME/emsdk" && ./emsdk install latest && ./emsdk activate latest
+          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
+          . "$HOME/emsdk/emsdk_env.sh" && emcc --version | head -1
+
+      - name: Build with EXT_C OFF -- their proven config, the control
+        continue-on-error: true
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          bash tools/riscv-spike/build.sh "$GITHUB_WORKSPACE/rv" off
+
+      - name: Build with EXT_C ON -- the question
+        continue-on-error: true
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          bash tools/riscv-spike/build.sh "$GITHUB_WORKSPACE/rv" on
+
+      - name: Assemble the katas BOTH ways -- rv64g and rv64gc
+        continue-on-error: true
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/rv/katas"
+          for arch in rv64g rv64gc; do
+            for f in tools/riscv-spike/katas/*.s; do
+              b=$(basename "$f" .s)
+              # compressed.s uses explicit c.* mnemonics; it cannot assemble as rv64g
+              [ "$arch" = "rv64g" ] && [ "$b" = "compressed" ] && continue
+              riscv64-linux-gnu-as -march=$arch "$f" -o "${TMPDIR:-/tmp}/$b.o" 2>/dev/null || { echo "  $arch/$b assemble FAILED"; continue; }
+              riscv64-linux-gnu-ld "${TMPDIR:-/tmp}/$b.o" -o "$GITHUB_WORKSPACE/rv/katas/$b.$arch.elf" -e kata -z max-page-size=4096 2>/dev/null || { echo "  $arch/$b link FAILED"; continue; }
+              # instruction widths: is anything 2 bytes?
+              W=$(riscv64-linux-gnu-objdump -d "$GITHUB_WORKSPACE/rv/katas/$b.$arch.elf" 2>/dev/null | grep -cE "^\s+[0-9a-f]+:\s+[0-9a-f]{4}\s" || true)
+              echo "  $arch/$b  elf=$(stat -c%s "$GITHUB_WORKSPACE/rv/katas/$b.$arch.elf")  16-bit insns=$W"
+            done
+          done
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: THE CONTROL -- EXT_C=OFF driving an rv64g kata
+        continue-on-error: true
+        run: |
+          test -f "$GITHUB_WORKSPACE/rv/gx_rv-off.mjs" || { echo "## no EXT_C=OFF build"; exit 0; }
+          node tools/riscv-spike/drive.mjs "$GITHUB_WORKSPACE/rv" "$GITHUB_WORKSPACE/rv/katas/add.rv64g.elf" 12 gx_rv-off.mjs
+
+      - name: THE QUESTION -- EXT_C=ON driving an rv64gc kata
+        continue-on-error: true
+        run: |
+          test -f "$GITHUB_WORKSPACE/rv/gx_rv-on.mjs" || { echo "## no EXT_C=ON build -- that is the answer"; exit 0; }
+          node tools/riscv-spike/drive.mjs "$GITHUB_WORKSPACE/rv" "$GITHUB_WORKSPACE/rv/katas/add.rv64gc.elf" 12 gx_rv-on.mjs
+
+      - name: The rest, on whichever build drove
+        continue-on-error: true
+        run: |
+          for m in gx_rv-on.mjs gx_rv-off.mjs; do
+            test -f "$GITHUB_WORKSPACE/rv/$m" || continue
+            a=rv64gc; [ "$m" = "gx_rv-off.mjs" ] && a=rv64g
+            echo "---- $m / $a"
+            node tools/riscv-spike/drive.mjs "$GITHUB_WORKSPACE/rv" "$GITHUB_WORKSPACE/rv/katas/loop.$a.elf" 55 "$m" || echo "   loop did not drive"
+            node tools/riscv-spike/drive.mjs "$GITHUB_WORKSPACE/rv" "$GITHUB_WORKSPACE/rv/katas/auipc.$a.elf" 1234605616436508552 "$m" || echo "   auipc did not drive -- the relocation boundary"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: riscv-spike-6
+          if-no-files-found: warn
+          path: |
+            rv/
+            tools/riscv-spike/katas/*.s
