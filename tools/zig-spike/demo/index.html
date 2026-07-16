@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Bx-11 Zig in the browser</title>
+<style>
+ body { font: 14px/1.5 ui-monospace, monospace; margin: 2rem; max-width: 70rem; }
+ h1 { font-size: 1.1rem; } pre { background: #f4f4f4; padding: .75rem; overflow: auto; }
+ #result { font-size: 2rem; font-weight: bold; }
+ #log { height: 18rem; }
+</style>
+<h1>Bx-11 spike: a Zig compiler that is itself wasm, compiling Zig, in this page</h1>
+<p>status: <b id="status">boot</b> &middot; compile <span id="ms">-</span> ms &middot;
+   main.wasm <span id="outsize">-</span> bytes</p>
+<button id="go" disabled>compile and run</button>
+<p>source handed to zig.wasm:</p>
+<pre id="src"></pre>
+<p>output of the program zig.wasm produced:</p>
+<div id="result">-</div>
+<pre id="log"></pre>
+<script type="module" src="./bundle.js"></script>
