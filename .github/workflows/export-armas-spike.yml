@@ -1,0 +1,108 @@
+# THROWAWAY spike job -- DELETE THIS BRANCH when Bx-10 is decided.
+# chore/export-armas-spike-* only, never merged, like export-rust-vendor.
+#
+# Bx-10 assembler half. Where we are:
+#   - VIXL: DONE. wasm32, 2 MB, 7/7 katas in Chromium, ~0.9 M insn/s.
+#   - Our as: byte-identical to stock, and now genuinely static.
+#   - Blink DOES boot it (105 ms, in a Worker) and DOES exec it -- and the
+#     guest then floods "unsupported syscall: __syscall_mprotect" forever.
+#     blinkenlib is Blink-via-emscripten, which has no host mprotect; our
+#     static GLIBC as needs it (RELRO + malloc arena growth).
+#
+# So: the libc is the variable. This job stops guessing at it two ways at once.
+#
+#   1. DISSECT THE KNOWN-GOOD GUEST. The playground's gnu-as.elf runs under this
+#      exact blinkenlib in production. Read what it IS -- libc, linkage, RELRO --
+#      and build to match, instead of reasoning about libcs.
+#   2. Build glibc-static / glibc-static-norelro / musl-static and ship all of
+#      them, so the local Blink rig can decide empirically in one round trip.
+#
+# No hello-joe this round: the native recipe is settled (-pie --dynamic-linker
+# /system/bin/linker64, exit 55 on the Pixel) and this run is about Blink.
+name: export-armas-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-armas-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  armas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-aarch64-linux-gnu build-essential texinfo bison flex file musl-tools binutils
+          musl-gcc --version | head -1 || echo "musl-gcc missing"
+
+      - name: Fetch the known-good Blink guest from the playground
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/armas-out/ref"
+          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/assemblers/gnu-as.2.43.50.elf" -o "$GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/assemblers/gnu-ld.2.43.50.elf" -o "$GITHUB_WORKSPACE/armas-out/ref/gnu-ld.elf"
+          echo "908b557e21e8000596abe12828d929cf82dd9abcc3ee840dbaf9c503d8e32534  $GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf" | sha256sum -c -
+          echo "8548fc86b738be62619889560995a127a9be6026ed4d6b21fe525c184d322206  $GITHUB_WORKSPACE/armas-out/ref/gnu-ld.elf" | sha256sum -c -
+          echo "## sha-verified against the pin pages.yml ships"
+
+      - name: Dissect the known-good guest
+        run: |
+          bash tools/armas-spike/dissect.sh "$GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf" "REFERENCE gnu-as.elf (WORKS under blinkenlib)"
+          echo
+          echo "## can it run natively here (it is x86-64)?"
+          chmod +x "$GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf"
+          "$GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf" --version 2>&1 | head -2 || echo "## would not run natively"
+
+      - name: Build the libc variants
+        continue-on-error: true
+        run: bash tools/armas-spike/build-variants.sh "$GITHUB_WORKSPACE/armas-out"
+
+      - name: Dissect every variant and compare against the reference
+        continue-on-error: true
+        run: |
+          for f in "$GITHUB_WORKSPACE"/armas-out/as-*.elf; do
+            [ -f "$f" ] || continue
+            bash tools/armas-spike/dissect.sh "$f" "$(basename "$f")"
+            echo
+          done
+          echo "## Compare the libc/RELRO/mprotect rows above against the REFERENCE."
+          echo "## Whatever the reference is, that is what a Blink guest must be."
+
+      - name: Sanity check the variants still assemble aarch64
+        continue-on-error: true
+        run: |
+          for f in "$GITHUB_WORKSPACE"/armas-out/as-*.elf; do
+            [ -f "$f" ] || continue
+            chmod +x "$f"
+            if "$f" tools/armas-spike/katas/add.s -o "${TMPDIR:-/tmp}/a.o" 2>/dev/null; then
+              aarch64-linux-gnu-objcopy -O binary --only-section=.text "${TMPDIR:-/tmp}/a.o" "${TMPDIR:-/tmp}/a.bin"
+              echo "  $(basename "$f")  .text sha $(sha256sum "${TMPDIR:-/tmp}/a.bin" | cut -c1-16)"
+            else
+              echo "  $(basename "$f")  FAILED to assemble"
+            fi
+          done
+          echo "## all shas must match -- differing libc must not change emitted code"
+
+      - name: Vendor blinkenlib
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/armas-out/blink"
+          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/blinkenlib.js"   -o "$GITHUB_WORKSPACE/armas-out/blink/blinkenlib.js"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/blinkenlib.wasm" -o "$GITHUB_WORKSPACE/armas-out/blink/blinkenlib.wasm"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: armas-spike
+          if-no-files-found: warn
+          path: |
+            armas-out/
+            tools/armas-spike/katas/*.s
