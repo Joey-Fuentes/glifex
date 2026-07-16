@@ -35,7 +35,7 @@ add_executable(gx_rv gx_rv.cpp)
 target_link_libraries(gx_rv PRIVATE riscv)
 set_target_properties(gx_rv PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON SUFFIX ".mjs")
 target_link_options(gx_rv PRIVATE
-  "-sEXPORTED_FUNCTIONS=['_gx_load_elf','_gx_init','_gx_reset','_gx_read_x','_gx_write_x','_gx_set_pc','_gx_get_pc','_gx_step','_gx_sym','_gx_ptr_bytes','_gx_icount','_malloc','_free']"
+  "-sEXPORTED_FUNCTIONS=['_gx_load_elf','_gx_init','_gx_reset','_gx_read_x','_gx_write_x','_gx_set_pc','_gx_get_pc','_gx_step','_gx_sym','_gx_ptr_bytes','_gx_icount','_gx_write_mem','_gx_read_mem','_malloc','_free']"
   "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','HEAPU8']"
   "-sMODULARIZE=1" "-sEXPORT_ES6=1" "-sENVIRONMENT=web,worker,node" "-sASSERTIONS=1")
 EOF

@@ -75,4 +75,30 @@ int gx_step() {
   return 0;
 }
 
+// Guest memory. THE difference from VIXL, and the reason these exist at all:
+// VIXL dereferenced a guest address as a raw host pointer, so guest addresses
+// WERE wasm offsets and JS could poke HEAPU8 directly. libriscv owns its address
+// space -- every input the corpus marshals goes through these.
+//
+// API read out of machine.hpp, not guessed:
+//   void copy_to_guest(address_t dst, const void* buf, size_t len);
+//   void copy_from_guest(void* dst, address_t buf, size_t len) const;
+//
+// Proven: __glifex_io lands at a linker-chosen address, gx_sym finds it,
+// copy_to_guest writes there, and a kata reading ptr[0]+ptr[1] returns 350.
+void gx_write_mem(uint64_t dst, const uint8_t* src, int len) {
+  try { g_m->copy_to_guest((MachineT::address_t)dst, src, (size_t)len); }
+  catch (const std::exception& e) {
+    std::printf("[gx] write_mem: %s\n", e.what());
+    std::fflush(stdout);
+  }
+}
+void gx_read_mem(uint8_t* dst, uint64_t src, int len) {
+  try { g_m->copy_from_guest(dst, (MachineT::address_t)src, (size_t)len); }
+  catch (const std::exception& e) {
+    std::printf("[gx] read_mem: %s\n", e.what());
+    std::fflush(stdout);
+  }
+}
+
 }  // extern "C"
