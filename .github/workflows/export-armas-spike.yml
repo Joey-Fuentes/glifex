@@ -1,0 +1,93 @@
+# THROWAWAY spike job -- DELETE THIS BRANCH when Bx-10 is decided.
+# chore/export-armas-spike-* only, never merged.
+#
+# Bx-10 assembler half. State:
+#   VIXL       DONE   wasm32, 2 MB, 7/7 katas in Chromium, ~0.9 M insn/s
+#   our as     byte-identical to stock, static via -all-static
+#   Blink      PROVEN -- it runs the playground's own gnu-as.elf in my local rig
+#              in 633 ms, exit 0, real .o. The harness was never the problem.
+#   our as     under Blink -> SIGSEGV after startup
+#
+# Program headers finally named the difference:
+#   REFERENCE   7 phdrs  ... TLS              GNU_STACK GNU_RELRO   WORKS
+#   OURS       10 phdrs  ... TLS GNU_PROPERTY GNU_STACK GNU_RELRO   SIGSEGV
+# GNU_PROPERTY is Intel CET (readelf -n ours: "x86 feature: IBT, SHSTK").
+# Ubuntu gcc defaults to -fcf-protection=full; static glibc then tries to enable
+# CET at startup and Blink was never built for it. The reference has CET off --
+# what a binary built FOR Blink looks like.
+#
+# v8 passed -fcf-protection=none via configure CFLAGS and the gate caught that
+# GNU_PROPERTY SURVIVED. ld ANDs CET bits across inputs, so a surviving IBT+SHSTK
+# means OUR objects still had it -- the flag never reached the compiler, exactly
+# like LDFLAGS=-static never reached the link. v9 bakes it into CC.
+# objcopy --remove-section is not an option: tested locally, it deletes GNU_RELRO
+# and leaves GNU_PROPERTY. It mangles phdrs.
+#
+# Dead ends, each paid for: mprotect (the reference emits the same warnings),
+# musl (reference is glibc), RELRO (reference has it), glibc version (22.04
+# failed identically and was bigger), my rig (runs the reference perfectly).
+#
+# ubuntu-latest, matching ci.yml and pages.yml.
+name: export-armas-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-armas-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  armas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-aarch64-linux-gnu build-essential texinfo bison flex file
+
+      - name: Fetch the known-good Blink guest for comparison
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/armas-out/ref"
+          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/assemblers/gnu-as.2.43.50.elf" -o "$GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf"
+          echo "908b557e21e8000596abe12828d929cf82dd9abcc3ee840dbaf9c503d8e32534  $GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf" | sha256sum -c -
+
+      - name: Build the aarch64 assembler with CET baked into CC
+        run: bash tools/armas-spike/build-variants.sh "$GITHUB_WORKSPACE/armas-out"
+
+      - name: Compare phdr profiles side by side
+        continue-on-error: true
+        run: |
+          echo "## the profile we must match:"
+          readelf -l "$GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf" | sed -n '/Program Headers/,/Section to Segment/p' | head -14
+          echo
+          echo "## ours:"
+          readelf -l "$GITHUB_WORKSPACE/armas-out/aarch64-as.elf" | sed -n '/Program Headers/,/Section to Segment/p' | head -16
+
+      - name: Verify it still emits correct aarch64
+        run: |
+          "$GITHUB_WORKSPACE/armas-out/aarch64-as.elf" tools/armas-spike/katas/add.s -o "${TMPDIR:-/tmp}/a.o"
+          aarch64-linux-gnu-objcopy -O binary --only-section=.text "${TMPDIR:-/tmp}/a.o" "${TMPDIR:-/tmp}/a.bin"
+          echo "  .text sha $(sha256sum "${TMPDIR:-/tmp}/a.bin" | cut -c1-16)  (must stay 03039bd23d144842 -- CET must not change emitted aarch64)"
+
+      - name: Vendor blinkenlib
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/armas-out/blink"
+          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/blinkenlib.js"   -o "$GITHUB_WORKSPACE/armas-out/blink/blinkenlib.js"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/blinkenlib.wasm" -o "$GITHUB_WORKSPACE/armas-out/blink/blinkenlib.wasm"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: armas-spike
+          if-no-files-found: warn
+          path: |
+            armas-out/
+            tools/armas-spike/katas/*.s
