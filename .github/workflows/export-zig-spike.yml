@@ -1,0 +1,294 @@
+# THROWAWAY spike -- Bx-11 Zig, ROUND 2. Never merged. Read the SUMMARY step.
+#
+# WHAT ROUND 1 SETTLED (2026-07-16, run 79927032275) -- do not re-litigate:
+#   * P2 PASSED. zig 0.14.0 (5ad91a64, MIT, 2025-03-04):
+#       zig build-exe hello.zig -target wasm32-wasi -O ReleaseSmall -fno-llvm -fno-lld
+#       -> 22,199 byte hello.wasm -> wasmtime -> 55.
+#     The self-hosted wasm backend AND the self-hosted wasm linker are both real.
+#     This is the thing that forced Bx-6 onto Miri, and Zig does not have it.
+#   * Route B is really route C. build.zig: -Donly-c = "Translate the Zig compiler
+#     to C code, with only the C backend enabled", and build.zig:622 builds zig1
+#     with dev=.bootstrap. zig1.wasm (2,984,046 bytes) emits C, not wasm.
+#   * lib/ is 196 MB, 565 std .zig files -- the Rust-sysroot problem again, later.
+#
+# WHAT ROUND 1 LEFT OPEN -- this job's job:
+#   1. Route A crashed in 3.7s with NO diagnostic at all. Not a compile error.
+#      HYPOTHESIS, to be refuted or confirmed by P3a: "zig build" drives the
+#      compiler with --listen=- (the binary compiler-server protocol), which
+#      swallows the child's diagnostics; "terminated unexpectedly" is the PARENT
+#      talking. autopsy.sh lifts the child command out of the failure text, drops
+#      --listen=- , and re-runs it so the child can speak. The signal number
+#      alone discriminates: 139 SIGSEGV (compiler bug) vs 137 SIGKILL (OOM).
+#   2. -Ddev=wasm EXISTS. Round 1's own --help dump lists supported values
+#      bootstrap/core/full/c_source/ast_gen/sema/x86_64-linux/riscv64-linux/wasm.
+#      Sitting beside the two other backend-shaped presets, it is very likely
+#      "the compiler with only the wasm backend" -- upstream's own supported
+#      configuration for exactly what the browser wants. P1 greps src/dev.zig to
+#      find out what it really turns on instead of inferring from the name.
+#   3. 0.14.0 is from MARCH 2025 and the self-hosted wasm backend is precisely
+#      what upstream has been hammering since. The browser pin need not equal the
+#      CLI pin -- Bx-6 ran nightly-1.78 Miri while CLI Rust stayed on stable. So
+#      every probe runs on 0.14.0 AND master.
+#
+# MY OWN BUGS FROM ROUND 1, FIXED HERE, NOT PROMISED AWAY:
+#   * report.txt claimed "P3 built something" while no wasm existed. Cause:
+#     "zig build ... | tail -80" under GitHub's default "bash -e {0}" -- which has
+#     NO pipefail -- returned tail's status, so set -e never fired. The artifact
+#     listing told the truth while my report lied. try-build.sh now sets pipefail,
+#     captures the real status, and gates every report line on a wasm that EXISTS
+#     and is NON-EMPTY. Proven against a fake zig that exits 0 producing nothing.
+#   * P4 never ran: "wasmtime run --dir=. zig1.wasm -- version" -> wasmtime 46
+#     passes -- through to the guest -> "unknown command: --". The -- is gone.
+#   * drive.mjs crashed on fd_write. NOT a rig bug -- a FINDING. Zig's self-hosted
+#     linker emits a START SECTION (proven by parsing hello.wasm: id=8 names func
+#     3, the same function exported as _start), so WebAssembly.instantiate() runs
+#     main BEFORE a JS host can bind its instance. wasmtime does not care; every
+#     JS host does. And the guest compiler can never use LLD, so browser-bound Zig
+#     output will ALWAYS carry this. Reproduced and fixed in the sandbox against
+#     the real artifact: --strip-start -> 22199 to 22196 bytes -> prints 55.
+#     P6 tests whether -fwasi-exec-model=reactor is the cleaner answer.
+#
+# KILL CRITERIA
+#   P3 all fail AND the autopsy says SIGSEGV on master too -> the wasm backend
+#   cannot self-host yet; route D (Blink, already vendored, already proven at
+#   running a guest toolchain) is next, not C.
+name: export-zig-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-zig-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make the output dir
+        run: mkdir -p "$GITHUB_WORKSPACE/zig-spike-out"
+
+      - uses: mlugg/setup-zig@v1
+        with: { version: "0.14.0" }
+      - name: Record the 0.14.0 path before master shadows it on PATH
+        run: echo "ZIG_014=$(readlink -f "$(which zig)")" >> "$GITHUB_ENV"
+
+      - uses: mlugg/setup-zig@v1
+        continue-on-error: true
+        with: { version: "master" }
+      - name: Record the master path, if master installed at all
+        continue-on-error: true
+        run: |
+          P=$(readlink -f "$(which zig)")
+          if [ "$P" != "$ZIG_014" ]; then echo "ZIG_MASTER=$P" >> "$GITHUB_ENV"; fi
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Install wasmtime -- the control host
+        run: |
+          curl -sSf https://wasmtime.dev/install.sh | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: Install the browser WASI shim -- the host the browser will really use
+        continue-on-error: true
+        run: |
+          cd "$GITHUB_WORKSPACE/tools/zig-spike"
+          npm install @bjorn3/browser_wasi_shim
+          npm ls --depth=0 2>&1 | sed 's/^/     /' || true
+
+      - name: PROBE 0 -- which compilers are we actually holding
+        continue-on-error: true
+        run: |
+          echo "## zig 0.14   $ZIG_014"
+          "$ZIG_014" version | sed 's/^/     /'
+          if [ -n "${ZIG_MASTER:-}" ]; then
+            echo "## zig master $ZIG_MASTER"
+            "$ZIG_MASTER" version | sed 's/^/     /'
+          else
+            echo "## no master zig -- setup-zig could not get one. Master probes will skip."
+          fi
+          echo "## wasmtime  $(wasmtime --version)"
+          echo "## node      $(node --version)"
+
+      - name: PROBE 1 -- provenance, and what -Ddev=wasm REALLY turns on
+        continue-on-error: true
+        run: |
+          git clone --depth 1 --branch 0.14.0 https://github.com/ziglang/zig.git "$HOME/zig-014" 2>&1 | tail -2
+          echo "## 0.14.0 src $(git -C "$HOME/zig-014" rev-parse HEAD)  $(git -C "$HOME/zig-014" log -1 --format=%cd --date=short)"
+          if [ -n "${ZIG_MASTER:-}" ]; then
+            git clone --depth 1 https://github.com/ziglang/zig.git "$HOME/zig-master" 2>&1 | tail -2
+            echo "## master src $(git -C "$HOME/zig-master" rev-parse HEAD)  $(git -C "$HOME/zig-master" log -1 --format=%cd --date=short)"
+          fi
+          echo
+          echo "## Round 1 inferred -Ddev=wasm from its NAME sitting beside x86_64-linux."
+          echo "## That is exactly the reasoning this project keeps getting burned by."
+          echo "## So: what does the DevEnv actually declare? From src/dev.zig:"
+          for D in "$HOME/zig-014" "$HOME/zig-master"; do
+            test -d "$D" || continue
+            echo "---- $D/src/dev.zig"
+            ls -la "$D/src/dev.zig" 2>&1 | sed 's/^/     /'
+            sed -n '/wasm =>/,/^$/p'  "$D/src/dev.zig" 2>/dev/null | head -30 | sed 's/^/     /' || true
+            grep -n "wasm" "$D/src/dev.zig" 2>/dev/null | head -25 | sed 's/^/     /' || true
+          done
+
+      - name: PROBE 2 -- THE CONTROL on both compilers, plus the exec-model question
+        continue-on-error: true
+        run: |
+          cd "$GITHUB_WORKSPACE/tools/zig-spike"
+          run_ctl() {
+            Z="$1"; TAG="$2"
+            test -n "$Z" || return 0
+            echo "---- control [$TAG] default exec-model (command)"
+            ( set -o pipefail; "$Z" build-exe hello.zig -target wasm32-wasi -O ReleaseSmall \
+                -fno-llvm -fno-lld -femit-bin="hello-$TAG.wasm" 2>&1 ) | head -20 | sed 's/^/     /'
+            if [ -s "hello-$TAG.wasm" ]; then
+              OUT=$(wasmtime run "hello-$TAG.wasm" || true)
+              echo "     wasmtime got=$OUT want=55"
+              test "$OUT" = "55" && echo "P2/$TAG: PASS $(stat -c%s hello-$TAG.wasm) bytes" >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+              cp "hello-$TAG.wasm" "$GITHUB_WORKSPACE/zig-spike-out/" || true
+            else
+              echo "P2/$TAG: FAILED to build" >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+            fi
+            echo "---- control [$TAG] -fwasi-exec-model=reactor -- does it avoid the START section?"
+            ( set -o pipefail; "$Z" build-exe hello.zig -target wasm32-wasi -O ReleaseSmall \
+                -fno-llvm -fno-lld -fwasi-exec-model=reactor -femit-bin="reactor-$TAG.wasm" 2>&1 ) | head -12 | sed 's/^/     /'
+            if [ -s "reactor-$TAG.wasm" ]; then
+              echo "     (drive.mjs prints sections/START/exports for any module it is handed)"
+              node drive.mjs --host=mini "reactor-$TAG.wasm" || true
+              cp "reactor-$TAG.wasm" "$GITHUB_WORKSPACE/zig-spike-out/" || true
+            fi
+          }
+          run_ctl "$ZIG_014" "014"
+          run_ctl "${ZIG_MASTER:-}" "master"
+
+      - name: PROBE 2b -- the START-section fix, on the real artifact, both JS hosts
+        continue-on-error: true
+        run: |
+          cd "$GITHUB_WORKSPACE/tools/zig-spike"
+          W=hello-014.wasm
+          test -s "$W" || { echo "## no control wasm to drive"; exit 1; }
+          echo "## mini host (no deps), NO strip -- must reproduce round 1's fd_write crash:"
+          node drive.mjs --host=mini "$W" || echo "     ^^ expected: this is the START section biting"
+          echo "## mini host, --strip-start -- must print 55:"
+          node drive.mjs --host=mini --strip-start "$W"
+          echo "## browser_wasi_shim, --strip-start -- THE browser signal:"
+          node drive.mjs --host=shim --strip-start "$W" && \
+            echo "P6: shim runs Zig wasm output once START is stripped" >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+
+      - name: PROBE 3a -- THE AUTOPSY. Why did route A die silently in 3.7s
+        continue-on-error: true
+        timeout-minutes: 30
+        run: |
+          F=$(bash tools/zig-spike/compose-flags.sh "$ZIG_014" "$HOME/zig-014")
+          echo "## flags: $F"
+          bash tools/zig-spike/autopsy.sh "$ZIG_014" "$HOME/zig-014" "014-plain" $F
+
+      - name: PROBE 3b -- ROUTE A on 0.14.0 with -Ddev=wasm
+        continue-on-error: true
+        timeout-minutes: 90
+        run: |
+          F=$(bash tools/zig-spike/compose-flags.sh "$ZIG_014" "$HOME/zig-014" wasm)
+          echo "## flags: $F"
+          bash tools/zig-spike/try-build.sh "$ZIG_014" "$HOME/zig-014" "014-devwasm" $F
+
+      - name: PROBE 3c -- ROUTE A on master with -Ddev=wasm
+        continue-on-error: true
+        timeout-minutes: 90
+        run: |
+          test -n "${ZIG_MASTER:-}" || { echo "## no master zig; skipping"; exit 0; }
+          F=$(bash tools/zig-spike/compose-flags.sh "$ZIG_MASTER" "$HOME/zig-master" wasm)
+          echo "## flags: $F"
+          bash tools/zig-spike/try-build.sh "$ZIG_MASTER" "$HOME/zig-master" "master-devwasm" $F
+
+      - name: PROBE 3d -- ROUTE A on master, plain, and its autopsy if it dies
+        continue-on-error: true
+        timeout-minutes: 60
+        run: |
+          test -n "${ZIG_MASTER:-}" || { echo "## no master zig; skipping"; exit 0; }
+          F=$(bash tools/zig-spike/compose-flags.sh "$ZIG_MASTER" "$HOME/zig-master")
+          bash tools/zig-spike/try-build.sh "$ZIG_MASTER" "$HOME/zig-master" "master-plain" $F || \
+            bash tools/zig-spike/autopsy.sh "$ZIG_MASTER" "$HOME/zig-master" "master-plain" $F
+
+      - name: PROBE 4 -- ROUTE B, with round 1's -- bug removed
+        continue-on-error: true
+        run: |
+          W="$HOME/zig-014/stage1/zig1.wasm"
+          test -f "$W" || { echo "## no stage1/zig1.wasm"; exit 1; }
+          mkdir -p "$HOME/b" && cd "$HOME/b"
+          cp "$GITHUB_WORKSPACE/tools/zig-spike/hello.zig" .
+          cp -r "$HOME/zig-014/lib" .
+          echo "## Round 1 established from build.zig that zig1 is dev=.bootstrap and"
+          echo "## -Donly-c means C backend ONLY. This confirms it by asking zig1 itself."
+          for A in "version" \
+                   "build-exe hello.zig -target wasm32-wasi --zig-lib-dir lib -ofmt=c" \
+                   "build-exe hello.zig -target wasm32-wasi --zig-lib-dir lib"; do
+            echo "---- zig1.wasm $A"
+            wasmtime run --dir=. "$W" $A 2>&1 | head -12 | sed 's/^/     /' || true
+          done
+          ls -la ./*.c ./*.wasm 2>/dev/null | sed 's/^/     /' || echo "     (zig1 emitted no output files)"
+
+      - name: PROBE 5 -- THE GATE. A wasm compiler compiles kata.zig to a wasm that runs
+        continue-on-error: true
+        timeout-minutes: 60
+        run: |
+          ZW=""
+          for P in "$GITHUB_WORKSPACE/zig-spike-out"/routeA-*.path; do
+            test -f "$P" || continue
+            C=$(cat "$P"); test -s "$C" && ZW="$C" && break
+          done
+          test -n "$ZW" || { echo "## no route A compiler exists -- the gate is not reachable this round"; exit 1; }
+          echo "## the compiler under test: $ZW ($(stat -c%s "$ZW") bytes)"
+          mkdir -p "$HOME/gate" && cd "$HOME/gate"
+          cp "$GITHUB_WORKSPACE/tools/zig-spike/kata.zig" .
+          cp -r "$HOME/zig-014/lib" .
+          echo "## compiling kata.zig with a compiler that is ITSELF wasm:"
+          ( set -o pipefail; time wasmtime run --dir=. "$ZW" build-exe kata.zig -target wasm32-wasi \
+              -fno-llvm -fno-lld --zig-lib-dir lib -femit-bin=out.wasm 2>&1 ) | head -50 | sed 's/^/     /'
+          test -s out.wasm || { echo "## the wasm compiler produced no out.wasm"; exit 1; }
+          ls -la out.wasm | sed 's/^/     /'
+          OUT=$(wasmtime run out.wasm || true)
+          echo "     got=$OUT want=140"
+          test "$OUT" = "140" || exit 1
+          cp out.wasm "$GITHUB_WORKSPACE/zig-spike-out/"
+          echo "## and the emitted module under the browser shim:"
+          node "$GITHUB_WORKSPACE/tools/zig-spike/drive.mjs" --host=shim --strip-start out.wasm || true
+          echo "P5 PASS -- THE GATE. Zig-in-wasm compiled Zig to wasm and it printed 140." \
+            >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+
+      - name: SUMMARY -- the deliverable
+        if: always()
+        run: |
+          echo "## ---- Bx-11 Zig spike round 2 ----"
+          echo "##"
+          echo "## artifacts that EXIST. These outrank every step status and every"
+          echo "## report line, because round 1's report line lied and these did not:"
+          ls -la "$GITHUB_WORKSPACE/zig-spike-out"/*.wasm 2>/dev/null | awk '{print "##   " $5, $9}' || echo "##   (none)"
+          echo "##"
+          echo "## report lines, each gated on a real artifact by try-build.sh:"
+          cat "$GITHUB_WORKSPACE/zig-spike-out/report.txt" 2>/dev/null | sed 's/^/##   /' || echo "##   (empty)"
+          echo "##"
+          echo "## how to read this:"
+          echo "##   any A/*: BUILT + P5 PASS -> route A is real. Bx-11 is a compiler-in-wasm"
+          echo "##                               track emitting NATIVE wasm. Best shape since Bx-5."
+          echo "##   A/*devwasm BUILT, plain FAILED -> -Ddev=wasm is the configuration. Pin it."
+          echo "##   master BUILT, 014 FAILED       -> the browser pins master, like Bx-6 pinned"
+          echo "##                                    nightly-1.78 for Miri. CLI stays on 0.14."
+          echo "##   all FAILED + autopsy SIGSEGV   -> the wasm backend cannot self-host yet."
+          echo "##                                    Route D (Blink, vendored + proven) is next."
+          echo "##   autopsy SIGKILL                -> it is memory, not a compiler bug. Different fix."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zig-spike-r2
+          if-no-files-found: warn
+          path: |
+            zig-spike-out/
+            tools/zig-spike/*.zig
+            tools/zig-spike/*.mjs
+            tools/zig-spike/*.sh
