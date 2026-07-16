@@ -1,0 +1,98 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged, like every Bx-7/10/10b spike.
+#
+# THE ROADMAP'S CLAIM, which this job exists to confirm or kill:
+#   "Bx-13 Dart -- likely the easiest remaining track, not the hardest."
+#   The reasoning: dart2js is written in Dart, so it self-hosts to JS, and the
+#   browser runs the output natively. try.dartlang.org SHIPPED this in 2013,
+#   offline, in a browser. The structural reason it works for Dart and not
+#   Kotlin: no JVM underneath. kotlinc needs a JDK (121 missing classes);
+#   dart2js needs only Dart's core libs. So the blocker shrinks to a dart:io
+#   shim -- not a runtime port. No emulation, no ~300x, no vendored VM.
+#
+# THE DECISIVE QUESTION, the direct analogue of the one that picked libriscv
+# over Spike and VIXL over arm-sandbox:
+#
+#   Can a Dart compiler run with NO dart:io -- taking its inputs from a
+#   PLUGGABLE PROVIDER instead of a filesystem?
+#
+# NOT "can dart2js compile a hello world". Of course it can, on a host, off a
+# filesystem. That is the CLI track glifex already ships and it is worth
+# nothing to the browser.
+#
+# WHAT THIS JOB DOES NOT DO, on purpose:
+#   It does not write an entrypoint against CompilerInput/CompilerOutput. I have
+#   a rough recollection of that API and rough recollections are precisely what
+#   cost Bx-10 three round trips over LP64 and a header nobody had opened. This
+#   job PRINTS the real signatures at a recorded commit. Spike 2 writes code
+#   against what comes back.
+#
+# THE WALL I EXPECT, flagged up front (step 7):
+#   The SDK builds via gclient/DEPS; pkg/compiler resolves ~50 sibling packages
+#   through a GENERATED .dart_tool/package_config.json that is not committed. A
+#   bare path-dependency may simply not resolve. If so Bx-13 is not dead, but it
+#   is a lot less "easiest remaining track" than the roadmap says -- and that is
+#   worth knowing now rather than three PRs in. Steps 1-6 are cheap and stay
+#   informative either way, which is why they run first.
+#
+# Every speculative step is continue-on-error. A spike that dies at step 7 and
+# names the wall has done its whole job.
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # setup-dart is already proven in ci.yml's Dart job -- inherit it rather
+      # than invent an install.
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+
+      # The one big step. It is one script so the whole probe reads as one
+      # transcript in the log rather than seven collapsed sections.
+      - name: PROBE -- read the compilers, run the control, find the wall
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-sdk.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## ---- what to read in the log above ----"
+          echo "##   S1  platform dill bytes -- what a browser track must SERVE"
+          echo "##   S2  the control, and dart:io rejection pinned as a fact"
+          echo "##   S4  the embeddable API, VERBATIM -- spike 2's contract"
+          echo "##   S5  dart:io ratios -- is the blocker a shim or a port?"
+          echo "##   S6  did Google already ship a self-host recipe?"
+          echo "##   S7  does pkg/compiler resolve outside gclient? THE WALL"
+          echo "##"
+          echo "## Spike 2 gets written only if S4 and S7 both came back yes."
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir -- probe died early"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-probe
+          if-no-files-found: warn
+          path: |
+            dartspike/
+            tools/dart-spike/
