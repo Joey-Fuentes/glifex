@@ -1,0 +1,158 @@
+# THROWAWAY spike -- Bx-12 Go. NEVER MERGE. Push-triggered on the spike branch.
+#
+# THE QUESTION, in the shape of the probe that picked VIXL and libriscv
+# ("can it set registers, jump to a symbol, single-step to ret, read the
+# result?" -- not "can it boot Linux"):
+#
+#   Can cmd/compile and cmd/link, THEMSELVES built for GOOS=wasip1 GOARCH=wasm,
+#   compile and link a real Go program to a wasm binary that runs and prints the
+#   right answer -- with no cmd/go, no os/exec, and no native toolchain
+#   underneath?
+#
+# WHY THIS SHAPE (each of these is a claim the run is meant to test, not an
+# assumption it rests on):
+#   1. gc is written in Go, and Go targets wasm. So the toolchain can, in
+#      principle, build itself for wasm. That is the roadmap's "self-hosting is
+#      the path to check first". Gate 1 is the cheapest possible test of it.
+#   2. cmd/go is NOT part of the answer. It orchestrates a build by FORKING
+#      compile and link, and os/exec does not work under wasip1. So the
+#      orchestration moves to JS: compile.wasm, then link.wasm, over one virtual
+#      FS. This spike is meant to harden or kill that design.
+#   3. Host arch == target arch (both wasm), so no cross-compilation trick is
+#      needed: GOOS/GOARCH in the guest env select the target at runtime.
+#   4. std has NOT shipped as prebuilt .a since Go 1.20, and it cannot be built
+#      in-browser (that needs cmd/go). So the export data is precomputed HERE and
+#      handed to the compiler with -importcfg. The closure is MEASURED, per the
+#      Rust lesson: the minimal vendored set is determined empirically, never by
+#      reasoning about what std "should" need.
+#
+# GATES, in order. The FIRST FAILURE IS THE INFORMATIVE ONE -- do not read past it.
+#   0  provenance: versions, license, sizes
+#   1  do compile/link even BUILD for wasip1/wasm, and how big are they
+#   2  do they RUN under a WASI host at all (-V)
+#   3  the std export-data closure for the REAL glifex Go harness, and its size
+#   4a THE GATE: compile + link + run, entirely under wasmtime
+#   4b the same under Node + browser_wasi_shim -- the shim glifex ALREADY bundles
+#      for Rust. 4a isolates "Go toolchain under WASI"; 4b isolates "our shim".
+#      4a green + 4b red means a shim gap (fixable, and we would know exactly
+#      which call). That separation is the entire reason both run.
+#   5  the numbers that decide the track: artifact sizes, compile wall time
+#   6  fallback datapoint only: yaegi (pure-Go Go INTERPRETER) built for js/wasm.
+#      The Miri-shaped "light" option, for size comparison. Not a recommendation.
+#
+# WHAT WOULD KILL PATH A: compile or link failing to build for wasm (gate 1);
+# the linker needing mmap with no fallback (gate 2/4a); an export-data closure
+# far past Rust's 122MB; or a compile so slow it dwarfs Miri's ~2s/run.
+name: export-go-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-go-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: false
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Gate 0 -- provenance, exactly what is being built
+        run: |
+          echo "## go:      $(go version)"
+          echo "## GOROOT:  $(go env GOROOT)"
+          echo "## license: $(head -1 "$(go env GOROOT)/LICENSE" 2>/dev/null)"
+          echo "## wasm targets the toolchain admits to:"
+          go tool dist list | grep -i wasm | sed 's/^/##   /'
+          echo "## native cmd/compile size, for scale:"
+          ls -la "$(go env GOROOT)/pkg/tool/"*/compile 2>/dev/null | awk '{print "##   " $5, $9}'
+
+      - name: Install wasmtime (reference WASI host)
+        run: |
+          curl https://wasmtime.dev/install.sh -sSf | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: Gate 0b -- wasmtime version
+        run: |
+          echo "## $(wasmtime --version)"
+
+      - name: Gates 1+3 -- build the toolchain for wasip1/wasm, gather std export data
+        run: bash tools/go-spike/build.sh "$GITHUB_WORKSPACE/gospike"
+
+      - name: Gate 2 -- do compile.wasm and link.wasm RUN under WASI at all
+        run: |
+          cd "$GITHUB_WORKSPACE/gospike"
+          echo "## compile.wasm -V:"
+          wasmtime run --dir . --env GOOS=wasip1 --env GOARCH=wasm bin/compile.wasm -V 2>&1 | sed 's/^/##   /'
+          echo "## link.wasm -V:"
+          wasmtime run --dir . --env GOOS=wasip1 --env GOARCH=wasm bin/link.wasm -V 2>&1 | sed 's/^/##   /'
+
+      - name: Gate 4a -- THE GATE, compile + link + run under wasmtime
+        run: bash tools/go-spike/gate.sh "$GITHUB_WORKSPACE/gospike"
+
+      - name: Gate 4b -- the same under Node + browser_wasi_shim (our actual host shape)
+        continue-on-error: true
+        run: |
+          cd "$GITHUB_WORKSPACE/gospike"
+          npm init -y >/dev/null 2>&1
+          npm i @bjorn3/browser_wasi_shim >/dev/null 2>&1 || echo "## npm install FAILED -- name or registry wrong"
+          node "$GITHUB_WORKSPACE/tools/go-spike/drive-shim.mjs" "$GITHUB_WORKSPACE/gospike"
+
+      - name: Gate 6 -- fallback datapoint, yaegi (Go interpreter) to js/wasm
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/traefik/yaegi.git "$HOME/yaegi"
+          cd "$HOME/yaegi"
+          echo "## yaegi $(git rev-parse HEAD)"
+          echo "## license $(head -1 LICENSE 2>/dev/null)"
+          GOOS=js GOARCH=wasm go build -o "$HOME/yaegi.wasm" ./cmd/yaegi
+          ls -la "$HOME/yaegi.wasm" | awk '{print "##   yaegi.wasm " $5 " bytes"}'
+          echo "## for comparison, Rust ships 122MB vendored (miri.wasm + 23 rlibs)."
+          echo "## Interpreter caveats NOT measured here: yaegi stdlib coverage and"
+          echo "## generics support are the things that would decide it, not size."
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## ---- Bx-12 spike, what this run establishes ----"
+          D="$GITHUB_WORKSPACE/gospike"
+          if [ -f "$D/bin/compile.wasm" ]; then
+            echo "##   GATE 1 PASS: the gc toolchain builds itself for wasip1/wasm"
+            ls -la "$D/bin/"*.wasm | awk '{print "##     " $5, $9}'
+          else
+            echo "##   GATE 1 FAIL: cmd/compile and/or cmd/link do not build for wasm."
+            echo "##     That kills the self-hosting path outright -- go read the build log,"
+            echo "##     not the rest of this summary."
+          fi
+          [ -f "$D/pkg/closure.txt" ] && cat "$D/pkg/closure.txt" | sed 's/^/##   /'
+          if [ -f "$D/work/out.wasm" ]; then
+            echo "##   GATE 4a PASS: compile+link+run all inside WASI, no cmd/go, no os/exec."
+            echo "##     The browser is then a SHIM problem, not a feasibility one --"
+            echo "##     and Bx-6 already proved the shim (browser_wasi_shim drives miri.wasm)."
+          else
+            echo "##   GATE 4a did not produce work/out.wasm -- read gate.sh output above."
+          fi
+          echo "##   Numbers, not verdicts. The track decision is Joe's."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: go-spike-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            gospike/bin/
+            gospike/work/importcfg.txt
+            gospike/work/deps.txt
+            gospike/pkg/closure.txt
