@@ -50,6 +50,8 @@ jobs:
         run: node web/corpus-integrity.test.mjs
       - name: Vendor pipelines are in sync
         run: node web/vendor-sync.test.mjs
+      - name: Lab ladders cap det-tier tracks
+        run: node web/lab-ladder.test.mjs
       - name: Complexity Lab engine battery (L1)
         run: node web/lab-engine.test.mjs
       - name: JS runtime battery (compile-once/measure-many)

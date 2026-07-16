@@ -80,7 +80,7 @@ export const LANG_OVERRIDES = {
 export const PROBLEMS = {
   "001-anagram-detection": {
     sizeLabel: "string length n",
-    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] }, detByLang: { "asm-x86_64": [32, 64, 128, 256, 512], "asm-arm64": [32, 64, 128, 256, 512] } },
+    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], det: [32, 64, 128, 256, 512], wallByLang: { rust: [64, 128, 256, 512, 1024] }, detByLang: { "asm-x86_64": [32, 64, 128, 256, 512], "asm-arm64": [32, 64, 128, 256, 512] } },
     declared: { upper: "O(n)", lower: "O(1)" },
     roles: { upper: "worst", lower: "best" },
     modes: [
@@ -92,7 +92,7 @@ export const PROBLEMS = {
 
   "002-two-sum": {
     sizeLabel: "array length n",
-    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] }, detByLang: { "asm-x86_64": [32, 64, 128, 256, 512], "asm-arm64": [32, 64, 128, 256, 512] } },
+    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], det: [32, 64, 128, 256, 512], wallByLang: { rust: [64, 128, 256, 512, 1024] }, detByLang: { "asm-x86_64": [32, 64, 128, 256, 512], "asm-arm64": [32, 64, 128, 256, 512] } },
     declared: { upper: "O(n)", lower: "O(1)" },
     roles: { upper: "worst", lower: "best" },
     // Base array: distinct even values, shuffled; target = odd (sum of the
