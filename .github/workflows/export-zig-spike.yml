@@ -1,0 +1,249 @@
+# THROWAWAY spike -- Bx-11 Zig, ROUND 6. Never merged. Read the SUMMARY step.
+#
+# ROUNDS 1-4 CRASHED BECAUSE OF ME, NOT ZIG. zigtools/playground has had this in
+# production at playground.zigtools.org the whole time. Their build.zig passes
+# five options to zig's build: .target .optimize .version-string .no-lib .dev.
+# It does NOT pass use-llvm. zig's own --help, which I printed in round 1 and
+# then grepped past:
+#     -Duse-llvm      Use the llvm backend                                 <- what the HOST compiles WITH
+#     -Denable-llvm   Build self-hosted compiler with LLVM backend enabled <- what the RESULT CONTAINS
+# I set BOTH false. -Duse-llvm=false forced the HOST to build zig.wasm with zig's
+# own self-hosted wasm backend -- the path that SIGSEGVs on a wild pointer at
+# ip=0xa596a4b (32.1 GiB fault addr, sp at 127.8 TiB, 9 frames, two threads at
+# the same ip). That crash is real and worth an upstream report. Nothing ever
+# required us to be on that road. The host is a build machine; let it use LLVM.
+# -Ddev=wasm is what keeps LLVM out of the ARTIFACT.
+#
+# WHAT ELSE THE PLAYGROUND SETTLES:
+#   * A FORK: zigtools/zig ref wasm32-wasi @1c430bc1. zig.patch (vendored here,
+#     8 lines) rewrites one switch in src/dev.zig: drop .stdio_listen and
+#     .incremental, ADD .build_exe_command/.sema/.ast_gen, and crucially
+#     "else => false" instead of falling back to Env.sema.supports(feature).
+#   * That CORRECTS my round-2 reading. I saw dev.zig's comment
+#         zig build-* -fno-llvm -fno-lld -target wasm32-* --listen=-
+#     and called it "upstream ships a preset for our exact command line".
+#     Nearly the opposite: upstream's wasm env speaks the --listen=- protocol and
+#     has no build_exe_command, i.e. it is for developing the wasm backend ON A
+#     HOST. The patch is what makes a compiler you can invoke as "zig build-exe".
+#   * -fno-entry -- their comment: "prevent the native webassembly backend from
+#     adding a start function". That is my round-2 START-section finding, fixed
+#     at compile time instead of my post-hoc byte-strip. Same semantics, theirs
+#     is the right mechanism.
+#   * -fno-compiler-rt + a HOST-built libcompiler_rt.a -- their comment: "the
+#     self hosted webassembly backend cannot compile it by itself".
+#   * The sysroot answer: tar only lib/std (not the 196 MB lib/), gunzip in the
+#     browser with DecompressionStream, untar with @andrewbranch/untar.js.
+#   * @bjorn3/browser_wasi_shim 0.4.x -- the shim web/rust-worker.js ALREADY
+#     bundles for Bx-6. Their Directory takes an ARRAY of pairs, not a Map.
+#
+# THIS JOB: build it, gate it under wasmtime, then DEMO it in a real Chromium
+# under Playwright -- a Zig compiler that is itself wasm, compiling Zig source
+# in the page, and the page running the result. Plus two informational arms on
+# whether we can stay on upstream instead of a fork.
+name: export-zig-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-zig-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make the output dir
+        run: mkdir -p "$GITHUB_WORKSPACE/zig-spike-out"
+
+      # The playground's build.zig.zon says minimum_zig_version 0.16.0.
+      #
+      # NOT mlugg/setup-zig. Round 5 died on exactly this step and never reached a
+      # single probe: setup-zig@v1 asked /builds for zig-linux-x86_64-0.16.0.tar.xz
+      # and got 404 from every mirror AND from ziglang.org itself. /builds is the
+      # NIGHTLY path -- releases live under /download/<ver>/ -- and the filename
+      # order changed to zig-x86_64-linux-<ver>. v1 is out of date; the playground
+      # uses @v2. But the real lesson is that I already had a proven answer and did
+      # not use it: round 3 fetched 0.16.0 from index.json and ran it. I fixed
+      # SOURCE acquisition that way and left the HOST BINARY on a third-party action.
+      - name: Get host zig 0.16.0 from index.json, the way that already worked
+        run: |
+          Z=$(bash tools/zig-spike/get-host-zig.sh 0.16.0 "$HOME/hostzig")
+          echo "HOSTZIG=$Z" >> "$GITHUB_ENV"
+          echo "## host zig: $Z"
+          "$Z" version | sed 's/^/     reports version /'
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Install wasmtime
+        run: |
+          curl -sSf https://wasmtime.dev/install.sh | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: PROBE 0 -- fetch the fork the playground actually uses
+        continue-on-error: true
+        run: |
+          mkdir -p "$HOME/fork" && cd "$HOME/fork"
+          git init -q .
+          git remote add origin https://github.com/zigtools/zig.git
+          # A FULL 40-char sha, from build.zig.zon. Round 3 tried to fetch a
+          # 9-char abbreviation and silently fell back to a drifted master.
+          git fetch -q --depth 1 origin 1c430bc130989d285723de8b7aa8e3c77297a266
+          git checkout -q FETCH_HEAD
+          echo "## fork at $(git rev-parse HEAD)"
+          echo "## tree $(du -sh . | cut -f1), lib/std $(du -sh lib/std | cut -f1)"
+          echo "## is the vendored zig.patch already applied here?"
+          if git apply --reverse --check "$GITHUB_WORKSPACE/tools/zig-spike/zig.patch" 2>/dev/null; then
+            echo "     YES -- the fork already contains it, as expected"
+          else
+            echo "     NO -- the fork has diverged from the patch we vendored. Worth knowing."
+          fi
+
+      - name: PROBE 1 -- BUILD IT. the playground recipe, minus my use-llvm mistake
+        continue-on-error: true
+        timeout-minutes: 120
+        run: bash tools/zig-spike/build-zig-wasm.sh "$HOSTZIG" "$HOME/fork" fork "$GITHUB_WORKSPACE/zig-spike-out/fork"
+
+      - name: PROBE 2 -- THE GATE. zig.wasm compiles Zig under wasmtime, and it runs
+        continue-on-error: true
+        timeout-minutes: 45
+        run: |
+          P="$GITHUB_WORKSPACE/zig-spike-out/zigwasm-fork.path"
+          if [ ! -f "$P" ]; then echo "## no zig.wasm was built -- gate unreachable"; exit 1; fi
+          bash tools/zig-spike/gate.sh "$(cat "$P")" "$GITHUB_WORKSPACE/zig-spike-out/fork" \
+            "$HOME/fork" "$GITHUB_WORKSPACE/tools/zig-spike/katas"
+
+      - name: PROBE 3 -- THE DEMO. a real Chromium compiles Zig and runs it
+        continue-on-error: true
+        timeout-minutes: 60
+        run: |
+          P="$GITHUB_WORKSPACE/zig-spike-out/zigwasm-fork.path"
+          if [ ! -f "$P" ]; then echo "## no zig.wasm -- nothing to demo"; exit 1; fi
+          if [ ! -f "$GITHUB_WORKSPACE/zig-spike-out/kata.zig" ]; then
+            echo "## the wasmtime gate never picked a working kata spelling."
+            echo "## Refusing to run a browser demo whose expected output is a guess."
+            exit 1
+          fi
+          D="$GITHUB_WORKSPACE/tools/zig-spike/demo"
+          cp "$(cat "$P")" "$D/zig.wasm"
+          cp "$GITHUB_WORKSPACE/zig-spike-out/fork/libcompiler_rt.a" "$D/"
+          cp "$GITHUB_WORKSPACE/zig-spike-out/fork/zig.tar.gz" "$D/"
+          cp "$GITHUB_WORKSPACE/zig-spike-out/kata.zig" "$D/"
+          cp "$GITHUB_WORKSPACE/zig-spike-out/expected.txt" "$D/"
+          echo "## the demo will serve:"
+          ls -la "$D"/zig.wasm "$D"/libcompiler_rt.a "$D"/zig.tar.gz "$D"/kata.zig | awk '{print "     " $5, $9}'
+          cd "$D"
+          npm init -y >/dev/null
+          npm install --no-fund --no-audit @bjorn3/browser_wasi_shim @andrewbranch/untar.js
+          npm install --no-fund --no-audit -D esbuild @playwright/test
+          npx esbuild demo.mjs --bundle --format=esm --outfile=bundle.js --log-level=warning
+          ls -la bundle.js | awk '{print "     bundle.js " $5 " bytes"}'
+          npx playwright install --with-deps chromium
+          npx playwright test --config=playwright.config.js
+          echo "D: DEMO PASS -- a real Chromium compiled Zig with zig.wasm and ran the output" \
+            >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+
+      - name: PROBE 4 -- can we stay on UPSTREAM instead of a fork
+        continue-on-error: true
+        timeout-minutes: 120
+        run: |
+          echo "## The recipe needs a fork, which cuts against pinning upstream. The patch"
+          echo "## is 8 lines against src/dev.zig, so: does upstream 0.16.0 + zig.patch"
+          echo "## build? And does upstream UNPATCHED build at all? That decides whether"
+          echo "## Bx-11 vendors a patch (fine) or depends on someone else's branch (not)."
+          curl -sSfL https://ziglang.org/download/index.json -o "$HOME/idx.json" || exit 1
+          U=$(python3 -c "import json;print(json.load(open('$HOME/idx.json'))['0.16.0']['src']['tarball'])")
+          echo "## upstream 0.16.0 src: $U"
+          mkdir -p "$HOME/up" && curl -sSfL "$U" -o "$HOME/up.tar.xz"
+          tar -xJf "$HOME/up.tar.xz" -C "$HOME/up" --strip-components=1
+          cp -r "$HOME/up" "$HOME/up-patched"
+          # NOT "git apply ... | sed": the pipeline's status is sed's, so the if
+          # would ALWAYS be taken and a patch that failed would be reported as
+          # applied. Proven in rehearsal. Capture, then test the real status.
+          ( cd "$HOME/up-patched" && git apply -v "$GITHUB_WORKSPACE/tools/zig-spike/zig.patch" ) \
+            > "$HOME/apply.log" 2>&1
+          APPLY_RC=$?
+          sed 's/^/     /' "$HOME/apply.log"
+          if [ "$APPLY_RC" = "0" ]; then
+            echo "## zig.patch applies cleanly to upstream 0.16.0"
+            bash tools/zig-spike/build-zig-wasm.sh "$HOSTZIG" "$HOME/up-patched" upstream-patched \
+              "$GITHUB_WORKSPACE/zig-spike-out/up-patched" || true
+          else
+            echo "## zig.patch does NOT apply to upstream 0.16.0 -- the fork has other changes"
+            echo "B/upstream-patched: SKIPPED, patch does not apply" >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+          fi
+          echo "======== and unpatched upstream, to see if the patch is needed at all"
+          bash tools/zig-spike/build-zig-wasm.sh "$HOSTZIG" "$HOME/up" upstream-plain \
+            "$GITHUB_WORKSPACE/zig-spike-out/up-plain" || true
+
+      - name: SUMMARY -- the deliverable
+        if: always()
+        run: |
+          echo "## ---- Bx-11 Zig spike round 6: the playground recipe ----"
+          echo "##"
+          # Round 5 aborted at step 4 and printed a summary of pure silence: no
+          # artifacts, no report, no explanation. An empty summary looked like a
+          # job that did nothing rather than one that fell at the first fence.
+          # Same lesson as round 3's vanished 0.16.0: name the hole.
+          if [ -z "${HOSTZIG:-}" ] || [ ! -x "${HOSTZIG:-/nonexistent}" ]; then
+            echo "## *** THE HOST COMPILER WAS NEVER ACQUIRED ***"
+            echo "##     Every probe below was skipped. This is a HOLE, not a result:"
+            echo "##     it says nothing whatever about Zig, the fork, or route A."
+            echo "##     Round 5 died exactly here on setup-zig@v1 mirror 404s."
+            echo "##"
+          else
+            echo "## host zig: $HOSTZIG ($("$HOSTZIG" version 2>&1))"
+            echo "##"
+          fi
+          echo "## artifacts that EXIST -- these outrank every step status:"
+          ls -la "$GITHUB_WORKSPACE/zig-spike-out"/*/zig.wasm "$GITHUB_WORKSPACE/zig-spike-out"/*/zig.tar.gz \
+                 "$GITHUB_WORKSPACE/zig-spike-out"/*/libcompiler_rt.a "$GITHUB_WORKSPACE/zig-spike-out"/main.wasm \
+                 "$GITHUB_WORKSPACE/zig-spike-out"/demo.png 2>/dev/null \
+            | awk '{print "##   " $5, $9}' || echo "##   (none)"
+          echo "##"
+          echo "## which kata spelling this compiler accepted:"
+          if [ -f "$GITHUB_WORKSPACE/zig-spike-out/spelling.txt" ]; then
+            S=$(cat "$GITHUB_WORKSPACE/zig-spike-out/spelling.txt")
+            echo "##   kata-$S.zig"
+            if [ "$S" = "c" ]; then
+              echo "##   NOTE: c is the hello-world fallback. It prints a LITERAL string, so"
+              echo "##   the demo proves the pipeline but NOT that anything was computed."
+            else
+              echo "##   a/b compute 140 at runtime, so the demo shows real codegen, not an echo."
+            fi
+          else
+            echo "##   (none -- the gate never found one)"
+          fi
+          echo "##"
+          echo "## report:"
+          cat "$GITHUB_WORKSPACE/zig-spike-out/report.txt" 2>/dev/null | sed 's/^/##   /' || echo "##   (empty)"
+          echo "##"
+          echo "## how to read this:"
+          echo "##   B/fork BUILT + G: GATE PASS + D: DEMO PASS -> Bx-11 is REAL and the"
+          echo "##       whole browser pipeline works. The blocker was my use-llvm mistake."
+          echo "##       Next: sizes vs the Bx-6 budget, then PR1 docs."
+          echo "##   B/upstream-patched BUILT -> we can vendor an 8-line patch against a"
+          echo "##       pinned upstream tag and never depend on someone else's branch."
+          echo "##   B/upstream-plain BUILT   -> we may not even need the patch to BUILD,"
+          echo "##       though without .build_exe_command the guest likely cannot be"
+          echo "##       invoked as 'zig build-exe' -- check the gate, not the build."
+          echo "##   B/fork FAILED            -> I have misread their recipe. Re-read"
+          echo "##       playground build.zig before another round."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zig-spike-r5
+          if-no-files-found: warn
+          path: |
+            zig-spike-out/
+            tools/zig-spike/demo/demo.mjs
+            tools/zig-spike/demo/index.html
+            tools/zig-spike/demo/demo.spec.js
+            tools/zig-spike/*.sh
+            tools/zig-spike/zig.patch
+            tools/zig-spike/katas/
