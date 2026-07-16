@@ -1,0 +1,208 @@
+# THROWAWAY spike -- Bx-14 Swift. ROUND 2. NEVER MERGED.
+#
+# Round 1 (chore/export-msf-spike-20260716-1745) died at the native link and
+# never reached the gate. The recon design paid for itself anyway: it dumped
+# include/msf.h and the Makefile in full, which corrected four things and made
+# this round exact rather than guessed. What it taught:
+#
+#   - module_stub_find is a deliberate LINK SEAM. Consumers link tests/stubs.c
+#     next to -lMiniSwiftFrontend; the library references it and never defines
+#     it. Round 1 read a by-design seam as a broken build.
+#   - msf_analyze() does not consult a vocabulary. import Foundation resolves
+#     only via msf_analyze_with_vocab(). Round 1 would have reported false
+#     errors on the corpus katas and answered the question BACKWARDS.
+#   - msf_vocab_builtin() returns generated/sdk_vocab.h -- iOS+macOS SDK public
+#     types, unioned, shared Foundation merged -- and that generated header IS
+#     committed to the public repo. Only the regeneration tooling is
+#     maintainer-only. This is what makes a diagnostics half-track plausible.
+#   - The real include set is -Iinclude -Igenerated -Isrc -Isrc/unicode/include.
+#     The round-1 guess (-Iinclude -Isrc) would have failed too.
+#
+# Two round-1 self-inflicted wounds, fixed here:
+#   - "make test 2>&1 | tail -20" under bash -e WITHOUT pipefail reports tail's
+#     exit status. make test SEGFAULTED and the step went green. Every
+#     exit-critical command here captures its own status, no pipe.
+#   - The API grep used head -1 and hit msf.h's doc-comment block every time,
+#     proving nothing. Dropped; the full header dump is the real evidence.
+#
+# WHAT THIS ROUND ANSWERS
+#   Can msf type-check the Swift glifex ACTUALLY HAS -- import Foundation,
+#   [String: Any], as! bridging, ($0 as! NSNumber).intValue? Measured as the
+#   DELTA between plain and vocab analysis of the byte-identical real corpus.
+#
+# Still true, and not answerable here: none of this makes Bx-14 executable.
+# Only the backend does, and the backend is not public.
+name: export-msf-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-msf-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential file gdb
+          echo "## $(gcc --version | head -1)"
+
+      - name: "Provenance -- exactly what is being analysed"
+        run: |
+          git clone --depth 1 https://github.com/toprakdeviren/msf.git "$HOME/msf"
+          cd "$HOME/msf"
+          echo "## msf       $(git rev-parse HEAD)"
+          echo "## dated     $(git log -1 --format=%cd --date=short)"
+          echo "## license   $(head -1 LICENSE 2>/dev/null || echo 'NO LICENSE FILE')"
+          echo "## ---- is the generated SDK vocabulary really committed? ----"
+          ls -la generated/ 2>/dev/null || echo "## NO generated/ DIR -- the half-track premise is WRONG"
+          test -f generated/sdk_vocab.h \
+            && echo "## sdk_vocab.h      $(stat -c%s generated/sdk_vocab.h) bytes" \
+            || echo "## sdk_vocab.h      ABSENT"
+          test -f generated/sdk_vocab_web.h \
+            && echo "## sdk_vocab_web.h  $(stat -c%s generated/sdk_vocab_web.h) bytes" \
+            || echo "## sdk_vocab_web.h  ABSENT (may be built by 'make web-vocab')"
+          echo "## ---- the link seam round 1 tripped on ----"
+          ls -la tests/stubs.c && grep -n "module_stub_find" tests/stubs.c | head -3
+
+      - name: "Their build -- real exit status, no pipe masking"
+        run: |
+          cd "$HOME/msf"
+          set +e
+          make release > "$RUNNER_TEMP/build.log" 2>&1
+          rc=$?
+          set -e
+          tail -12 "$RUNNER_TEMP/build.log"
+          echo "## make release exit=$rc"
+          test "$rc" -eq 0 || { echo "## their own release build FAILED"; exit 1; }
+
+      - name: "Their test suite -- round 1 masked a SEGFAULT here"
+        continue-on-error: true
+        run: |
+          cd "$HOME/msf"
+          set +e
+          make test > "$RUNNER_TEMP/test.log" 2>&1
+          rc=$?
+          set -e
+          tail -25 "$RUNNER_TEMP/test.log"
+          echo "## make test exit=$rc  (139 = SIGSEGV)"
+          echo "## passes=$(grep -c 'PASS' "$RUNNER_TEMP/test.log" || true)  fails=$(grep -c 'FAIL' "$RUNNER_TEMP/test.log" || true)"
+          test "$rc" -eq 0 && echo "## clean -- round 1's segfault did not reproduce" || \
+            echo "## STILL CRASHES -- a stability signal for anything we would vendor"
+
+      - name: "Where does it crash -- their own asan target"
+        continue-on-error: true
+        run: |
+          cd "$HOME/msf"
+          set +e
+          make asan > "$RUNNER_TEMP/asan-build.log" 2>&1
+          rc=$?
+          set -e
+          echo "## make asan exit=$rc"
+          test "$rc" -eq 0 || { tail -15 "$RUNNER_TEMP/asan-build.log"; exit 0; }
+          BIN="$(find build -name 'test_runner_asan' | head -1 || true)"
+          test -n "$BIN" || { echo "## no test_runner_asan produced; build/ holds:"; ls -la build/ 2>/dev/null; exit 0; }
+          set +e
+          "$BIN" > "$RUNNER_TEMP/asan-run.log" 2>&1
+          arc=$?
+          set -e
+          echo "## asan runner exit=$arc"
+          grep -A 18 "ERROR: AddressSanitizer\|SUMMARY: AddressSanitizer" "$RUNNER_TEMP/asan-run.log" | head -30 \
+            || tail -20 "$RUNNER_TEMP/asan-run.log"
+
+      - name: Link the spike driver -- WITH the stubs.c seam
+        run: |
+          cd "$HOME/msf"
+          LIB="$(find build -name 'libMiniSwiftFrontend.a' | head -1 || true)"
+          test -n "$LIB" || { echo "## lib not found; build/ holds:"; find build -name '*.a'; exit 1; }
+          echo "## lib       $LIB ($(stat -c%s "$LIB") bytes)"
+          mkdir -p "$GITHUB_WORKSPACE/msfout"
+          gcc -std=c11 -O2 -I include -I generated -I src -I src/unicode/include \
+              -o "$GITHUB_WORKSPACE/msfout/gx_msf" \
+              "$GITHUB_WORKSPACE/tools/msf-spike/gx_msf.c" tests/stubs.c "$LIB"
+          echo "## native    $(file -b "$GITHUB_WORKSPACE/msfout/gx_msf")"
+
+      - name: "Build the trimmed web vocab and the wasm lib"
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          cd "$HOME/emsdk" && ./emsdk install latest >/dev/null && ./emsdk activate latest >/dev/null
+          . "$HOME/emsdk/emsdk_env.sh"
+          echo "## $(emcc --version | head -1)"
+          cd "$HOME/msf"
+          set +e
+          make web-vocab > "$RUNNER_TEMP/webvocab.log" 2>&1
+          echo "## make web-vocab exit=$?"
+          tail -8 "$RUNNER_TEMP/webvocab.log"
+          make wasm > "$RUNNER_TEMP/wasm.log" 2>&1
+          echo "## make wasm exit=$?"
+          tail -12 "$RUNNER_TEMP/wasm.log"
+          set -e
+          echo "## ---- wasm artifacts ----"
+          find build -name '*.a' -o -name '*.wasm' -o -name '*.js' | while read -r f; do
+            echo "     $(stat -c%s "$f") $f"
+          done
+
+      - name: "Our own emcc link -- real includes, trimmed web vocab"
+        continue-on-error: true
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          cd "$HOME/msf"
+          WLIB="$(find build -path '*wasm*' -name 'libMiniSwiftFrontend.a' | head -1 || true)"
+          test -n "$WLIB" || { echo "## no wasm lib -- skipping"; exit 0; }
+          echo "## wasm lib  $WLIB ($(stat -c%s "$WLIB") bytes)"
+          emcc -std=c11 -O2 -D_GNU_SOURCE -DMSF_WEB_VOCAB \
+               -I include -I generated -I src -I src/unicode/include \
+               "$GITHUB_WORKSPACE/tools/msf-spike/gx_msf.c" tests/stubs.c "$WLIB" \
+               -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sENVIRONMENT=node \
+               -o "$GITHUB_WORKSPACE/msfout/gx_msf.js" 2>&1 | tail -20
+          ls -la "$GITHUB_WORKSPACE/msfout/"
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: "THE GATE -- can msf type-check the Swift glifex actually has"
+        run: |
+          WASM=""
+          if [ -f "$GITHUB_WORKSPACE/msfout/gx_msf.js" ]; then
+            WASM="$GITHUB_WORKSPACE/msfout/gx_msf.js"
+          else
+            echo "## no wasm build -- native only (the language question is the same C either way)"
+          fi
+          node "$GITHUB_WORKSPACE/tools/msf-spike/drive.mjs" \
+               "$GITHUB_WORKSPACE/msfout/gx_msf" \
+               "$GITHUB_WORKSPACE/tools/msf-spike/katas" \
+               $WASM
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## ---- how to read this run ----"
+          echo "##   corpus-* vocab==0        -> import Foundation + NSNumber RESOLVE."
+          echo "##                               msf can type-check the corpus we"
+          echo "##                               already ship. The half-track is real."
+          echo "##   corpus-* vocab>0         -> read the [ERR] lines. Names like"
+          echo "##                               NSNumber/Any mean a Foundation-free"
+          echo "##                               corpus rewrite is the price."
+          echo "##   plain-vs-vocab delta==0  -> the vocab did nothing; suspect OUR"
+          echo "##                               wiring before blaming msf."
+          echo "##   web vocab trim %         -> the vendoring cost of the track."
+          echo "##"
+          echo "##   Bx-14 EXECUTABLE is still blocked on the backend, which is not"
+          echo "##   public. Nothing in this run changes that."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: msf-spike2-vocab
+          if-no-files-found: warn
+          path: |
+            msfout/
+            tools/msf-spike/
