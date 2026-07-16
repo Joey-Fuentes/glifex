@@ -163,7 +163,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: web/vendor
-          key: vendor-v5-ci-${{ hashFiles('web/fetch-runtimes.mjs') }}
+          key: vendor-v6-ci-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/arm64-toolchain/**', '.github/workflows/ci.yml') }}
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
@@ -245,6 +245,30 @@ jobs:
           echo "8548fc86b738be62619889560995a127a9be6026ed4d6b21fe525c184d322206  web/vendor/asm-x86_64/gnu-ld.elf"      | sha256sum -c -
           test "$(stat -c%s web/vendor/asm-x86_64/gnu-ld.elf)" -gt 1000000 || { echo "gnu-ld.elf too small (fetch failed?)"; exit 1; }
           echo "{\"runtime\":\"asm-x86_64\",\"via\":\"robalb/x86-64-playground@$REF\",\"blink\":\"ISC\",\"binutils\":\"2.43.50 (GPL-3.0)\"}" > web/vendor/asm-x86_64/manifest.json
+      - name: Vendor arm64 toolchain (VIXL wasm32 + musl binutils, pinned)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          sudo apt-get update
+          sudo apt-get install -y musl-tools binutils-aarch64-linux-gnu texinfo bison flex
+          . tools/arm64-toolchain/pins.env
+          if [ ! -d "$HOME/emsdk" ]; then
+            git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+            (cd "$HOME/emsdk" && ./emsdk install "$EMSDK_VERSION" && ./emsdk activate "$EMSDK_VERSION")
+          fi
+          . "$HOME/emsdk/emsdk_env.sh"
+          mkdir -p web/vendor/asm-arm64
+          bash tools/arm64-toolchain/build-binutils.sh "$PWD/web/vendor/asm-arm64"
+          bash tools/arm64-toolchain/build-vixl.sh     "$PWD/web/vendor/asm-arm64"
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$BLINKENLIB_REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.js"   -o web/vendor/asm-arm64/blinkenlib.js
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.wasm" -o web/vendor/asm-arm64/blinkenlib.wasm
+          echo "$BLINKENLIB_JS_SHA256  web/vendor/asm-arm64/blinkenlib.js"   | sha256sum -c -
+          echo "$BLINKENLIB_WASM_SHA256  web/vendor/asm-arm64/blinkenlib.wasm" | sha256sum -c -
+          echo "{\"runtime\":\"asm-arm64\",\"vixl\":\"$VIXL_COMMIT\",\"binutils\":\"$BINUTILS_VERSION (musl-static, GPL-3.0, guest)\",\"blink\":\"ISC\",\"vixl_license\":\"BSD-3-Clause\"}" > web/vendor/asm-arm64/manifest.json
+          rm -f web/vendor/asm-arm64/binutils-configure.log web/vendor/asm-arm64/binutils-make.log
+          ls -la web/vendor/asm-arm64
+          test "$(stat -c%s web/vendor/asm-arm64/gx_vixl.wasm)" -gt 1000000 || { echo "gx_vixl.wasm too small"; exit 1; }
+          test "$(stat -c%s web/vendor/asm-arm64/aarch64-as.elf)" -gt 1000000 || { echo "aarch64-as.elf too small"; exit 1; }
       - name: Mark vendor complete (cached for future runs)
         run: touch web/vendor/.vendor-complete
       - name: Build corpus & run E2E (incl. offline-mode test)
