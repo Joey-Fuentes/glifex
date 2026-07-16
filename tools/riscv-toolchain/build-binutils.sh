@@ -10,6 +10,15 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/pins.env"
 VER="$BINUTILS_VERSION"
 
+# The target triple, in ONE place. It names both the configure target and the
+# build directory, because autotools caches target_alias and a tree configured
+# for one --target cannot be reconfigured for another:
+#   configure: error: `target_alias' has changed since the previous run
+# arm64 and riscv64 vendor in the SAME job, sequentially, and both scripts used
+# $HOME/bu. Deriving the build dir from the triple means the next architecture
+# to copy this script cannot repeat it.
+TARGET_TRIPLE="riscv64-linux-gnu"
+
 command -v musl-gcc >/dev/null || { echo "FATAL musl-gcc missing (apt install musl-tools)"; exit 1; }
 
 cd "$HOME"
@@ -24,14 +33,15 @@ else
 fi
 tar xf "binutils-$VER.tar.xz"
 
-mkdir -p bu && cd bu
+BUILD="bu-$TARGET_TRIPLE"
+mkdir -p "$BUILD" && cd "$BUILD"
 # -static rides in CFLAGS, NOT LDFLAGS: CCLD expands $(CFLAGS) $(LDFLAGS), and
 # binutils does not reliably propagate configure-time LDFLAGS into sub-builds.
 CC=musl-gcc \
 CFLAGS="-O3 -static --static -static-libgcc -static-libstdc++" \
 CXXFLAGS="-O3 -static --static" \
   "$HOME/binutils-$VER/configure" \
-    --target=riscv64-linux-gnu --enable-targets=riscv64-linux-gnu \
+    --target="$TARGET_TRIPLE" --enable-targets="$TARGET_TRIPLE" \
     --enable-default-execstack=no --enable-deterministic-archives \
     --enable-new-dtags --disable-doc --disable-gprof --disable-nls \
     --disable-binutils --disable-gdb --disable-gdbserver \
