@@ -1,0 +1,169 @@
+# THROWAWAY spike -- Bx-14 Swift, reconnaissance. NEVER MERGED.
+#
+# WHY THIS EXISTS
+#   The ROADMAP's Bx-14 entry says MiniSwift is "a FRONTEND ONLY ... it cannot
+#   back a Swift track", and sets a watch - "if he applies that backend to msf's
+#   frontend, Bx-14 becomes real". He DID: miniswift.run is live, client-side,
+#   lexer/parser/sema/IR/SSA/WASM codegen + stdlib, 750/750 stdlib tests, ~70k
+#   lines of C, zero deps, no LLVM, no server (Swift Forums, 2026-04-03).
+#   But on 2026-04-07 he open-sourced the FRONTEND ONLY - the IR, SSA, codegen
+#   and stdlib are deliberately not public. So Bx-14 is blocked on
+#   OBTAINABILITY, not feasibility. That is a licence question, and no CI job
+#   can answer it - it is being asked separately.
+#
+#   What CI can answer is the fallback the ROADMAP already names: msf as a
+#   DIAGNOSTICS half-track (real in-editor Swift type errors, no execution).
+#
+# THE QUESTION THIS RUN ANSWERS
+#   Not "does msf build" - it is dependency-free C11 with a make wasm target.
+#   The question is whether msf can type-check THE SWIFT GLIFEX ACTUALLY HAS.
+#   Our corpus is Foundation- and NSNumber-dependent (as! bridging). msf ships
+#   module_stubs.h, "SDK module type stubs". If Foundation does not resolve,
+#   msf reports FALSE errors on our own corpus, and the half-track is dead in
+#   the shape we would want it - see adding-a-language.md trap 5: plausible
+#   wrong output is the worst failure shape there is.
+#
+# SHAPE
+#   The hard GATE is NATIVE (their own documented build). The language-coverage
+#   question is answered by the same C either way, and native fails in the
+#   informative direction. wasm is built and compared, but reported, not gated -
+#   it is the arm most likely to need a round 2, and it must not take the
+#   answer down with it.
+#
+#   Round 1 is RECON. Several arms are continue-on-error BY DESIGN. Whatever
+#   else happens, this run returns include/msf.h and the Makefile in full, so
+#   round 2 is exact rather than guessed.
+name: export-msf-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-msf-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential file
+          echo "## $(gcc --version | head -1)"
+
+      - name: "Provenance -- exactly what is being analysed"
+        run: |
+          git clone --depth 1 https://github.com/toprakdeviren/msf.git "$HOME/msf"
+          cd "$HOME/msf"
+          echo "## msf       $(git rev-parse HEAD)"
+          echo "## dated     $(git log -1 --format=%cd --date=short)"
+          echo "## size      $(du -sh . | cut -f1), $(find . -name '*.c' | wc -l) C files, $(find . -name '*.c' -o -name '*.h' | xargs cat | wc -l) lines"
+          echo "## license   $(head -3 LICENSE 2>/dev/null || echo 'NO LICENSE FILE -- README says MIT')"
+
+      - name: "The public header, in full -- so round 2 never guesses"
+        continue-on-error: true
+        run: |
+          echo "## ---- include/msf.h ----"
+          cat "$HOME/msf/include/msf.h" | sed 's/^/     /'
+          echo "## ---- Makefile ----"
+          cat "$HOME/msf/Makefile" | sed 's/^/     /'
+
+      - name: "The API this spike drives, from the real header"
+        continue-on-error: true
+        run: |
+          cd "$HOME/msf"
+          for sym in msf_analyze msf_error_count msf_error_line msf_error_col \
+                     msf_error_message msf_root msf_result_free ast_kind_name; do
+            printf '%-20s ' "$sym"
+            grep -rn --include='*.h' -w "$sym" include/ | head -1 || echo "ABSENT -- README is stale"
+          done
+
+      - name: "Their build, their test suite -- the control"
+        run: |
+          cd "$HOME/msf"
+          make release 2>&1 | tail -20
+          echo "## ---- make test ----"
+          make test 2>&1 | tail -20
+
+      - name: Link the spike driver against their static lib
+        run: |
+          cd "$HOME/msf"
+          LIB="$(find . -name 'libMiniSwiftFrontend.a' | head -1 || true)"
+          test -n "$LIB" || { echo "## libMiniSwiftFrontend.a not found after make release; tree is:"; find . -name '*.a'; exit 1; }
+          echo "## lib       $LIB   ($(stat -c%s "$LIB") bytes)"
+          mkdir -p "$GITHUB_WORKSPACE/msfout"
+          gcc -std=c11 -O2 -I include -o "$GITHUB_WORKSPACE/msfout/gx_msf" \
+              "$GITHUB_WORKSPACE/tools/msf-spike/gx_msf.c" "$LIB"
+          echo "## native    $(file -b "$GITHUB_WORKSPACE/msfout/gx_msf")"
+
+      - name: "Their make wasm -- report what it emits, do not assume"
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          cd "$HOME/emsdk" && ./emsdk install latest >/dev/null && ./emsdk activate latest >/dev/null
+          . "$HOME/emsdk/emsdk_env.sh"
+          echo "## $(emcc --version | head -1)"
+          cd "$HOME/msf"
+          make wasm 2>&1 | tail -20 || echo "## make wasm FAILED -- see above"
+          echo "## ---- artifacts produced ----"
+          find . -newer Makefile \( -name '*.wasm' -o -name '*.js' -o -name '*.a' \) \
+            -exec sh -c 'echo "     $(stat -c%s "$1") $1"; file -b "$1" | sed "s/^/          /"' _ {} \; || true
+
+      - name: "Our own emcc link -- the arm a glifex worker would actually need"
+        continue-on-error: true
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          cd "$HOME/msf"
+          emcc -std=c11 -O2 -I include -I src \
+               $(find src -name '*.c') "$GITHUB_WORKSPACE/tools/msf-spike/gx_msf.c" \
+               -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sENVIRONMENT=node \
+               -o "$GITHUB_WORKSPACE/msfout/gx_msf.js" 2>&1 | tail -25
+          ls -la "$GITHUB_WORKSPACE/msfout/" | sed 's/^/     /'
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: "THE GATE -- can msf type-check the Swift glifex actually has"
+        run: |
+          WASM=""
+          if [ -f "$GITHUB_WORKSPACE/msfout/gx_msf.js" ]; then
+            WASM="$GITHUB_WORKSPACE/msfout/gx_msf.js"
+            echo "## comparing native vs wasm output byte-for-byte"
+          else
+            echo "## no wasm build -- gating on native only (see the arm above)"
+          fi
+          node "$GITHUB_WORKSPACE/tools/msf-spike/drive.mjs" \
+               "$GITHUB_WORKSPACE/msfout/gx_msf" \
+               "$GITHUB_WORKSPACE/tools/msf-spike/katas" \
+               $WASM
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## ---- how to read this run ----"
+          echo "##   control.swift  0 errors      -> the rig is sound"
+          echo "##   broken-*       >0 errors     -> msf diagnoses invalid Swift"
+          echo "##                                   (0 here = permissive parser = cannot"
+          echo "##                                    back a falsifier; that is an ANSWER)"
+          echo "##   pure-*         0 errors      -> msf handles the LANGUAGE"
+          echo "##   corpus-*       ?             -> THE FINDING. Nonzero means Foundation/"
+          echo "##                                   NSNumber do not resolve, and a"
+          echo "##                                   diagnostics half-track would emit FALSE"
+          echo "##                                   errors on our own corpus unless the"
+          echo "##                                   corpus goes Foundation-free."
+          echo "##"
+          echo "##   None of this makes Bx-14 executable. Only the backend does, and the"
+          echo "##   backend is not public. That ask is out-of-band."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: msf-spike-recon
+          if-no-files-found: warn
+          path: |
+            msfout/
+            tools/msf-spike/
