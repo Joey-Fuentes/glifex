@@ -1,0 +1,115 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once RV64GC has a direction.
+# chore/export-riscv-spike-* only, never merged, like every Bx-10 spike before it.
+#
+# Bx-10's undocumented continuation: RISC-V RV64GC.
+#
+# WHAT BX-10 HANDS THIS TRACK FOR FREE
+#   - the assembler half: build-binutils.sh with ONE triple changed. Everything
+#     expensive (musl not glibc, -static in CFLAGS not LDFLAGS, all-gas all-ld
+#     not all, MUSL_LOCPATH as the marker) transfers unchanged.
+#   - Blink, already vendored, already proven at running a guest as+ld.
+#   - the relocate-into-a-malloc'd-base trick, IF auipc behaves like adrp.
+#   - a det ladder a new track no longer has to remember (#98/#100).
+#
+# WHAT IT DOES NOT HAND OVER
+#   the emulator. VIXL is aarch64-only. That is the whole spike.
+#
+# THE QUESTION, and it is the same one that picked VIXL over arm-sandbox:
+#   can we SET REGISTERS, JUMP TO A SYMBOL, SINGLE-STEP TO ret, READ THE RESULT?
+# Not "can it boot Linux" -- that is the opposite of what we want. A candidate
+# that only runs whole ELFs with syscalls needs an ELF loader plus a syscall
+# harness, which is a different and much larger project.
+#
+# This job READS SOURCE at recorded commits. Bx-10's desk research recommended a
+# candidate whose header it had never opened and was wrong three times over
+# about LP64; the answer to the musl question was sitting in an upstream build
+# script the whole time. So: grep the actual code, print the actual licence,
+# record the actual commit.
+name: export-riscv-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-riscv-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools binutils-riscv64-linux-gnu build-essential texinfo bison flex file
+          riscv64-linux-gnu-as --version | head -1
+
+      - name: Probe the emulator candidates -- the decisive question
+        continue-on-error: true
+        run: bash tools/riscv-spike/probe-emulators.sh "$GITHUB_WORKSPACE/rv"
+
+      - name: Build a riscv64-targeting musl-static binutils
+        continue-on-error: true
+        run: bash tools/riscv-spike/build-binutils.sh "$GITHUB_WORKSPACE/rv"
+
+      - name: Assemble the katas, and diff ours against stock
+        continue-on-error: true
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/rv/katas"
+          MISMATCH=0
+          for f in tools/riscv-spike/katas/*.s; do
+            b=$(basename "$f" .s)
+            echo "---- $b"
+            riscv64-linux-gnu-as -march=rv64gc "$f" -o "${TMPDIR:-/tmp}/$b.stock.o" 2>&1 || { echo "   STOCK ASSEMBLE FAILED"; continue; }
+            riscv64-linux-gnu-objcopy -O binary --only-section=.text "${TMPDIR:-/tmp}/$b.stock.o" "$GITHUB_WORKSPACE/rv/katas/$b.text.bin"
+            echo "   .text $(stat -c%s "$GITHUB_WORKSPACE/rv/katas/$b.text.bin") bytes"
+            # RV64GC has the C extension -- 2-byte instructions. arm64 had no
+            # analogue. Counting stays exact but insns no longer maps 1:1 to
+            # bytes, and 4-byte-alignment assumptions must be re-checked.
+            riscv64-linux-gnu-objdump -d -M no-aliases "${TMPDIR:-/tmp}/$b.stock.o" 2>/dev/null | tail -n +6 | head -12 | sed 's/^/     /'
+            R=$(riscv64-linux-gnu-objdump -r "${TMPDIR:-/tmp}/$b.stock.o" 2>/dev/null | grep -c "R_RISCV" || true)
+            if [ "$R" = "0" ]; then echo "   relocations 0 -> raw .text is runnable as-is"
+            else echo "   relocations $R -> NEEDS A LINK (the auipc/adrp question)"
+                 riscv64-linux-gnu-objdump -r "${TMPDIR:-/tmp}/$b.stock.o" 2>/dev/null | grep R_RISCV | head -3 | sed 's/^/     /'; fi
+            if [ -f "$GITHUB_WORKSPACE/rv/riscv64-as.elf" ]; then
+              "$GITHUB_WORKSPACE/rv/riscv64-as.elf" -march=rv64gc "$f" -o "${TMPDIR:-/tmp}/$b.ours.o" 2>/dev/null \
+                && riscv64-linux-gnu-objcopy -O binary --only-section=.text "${TMPDIR:-/tmp}/$b.ours.o" "${TMPDIR:-/tmp}/$b.ours.bin" \
+                && { A=$(sha256sum "$GITHUB_WORKSPACE/rv/katas/$b.text.bin" | cut -c1-16); B=$(sha256sum "${TMPDIR:-/tmp}/$b.ours.bin" | cut -c1-16); \
+                     if [ "$A" = "$B" ]; then echo "   ours == stock ($A)"; else echo "   ours DIVERGES stock=$A ours=$B"; MISMATCH=1; fi; }
+            fi
+          done
+          test "$MISMATCH" = "0" || echo "## our as diverges from stock -- do not trust it yet"
+
+      - name: Link the reloc kata and show where it wants to live
+        continue-on-error: true
+        run: |
+          # The aarch64 answer was: adrp encodes a PAGE DELTA, so a linked ELF
+          # relocates freely to a malloc'd base as long as (base - min_vaddr) is
+          # 4K-aligned. auipc is also PC-relative -- but that is a claim to test,
+          # not to inherit.
+          riscv64-linux-gnu-as -march=rv64gc tools/riscv-spike/katas/auipc.s -o "${TMPDIR:-/tmp}/a.o"
+          riscv64-linux-gnu-ld "${TMPDIR:-/tmp}/a.o" -o "$GITHUB_WORKSPACE/rv/auipc.elf" -e kata -z max-page-size=4096 2>&1 || echo "## link failed"
+          test -f "$GITHUB_WORKSPACE/rv/auipc.elf" && {
+            echo "## entry  $(riscv64-linux-gnu-readelf -h "$GITHUB_WORKSPACE/rv/auipc.elf" | grep -i 'Entry point' | sed 's/^ *//')"
+            echo "## LOAD segments (the addresses an emulator must honour or relocate):"
+            riscv64-linux-gnu-readelf -l "$GITHUB_WORKSPACE/rv/auipc.elf" | grep -E "^  LOAD" | sed 's/^/   /'
+            echo "## disassembly after linking -- did auipc resolve to a delta?"
+            riscv64-linux-gnu-objdump -d "$GITHUB_WORKSPACE/rv/auipc.elf" | sed -n '/<kata>:/,/^$/p' | head -8 | sed 's/^/   /'; }
+
+      - name: Summarise
+        if: always()
+        run: |
+          echo "## ---- riscv spike summary ----"
+          ls -la "$GITHUB_WORKSPACE/rv" 2>/dev/null | grep -v "^total\|^d" | sed 's/^/  /' || echo "  (nothing)"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: riscv-spike
+          if-no-files-found: warn
+          path: |
+            rv/
+            tools/riscv-spike/katas/*.s
