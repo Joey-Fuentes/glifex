@@ -1,0 +1,102 @@
+# THROWAWAY spike job -- DELETE THIS BRANCH when Bx-10 is decided.
+# chore/export-armas-spike-* only, never merged.
+#
+# Bx-10 assembler half. State:
+#   VIXL       DONE   wasm32, 2 MB, 7/7 katas in Chromium, ~0.9 M insn/s
+#   our as     byte-identical to stock, static via -all-static
+#   Blink      PROVEN -- it runs the playground's own gnu-as.elf in my local rig
+#              in 633 ms, exit 0, real .o. The harness was never the problem.
+#   our as     under Blink -> SIGSEGV after startup
+#
+# Program headers finally named the difference:
+#   REFERENCE   7 phdrs  ... TLS              GNU_STACK GNU_RELRO   WORKS
+#   OURS       10 phdrs  ... TLS GNU_PROPERTY GNU_STACK GNU_RELRO   SIGSEGV
+# ANSWER FOUND -- in the playground's own compile_musl_binutils.sh:
+#   CC=musl-gcc CFLAGS="-O3 -static --static ..." configure --target=x86_64-linux-musl
+# Their guest as is MUSL-static; ours was GLIBC-static. Verified in bytes:
+#   reference "musl" x2 / "glibc" x0 / "__libc_start_main" x0
+#   ours      "musl" x0 / "glibc" x44 / "__libc_start_main" x1
+#
+# I had this hypothesis in round 6 and killed it with a broken instrument: my
+# dissect grepped "glibc" and matched GLIBC_ABI_DT_RELR / GLIBC_2.36 -- version
+# symbol names ANY binutils contains. False positive on the one binary that
+# mattered.
+#
+# Blink's source also retired the theories built on top of it: it IMPLEMENTS
+# mprotect (the warning is Blink's own host call under emscripten -- the working
+# reference emits it too), loader.c never reads GNU_PROPERTY, and tunables.h caps
+# guest memory at 8 GB so 4 MB was never the issue.
+#
+# Also from their script: -static rides in CFLAGS, not LDFLAGS, since CCLD
+# expands $(CFLAGS) $(LDFLAGS). That is why every LDFLAGS permutation gave a
+# dynamic PIE.
+#
+# Dead ends, each paid for: mprotect (the reference emits the same warnings),
+# musl (reference is glibc), RELRO (reference has it), glibc version (22.04
+# failed identically and was bigger), my rig (runs the reference perfectly).
+#
+# ubuntu-latest, matching ci.yml and pages.yml.
+name: export-armas-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-armas-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  armas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-aarch64-linux-gnu build-essential texinfo bison flex file musl-tools
+
+      - name: Fetch the known-good Blink guest for comparison
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/armas-out/ref"
+          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/assemblers/gnu-as.2.43.50.elf" -o "$GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf"
+          echo "908b557e21e8000596abe12828d929cf82dd9abcc3ee840dbaf9c503d8e32534  $GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf" | sha256sum -c -
+
+      - name: Build the aarch64 assembler the way the playground builds theirs
+        run: bash tools/armas-spike/build-variants.sh "$GITHUB_WORKSPACE/armas-out"
+
+      - name: Compare against the reference side by side
+        continue-on-error: true
+        run: |
+          for f in "$GITHUB_WORKSPACE/armas-out/ref/gnu-as.elf" "$GITHUB_WORKSPACE/armas-out/aarch64-as.elf"; do
+            echo "---- $(basename "$f")  $(stat -c%s "$f") bytes"
+            echo "     musl=$(strings -a "$f" | grep -c 'linux-musl')  glibc_entry=$(strings -a "$f" | grep -c '__libc_start_main')"
+            readelf -l "$f" | sed -n '/Program Headers/,/Section to Segment/p' | grep -oE "^  [A-Z_]+" | tr -d ' ' | tr '\n' ' '
+            echo
+          done
+
+      - name: Verify it still emits correct aarch64
+        run: |
+          "$GITHUB_WORKSPACE/armas-out/aarch64-as.elf" tools/armas-spike/katas/add.s -o "${TMPDIR:-/tmp}/a.o"
+          aarch64-linux-gnu-objcopy -O binary --only-section=.text "${TMPDIR:-/tmp}/a.o" "${TMPDIR:-/tmp}/a.bin"
+          echo "  .text sha $(sha256sum "${TMPDIR:-/tmp}/a.bin" | cut -c1-16)  (must stay 03039bd23d144842 -- the musl HOST libc must not change the aarch64 it EMITS)"
+
+      - name: Vendor blinkenlib
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/armas-out/blink"
+          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/blinkenlib.js"   -o "$GITHUB_WORKSPACE/armas-out/blink/blinkenlib.js"
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/blinkenlib.wasm" -o "$GITHUB_WORKSPACE/armas-out/blink/blinkenlib.wasm"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: armas-spike
+          if-no-files-found: warn
+          path: |
+            armas-out/
+            tools/armas-spike/katas/*.s
