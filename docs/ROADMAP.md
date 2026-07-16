@@ -246,10 +246,28 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       JVM-in-browser appears (or CheerpJ's licence changes), OR JetBrains self-hosts kotlinc via
       Kotlin/Wasm -- note that last one is architecturally hard: Kotlin/Wasm's stdlib has no `java.*`
       at all and kotlinc embeds IntelliJ-core Java source.*
-- [ ] **Bx-10. arm64** -- all-permissive path (retires the Unicorn/Keystone GPL route): assemble with
-      clang cross-target `aarch64-linux` (Apache) -> ELF, execute on **arm-sandbox** (MIT aarch64 emulator)
-      built to wasm via Emscripten. *Spike first: arm-sandbox is v0.1 + "incomplete A64" + solo -- Emscripten
-      the core, run ~3 clang-assembled katas, measure missing instrs. Confirm the vendored clang has AArch64.*
+- [ ] **Bx-10. arm64** -- **SPIKE DONE, feasibility PROVEN; track not yet built.** Full details:
+      `docs/vixl-arm64.md`. The plan below was wrong in its parts and right in its goal.
+      **Not arm-sandbox** (v0.1, incomplete A64, ELF-loader-only, no register-write/step API) and
+      **not clang** -- the emulator is **VIXL** (`gitlab.arm.com/runtimes/vixl`, BSD-3, Arm/Linaro;
+      the simulator Android ART and SpiderMonkey test with), built to **wasm32** (2.09 MB, ~0.92 M
+      insn/s). Nobody had built VIXL to wasm before; the research claim that it needs LP64 was wrong
+      three times over (it builds at 4-byte pointers, runs, and wasm32 is ~2.9x faster than wasm64).
+      Its `WriteXRegister`/`RunFrom`/`ExecuteInstruction`/`IsSimulationFinished` surface maps 1:1 onto
+      the blinkenlib pattern `web/asm-x86-blink.mjs` already drives, so Bx-7's "set registers, jump to
+      a symbol, single-step to ret, read the result" trick ports over intact.
+      The **assembler** is GNU `as`+`ld` cross-targeting aarch64, run as guest ELFs **under Blink** --
+      reusing the vendored, already-proven Bx-7 emulator, so zero new assembler tech. They must be
+      **musl**-static (a glibc-static `as` SIGSEGVs under Blink); recipe is the playground's own
+      `compile_musl_binutils.sh`, retargeted. Blink stays x86-64-guest-only -- it runs the assembler,
+      never the arm64 code.
+      Proven end to end in headless Chromium, in a Worker, on a plain server (VIXL needs no COI, like
+      C#/Rust): `.s` -> Blink(as) -> Blink(ld) -> relocate PT_LOADs to a 4K-aligned base -> VIXL -> x0.
+      Output byte-identical to native `aarch64-linux-gnu-as` on all 7 katas. ~3.1 s/solve; vendor
+      payload ~9.5 MB. `adrp` is PC-relative so linked ELFs relocate freely -- **no corpus constraint**.
+      *Remaining (engineering, not unknowns): pin binutils; vendor step + cache key;
+      `web/asm-arm64-worker.js` + loader; corpus 001-only/3-variants -> 001/002/003 at 4;
+      `sizes.wallByLang` (Miri-class speed -- start at Rust's ladder); smoke spec.*
 - [ ] **Bx-11. Zig** -- self-hosted zig-compiler-in-wasm. *Spike first:* a turnkey offline
       client-side compile artifact is unproven; feasibility spike before it earns a slot.
       *Langbox spike done (2026-07-15, ON HOLD -- see docs/langbox.md):* real `zig` 0.14.0 inside
