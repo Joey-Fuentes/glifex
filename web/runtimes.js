@@ -742,6 +742,32 @@ const Runtimes = (() => {
   }
 
 
+  // riscv64 (Bx-10b): Blink runs the guest riscv64 as+ld (x86-64 musl-static
+  // binaries that EMIT riscv64 -- Blink is x86-64-guest-only and never executes
+  // riscv64); libriscv, compiled to wasm32, executes the linked ELF. Module
+  // worker, off the main thread. Single-threaded, no SAB -- like C#, Rust and
+  // arm64 -- so it needs no cross-origin isolation, though it is tested isolated
+  // because the live site is. Simpler than arm64's: libriscv takes the ELF
+  // whole, so there is no PT_LOAD relocation. See docs/libriscv-riscv64.md.
+  async function loadAsmRiscv64() {
+    if (!(await vendored("asm-riscv64"))) return null;
+    const st = { worker: null };
+    return {
+      async run(source, cases) {
+        try {
+          const res = await callWorker(
+            st, "asm-riscv64-worker.js", { id: "run", source, cases },
+            60000, "Your riscv64 program took too long (over 60s) -- likely a runaway loop, or far more instructions than expected on these inputs.",
+            { type: "module" });
+          if (res.id === "error") return { error: res.error };
+          const { id, ...out } = res;
+          return out;
+        } catch (e) { return { error: String((e && e.message) || e) }; }
+      },
+    };
+  }
+
+
   // Java (Bx-8): vendored teavm-javac (OpenJDK javac + TeaVM -> wasm) compiles the
   // solution in a MODULE worker and runs it against cases fed at RUNTIME (cases are
   // NOT baked into source -- teavm-javac's javac has a low compile ceiling). Off the
@@ -769,7 +795,7 @@ const Runtimes = (() => {
     };
   }
 
-  const LOADERS = { java: loadJava, typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, "asm-x86_64": loadAsmX86, "asm-arm64": loadAsmArm64, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
+  const LOADERS = { java: loadJava, typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, "asm-x86_64": loadAsmX86, "asm-arm64": loadAsmArm64, "asm-riscv64": loadAsmRiscv64, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed
