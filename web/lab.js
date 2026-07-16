@@ -213,6 +213,17 @@ const GlifexLab = (() => {
     const probe = await runOnce(probePlan.map((c) => mkCase(c, oracle)));
     if (probe.error) return void (panel.innerHTML = card(`<div class="lab-verdict bad">${esc(probe.error)}</div>`));
     const tierId = probe.results && probe.results[0] && probe.results[0].cycles != null ? "det" : "wall";
+    // The runtime NAMES ITS OWN METRIC. A core that models cycles reports an
+    // aggregate `cycles` (retro-worker does, gated on hasCycles && cfg.clockHz);
+    // the single-stepped asm cores never do -- they count instructions and alias
+    // cycles per row so the det tier picks them up.
+    //
+    // Derived rather than enumerated: this used to be
+    //   X.lang === "asm-x86_64" || X.lang === "asm-arm64" ? "instructions" : "cycles"
+    // at two sites -- a hand-kept list that needed a new entry per det track.
+    // That is the same shape as the missing detByLang that shipped a broken
+    // arm64 ladder to production.
+    const detUnit = probe.cycles != null ? "cycles" : "instructions";
     const tier = C.TIERS[tierId];
     const reps = (C.LANG_OVERRIDES[lang] && C.LANG_OVERRIDES[lang].reps) || tier.reps;
 
@@ -424,7 +435,7 @@ const GlifexLab = (() => {
       }
       const spaceStackJ = (declaredSpace && spaceStackSeries.ns.length >= 2)
         ? E.judgeSpaceUpper(spaceStackSeries.ns, spaceStackSeries.ys, declaredSpace, tier.tol) : null;
-      const common = { p, lang, cfg, tierId, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, spaceStackSeries, spaceStackJ, declaredSpace, spaceApprox: jsLike || workerSpaceApprox, spaceApproxKind: workerSpaceApproxKind, spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
+      const common = { p, lang, cfg, tierId, detUnit, tier, reps, sizes, modes, detMeta, seedBase, spaceBy, boundMode, totalRetries, spaceJ, spaceSeries, spaceStackSeries, spaceStackJ, declaredSpace, spaceApprox: jsLike || workerSpaceApprox, spaceApproxKind: workerSpaceApproxKind, spaceStatus: spaceStatus || null, spaceProbeVariant: (spaceStatus && spaceStatus.variant) || null };
       if (boundMode === "empirical-match") {
         const variantBounds = {};
         for (const [variant, b] of Object.entries(langComplexity)) {
@@ -508,7 +519,7 @@ const GlifexLab = (() => {
     // metric is an exact instruction count. The retro cores (6502/sm83/i8080)
     // model cycles. Labelling instructions as "cycles" would claim a timing
     // fidelity VIXL does not have and never claimed.
-    const unit = tierId === "det" ? (X.lang === "asm-x86_64" || X.lang === "asm-arm64" ? "instructions" : "cycles") : "ns";
+    const unit = tierId === "det" ? X.detUnit : "ns";
     const vline = (kind, html) => `<div class="lab-verdict ${kind}">${html}</div>`;
 
     let html = "";
@@ -793,7 +804,7 @@ const GlifexLab = (() => {
       &middot; oracle: javascript clean &middot; correctness-gated${overhead}
       &middot; ${new Date().toISOString().slice(0, 10)}`;
   }
-  const unitOf = (X) => (X.tierId === "det" ? (X.lang === "asm-x86_64" || X.lang === "asm-arm64" ? "instructions" : "cycles") : "ns");
+  const unitOf = (X) => (X.tierId === "det" ? X.detUnit : "ns");
 
   function init() {
     const btn = $("#lab-btn");
