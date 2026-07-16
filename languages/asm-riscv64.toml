@@ -1,0 +1,14 @@
+name = "asm-riscv64"
+display = "RISC-V assembly (RV64GC)"
+extension = "s"
+practice_file = "practice.s"
+family = "assembly"
+arch = "riscv64"
+platforms = ["linux"]      # RISC-V Linux; there is no darwin/riscv64 target
+scaffold = false           # added per-problem by hand: needs a per-problem C shim
+detect = "gcc --version"
+install_hint = "gcc assembles .s natively on RISC-V hosts (VisionFive, LicheePi, Milk-V, QEMU riscv64 guests)"
+test_cmd = "gcc -std=c11 -O2 -o .glifex_bin harness.c *.s && ./.glifex_bin {variant}"
+run_cmd = "gcc -std=c11 -O2 -o .glifex_bin harness.c *.s && ./.glifex_bin {variant}"
+bench_cmd = "gcc -std=c11 -O2 -o .glifex_bin harness.c *.s && ./.glifex_bin {variant} --bench"
+tool_version = "gcc 14"

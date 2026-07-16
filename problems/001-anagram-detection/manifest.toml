@@ -21,6 +21,7 @@ dart        = { variants = ["practice", "clean", "optimized"] }
 zig         = { variants = ["practice", "clean", "optimized"] }
 asm-x86_64  = { variants = ["practice", "brute-force", "clean", "optimized"] }
 asm-arm64   = { variants = ["practice", "brute-force", "clean", "optimized"] }
+asm-riscv64 = { variants = ["practice", "brute-force", "clean", "optimized"] }   # RV64GC (browser: guest as+ld under Blink, executed on libriscv)
 
 [exclusions]
 wat = "not-applicable: string inputs; WAT's contract is numeric-only"
@@ -65,6 +66,14 @@ notes = "naive per-character count compare -- the O(n^2) baseline"
 time = "O(n^2)"
 space = "O(1)"
 notes = "naive per-character count compare -- the O(n^2) baseline"
+[complexity.asm-riscv64.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "naive per-character count compare -- the O(n^2) baseline"
+[complexity.asm-riscv64.optimized]
+time = "O(n)"
+space = "O(1)"
+notes = "same counting table as clean, plus an early exit the moment a slot goes negative. Ties clean on a true anagram (nothing to exit early from) and wins ~35% on the length-mismatch family"
 
 [complexity.java.brute-force]
 time = "O(n^2)"

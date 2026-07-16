@@ -22,6 +22,7 @@ zig         = { variants = ["practice", "clean", "optimized"] }
 wat         = { variants = ["practice", "brute-force", "clean", "optimized"] }
 asm-x86_64  = { variants = ["practice", "brute-force", "clean", "optimized"] }
 asm-arm64   = { variants = ["practice", "brute-force", "clean", "optimized"] }   # AAPCS64 (browser: guest as+ld under Blink, executed on VIXL)
+asm-riscv64 = { variants = ["practice", "brute-force", "clean", "optimized"] }   # RV64GC (browser: guest as+ld under Blink, executed on libriscv)
 
 [complexity.default.practice]
 time = "O(n)"
@@ -38,6 +39,14 @@ space = "O(n)"
 time = "O(n^2)"
 space = "O(1)"
 notes = "every pair, no allocation -- the O(n^2) baseline"
+[complexity.asm-riscv64.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "every pair, no allocation -- the O(n^2) baseline"
+[complexity.asm-riscv64.optimized]
+time = "O(n)"
+space = "O(n)"
+notes = "same stack-allocated hash map as clean, Fibonacci multiply-shift hash instead of masking the low bits -- shorter probe chains on clustered inputs"
 [complexity.asm-arm64.optimized]
 time = "O(n)"
 space = "O(n)"

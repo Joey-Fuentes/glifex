@@ -19,6 +19,7 @@ csharp      = { variants = ["practice", "brute-force", "clean", "optimized"] }
 rust        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 asm-x86_64  = { variants = ["practice", "brute-force", "clean", "optimized"] }
 asm-arm64   = { variants = ["practice", "brute-force", "clean", "optimized"] }   # AAPCS64 (browser: guest as+ld under Blink, executed on VIXL)
+asm-riscv64 = { variants = ["practice", "brute-force", "clean", "optimized"] }   # RV64GC (browser: guest as+ld under Blink, executed on libriscv)
 
 [complexity.default.practice]
 time = "O(n)"
@@ -56,6 +57,14 @@ notes = "naive recursion -- exponential time, linear call-stack depth"
 time = "O(log n)"
 space = "O(1)"
 notes = "fast doubling"
+[complexity.asm-riscv64.brute-force]
+time = "O(phi^n)"
+space = "O(n)"
+notes = "naive recursion -- exponential time, linear call-stack depth"
+[complexity.asm-riscv64.optimized]
+time = "O(log n)"
+space = "O(1)"
+notes = "fast doubling. RV64G has no count-leading-zeros (clz is Zbb, unlike aarch64), so the MSB comes from a 3-step binary search -- fib(93) is the largest that fits in u64, so n < 128"
 
 [complexity.java.brute-force]
 time = "O(phi^n)"
