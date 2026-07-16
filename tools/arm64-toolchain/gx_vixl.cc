@@ -24,13 +24,39 @@
 //                                   abort; keep it even in release
 
 #include <cstdint>
+#include <cstdio>
 
 #include "aarch64/decoder-aarch64.h"
 #include "aarch64/simulator-aarch64.h"
 
 using vixl::aarch64::Decoder;
 using vixl::aarch64::Instruction;
+using vixl::aarch64::SimStack;
 using vixl::aarch64::Simulator;
+
+// VIXL's default guest stack is 8 KB usable. Measured, not assumed: the 9th KB
+// trips "Attempt to write to stack guard region" (simulator-aarch64.h:420).
+//
+// That is tiny for assembly -- 001's clean.s spends 1 KB on a counting table
+// without thinking, and a two-sum hash table at the Lab's n=1024 wants ~32 KB.
+// Worse, it is an INVISIBLE cliff: native gives 8 MB, so an over-deep .s passes
+// on the CLI and traps only in the browser, through no fault of the author.
+//
+// It is small because of what VIXL is FOR. Its README: "VIXL was developed for
+// JavaScript engines" -- the simulator runs JIT-generated code FRAGMENTS on an
+// x86 dev box, and a JIT'd function has a small known frame. A default tuned
+// for a different workload, not a safety limit.
+//
+// 1 MB is a conventional thread-stack size (Windows' default; musl uses 128 KB;
+// glibc's main thread 8 MB), so it is the number a contributor never has to
+// think about. Measured across default/64K/256K/1M builds:
+//   - SimStack(N) yields EXACTLY N usable
+//   - the guard SURVIVES at every size (every overflow TRAPs; zero silent
+//     corruption) -- usable_size_, base_guard_size_ and limit_guard_size_ are
+//     independent fields, so raising the stack does not weaken the guard
+//   - gx_init stays flat (~103 ms at every size) -- Allocate() does not zero
+// Free, so take the headroom. See docs/vixl-arm64.md.
+static const size_t kGuestStackBytes = 1 << 20;
 
 static Decoder *g_dec = nullptr;
 static Simulator *g_sim = nullptr;
@@ -48,7 +74,9 @@ int gx_ptr_bytes(void) { return (int)sizeof(uintptr_t); }
 int gx_init(void) {
   if (g_sim != nullptr) return 0;
   g_dec = new Decoder();
-  g_sim = new Simulator(g_dec);
+  // Passing the stack means passing the stream too -- the signature is
+  // Simulator(Decoder*, FILE* = stdout, SimStack::Allocated = SimStack().Allocate()).
+  g_sim = new Simulator(g_dec, stdout, SimStack(kGuestStackBytes).Allocate());
   if (g_sim == nullptr) return -1;
   g_sim->ResetState();
   return 0;
