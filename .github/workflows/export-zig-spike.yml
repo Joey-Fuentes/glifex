@@ -1,0 +1,379 @@
+# THROWAWAY spike -- Bx-11 Zig, ROUND 8. Never merged. Read the SUMMARY step.
+#
+# ROUNDS 1-4 CRASHED BECAUSE OF ME, NOT ZIG. zigtools/playground has had this in
+# production at playground.zigtools.org the whole time. Their build.zig passes
+# five options to zig's build: .target .optimize .version-string .no-lib .dev.
+# It does NOT pass use-llvm. zig's own --help, which I printed in round 1 and
+# then grepped past:
+#     -Duse-llvm      Use the llvm backend                                 <- what the HOST compiles WITH
+#     -Denable-llvm   Build self-hosted compiler with LLVM backend enabled <- what the RESULT CONTAINS
+# I set BOTH false. -Duse-llvm=false forced the HOST to build zig.wasm with zig's
+# own self-hosted wasm backend -- the path that SIGSEGVs on a wild pointer at
+# ip=0xa596a4b (32.1 GiB fault addr, sp at 127.8 TiB, 9 frames, two threads at
+# the same ip). That crash is real and worth an upstream report. Nothing ever
+# required us to be on that road. The host is a build machine; let it use LLVM.
+# -Ddev=wasm is what keeps LLVM out of the ARTIFACT.
+#
+# WHAT ELSE THE PLAYGROUND SETTLES:
+#   * A FORK: zigtools/zig ref wasm32-wasi @1c430bc1. zig.patch (vendored here,
+#     8 lines) rewrites one switch in src/dev.zig: drop .stdio_listen and
+#     .incremental, ADD .build_exe_command/.sema/.ast_gen, and crucially
+#     "else => false" instead of falling back to Env.sema.supports(feature).
+#   * That CORRECTS my round-2 reading. I saw dev.zig's comment
+#         zig build-* -fno-llvm -fno-lld -target wasm32-* --listen=-
+#     and called it "upstream ships a preset for our exact command line".
+#     Nearly the opposite: upstream's wasm env speaks the --listen=- protocol and
+#     has no build_exe_command, i.e. it is for developing the wasm backend ON A
+#     HOST. The patch is what makes a compiler you can invoke as "zig build-exe".
+#   * -fno-entry -- their comment: "prevent the native webassembly backend from
+#     adding a start function". That is my round-2 START-section finding, fixed
+#     at compile time instead of my post-hoc byte-strip. Same semantics, theirs
+#     is the right mechanism.
+#   * -fno-compiler-rt + a HOST-built libcompiler_rt.a -- their comment: "the
+#     self hosted webassembly backend cannot compile it by itself".
+#   * The sysroot answer: tar only lib/std (not the 196 MB lib/), gunzip in the
+#     browser with DecompressionStream, untar with @andrewbranch/untar.js.
+#   * @bjorn3/browser_wasi_shim 0.4.x -- the shim web/rust-worker.js ALREADY
+#     bundles for Bx-6. Their Directory takes an ARRAY of pairs, not a Map.
+#
+# THIS JOB: build it, gate it under wasmtime, then DEMO it in a real Chromium
+# under Playwright -- a Zig compiler that is itself wasm, compiling Zig source
+# in the page, and the page running the result. Plus two informational arms on
+# whether we can stay on upstream instead of a fork.
+name: export-zig-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-zig-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make the output dir
+        run: mkdir -p "$GITHUB_WORKSPACE/zig-spike-out"
+
+      # NOT mlugg/setup-zig. Round 5 died here and never reached a probe: v1 asked
+      # /builds for zig-linux-x86_64-0.16.0.tar.xz -- the NIGHTLY path and the OLD
+      # filename order -- and got 404 from every mirror AND ziglang.org. Round 3
+      # had already proved index.json fetches 0.16.0 and runs it. I fixed SOURCE
+      # acquisition that way and left the HOST BINARY on a third-party action.
+      - name: Get host zig 0.16.0 from index.json, the way that already worked
+        run: |
+          Z=$(bash tools/zig-spike/get-host-zig.sh 0.16.0 "$HOME/hostzig")
+          echo "HOSTZIG=$Z" >> "$GITHUB_ENV"
+          echo "## host zig: $Z"
+          "$Z" version | sed 's/^/     reports version /'
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Install wasmtime
+        run: |
+          curl -sSf https://wasmtime.dev/install.sh | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: PROBE 0 -- upstream 0.16.0 SOURCE, this time with its mouth open
+        continue-on-error: true
+        run: |
+          # ROUND 6 GAVE ME 431 BYTES AND NO DIAGNOSTIC HERE. Between the URL echo
+          # and the error there was no curl error, no tar error, nothing. The URL
+          # was never in doubt -- it printed exactly
+          #     https://ziglang.org/download/0.16.0/zig-0.16.0.tar.xz
+          # which is byte-identical to ziglang.org's own page. I simply captured
+          # nothing: no set -x, no rc, stderr unredirected, and curl -s silencing
+          # the one thing I needed. Every command below reports its own status.
+          set -x
+          df -h / | sed 's/^/     df /'
+          curl -fL --retry 3 https://ziglang.org/download/index.json -o "$HOME/idx.json"
+          U=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['0.16.0']['src']['tarball'])" "$HOME/idx.json")
+          S=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['0.16.0']['src'].get('shasum',''))" "$HOME/idx.json")
+          # || CRC=$? -- NOT a bare CRC=$? on the next line. Under bash -e a failing
+          # curl kills the step before the capture runs, which is EXACTLY round 6's
+          # 431 bytes of silence and round 7's unread APPLY_RC. This step exists to
+          # stop that, and shipped with the bug in it. Only a successful download hid it.
+          CRC=0
+          curl -fL --retry 3 "$U" -o "$HOME/up.tar.xz" || CRC=$?
+          set +x
+          echo "## url  : $U"
+          echo "## curl : rc=$CRC"
+          ls -la "$HOME/up.tar.xz" 2>&1 | sed 's/^/     /'
+          df -h / | sed 's/^/     df /'
+          if [ "$CRC" != "0" ]; then
+            echo "## THE DOWNLOAD ITSELF FAILED, rc=$CRC -- round 6's silent killer, named at last"
+            echo "S/up016: SKIPPED -- src download rc=$CRC" >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+            exit 1
+          fi
+          file "$HOME/up.tar.xz" | sed 's/^/     /'
+          if [ -n "$S" ]; then
+            G=$(sha256sum "$HOME/up.tar.xz" | cut -d" " -f1)
+            echo "## shasum want=$S"
+            echo "##        got =$G"
+            if [ "$G" != "$S" ]; then echo "## SHASUM MISMATCH"; exit 1; fi
+          fi
+          mkdir -p "$HOME/up016"
+          TRC=0
+          tar -xJf "$HOME/up.tar.xz" -C "$HOME/up016" --strip-components=1 || TRC=$?
+          echo "## tar  : rc=$TRC"
+          df -h / | sed 's/^/     df /'
+          if [ "$TRC" != "0" ]; then
+            echo "S/up016: SKIPPED -- src extract rc=$TRC" >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+            exit 1
+          fi
+          ls "$HOME/up016" | head -10 | sed 's/^/     /'
+          test -f "$HOME/up016/build.zig" || { echo "## no build.zig in the src tarball"; exit 1; }
+          echo "## upstream 0.16.0 src ready: $(du -sh "$HOME/up016" | cut -f1)"
+
+      - name: PROBE 1 -- MEASURE the fork's real delta against upstream
+        continue-on-error: true
+        timeout-minutes: 45
+        run: |
+          # Round 7 proved the published zig.patch is NOT the fork: upstream 0.16.0
+          # dies at src/main.zig:3743 on self_exe_path, nowhere near dev.zig. So
+          # stop arguing about 8 lines and measure the whole thing.
+          bash tools/zig-spike/fork-delta.sh 1c430bc130989d285723de8b7aa8e3c77297a266 "$HOME/forkfull"
+
+      - name: PROBE 2 -- apply the published zig.patch to 0.16.0, and REPORT the rc
+        continue-on-error: true
+        run: |
+          test -f "$HOME/up016/build.zig" || { echo "## no upstream src; skipping"; exit 1; }
+          echo "## ROUND 7 NEVER ANSWERED THIS. The step was:"
+          echo "##     ( cd ... && git apply -v ... ) > log 2>&1"
+          echo "##     APPLY_RC=\$?"
+          echo "## and under bash -e a failing simple command kills the step BEFORE the"
+          echo "## next line runs -- so APPLY_RC was never read, nothing was reported, and"
+          echo "## up016-patched was silently left UNPATCHED. Both 0.16 arms then compiled"
+          echo "## identical unpatched source and I nearly read that as a result. I wrote"
+          echo "## that bug in the very lines where I was fixing the sed-masking bug."
+          echo "## The fix is one character: || RC=\$? makes the command exempt."
+          rm -rf "$HOME/up016-patched"
+          cp -a "$HOME/up016" "$HOME/up016-patched"
+          APPLY_RC=0
+          ( cd "$HOME/up016-patched" && git apply -v "$GITHUB_WORKSPACE/tools/zig-spike/zig.patch" ) \
+            > "$HOME/apply.log" 2>&1 || APPLY_RC=$?
+          sed 's/^/     /' "$HOME/apply.log"
+          echo "## git apply rc=$APPLY_RC   <- round 7 never got to print this line"
+          if [ "$APPLY_RC" != "0" ]; then
+            echo "P/zig.patch: does NOT apply to 0.16.0 (rc=$APPLY_RC)" >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+            rm -rf "$HOME/up016-patched"
+          else
+            echo "## it applied. What actually landed in dev.zig:"
+            diff -u "$HOME/up016/src/dev.zig" "$HOME/up016-patched/src/dev.zig" | sed 's/^/     /' || true
+            echo "P/zig.patch: APPLIES to 0.16.0" >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+          fi
+
+      - name: PROBE 3 -- apply the FULL fork delta to 0.16.0
+        continue-on-error: true
+        run: |
+          D="$GITHUB_WORKSPACE/zig-spike-out/fork-delta.patch"
+          if [ ! -s "$D" ]; then echo "## no fork delta measured; skipping"; exit 1; fi
+          test -f "$HOME/up016/build.zig" || { echo "## no upstream src; skipping"; exit 1; }
+          echo "## If the whole delta applies to a pinned 0.16.0, Bx-11 vendors it and"
+          echo "## never depends on someone else's branch. That is the production shape."
+          rm -rf "$HOME/up016-full"
+          cp -a "$HOME/up016" "$HOME/up016-full"
+          RC=0
+          ( cd "$HOME/up016-full" && git apply -v --check "$D" ) > "$HOME/full-check.log" 2>&1 || RC=$?
+          echo "## git apply --check rc=$RC"
+          tail -25 "$HOME/full-check.log" | sed 's/^/     /'
+          if [ "$RC" != "0" ]; then
+            echo "## The full delta does not apply cleanly to 0.16.0. Expected if the fork"
+            echo "## is based after 0.16.0 -- PROBE 1 says which."
+            echo "P/fork-delta: does NOT apply to 0.16.0 (rc=$RC)" >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+            rm -rf "$HOME/up016-full"
+          else
+            RC2=0
+            ( cd "$HOME/up016-full" && git apply "$D" ) > "$HOME/full-apply.log" 2>&1 || RC2=$?
+            echo "## git apply rc=$RC2"
+            if [ "$RC2" = "0" ]; then
+              echo "P/fork-delta: APPLIES to 0.16.0" >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+            else
+              rm -rf "$HOME/up016-full"
+            fi
+          fi
+
+      - name: PROBE 4 -- fetch the fork, as the known-good CONTROL
+        continue-on-error: true
+        run: |
+          echo "## The fork is proven (round 6: 1624 ms in Chromium) but it CANNOT ship:"
+          echo "## it stamps version-string 0.17.0 and there is no 0.17 release. Users"
+          echo "## install zig from brew/ziglang.org, which serve releases; a nightly pin"
+          echo "## is not a pin (round 2 watched 0.17.0-dev.1413 404 on every mirror)."
+          echo "## So it is here as a control: if 0.16.0 fails, this says whether the"
+          echo "## recipe or the version is at fault."
+          mkdir -p "$HOME/fork" && cd "$HOME/fork"
+          git init -q .
+          git remote add origin https://github.com/zigtools/zig.git
+          git fetch -q --depth 1 origin 1c430bc130989d285723de8b7aa8e3c77297a266
+          git checkout -q FETCH_HEAD
+          echo "## fork at $(git rev-parse HEAD)"
+
+      - name: PROBE 5 -- BUILD every candidate. 62 seconds each, so build them all
+        continue-on-error: true
+        timeout-minutes: 60
+        run: |
+          # Round 6's fork build took 1m2s: -Ddev=wasm trims so much of the compiler
+          # that all three arms cost ~3 minutes. No reason to choose in advance.
+          for A in "up016-full:$HOME/up016-full" "up016-patched:$HOME/up016-patched" "up016-plain:$HOME/up016" "fork:$HOME/fork"; do
+            L=${A%%:*}; D=${A#*:}
+            if [ ! -f "$D/build.zig" ]; then
+              echo "======== $L :: NO SOURCE, skipping (the roster below will say so)"
+              continue
+            fi
+            echo "======== BUILD $L"
+            bash tools/zig-spike/build-zig-wasm.sh "$HOSTZIG" "$D" "$L" \
+              "$GITHUB_WORKSPACE/zig-spike-out/$L" || true
+          done
+
+      - name: PROBE 6 -- GATE every compiler that built
+        continue-on-error: true
+        timeout-minutes: 60
+        run: |
+          for A in "up016-full:$HOME/up016-full" "up016-patched:$HOME/up016-patched" "up016-plain:$HOME/up016" "fork:$HOME/fork"; do
+            L=${A%%:*}; D=${A#*:}
+            P="$GITHUB_WORKSPACE/zig-spike-out/zigwasm-$L.path"
+            if [ ! -f "$P" ]; then echo "======== $L :: no zig.wasm, nothing to gate"; continue; fi
+            echo "======== GATE $L"
+            bash tools/zig-spike/gate.sh "$(cat "$P")" "$GITHUB_WORKSPACE/zig-spike-out/$L" \
+              "$D" "$GITHUB_WORKSPACE/tools/zig-spike/katas" "$L" || true
+          done
+
+      - name: PROBE 7 -- THE DEMO. real Chromium, preferring the shippable 0.16.0
+        continue-on-error: true
+        timeout-minutes: 60
+        run: |
+          # Preference order is the PRODUCTION order, not the easy order: 0.16.0 is
+          # the only candidate the CLI can pin, so it demos if it can. The fork only
+          # demos if 0.16.0 could not -- and the summary says which you are looking at.
+          L=""
+          for C in up016-full up016-patched up016-plain fork; do
+            if [ -f "$GITHUB_WORKSPACE/zig-spike-out/spelling-$C.txt" ]; then L="$C"; break; fi
+          done
+          if [ -z "$L" ]; then echo "## nothing gated -- no demo is possible"; exit 1; fi
+          echo "## demoing: $L"
+          echo "$L" > "$GITHUB_WORKSPACE/zig-spike-out/demoed.txt"
+          D="$GITHUB_WORKSPACE/tools/zig-spike/demo"
+          cp "$(cat "$GITHUB_WORKSPACE/zig-spike-out/zigwasm-$L.path")" "$D/zig.wasm"
+          cp "$GITHUB_WORKSPACE/zig-spike-out/$L/libcompiler_rt.a" "$D/"
+          cp "$GITHUB_WORKSPACE/zig-spike-out/$L/zig.tar.gz" "$D/"
+          cp "$GITHUB_WORKSPACE/zig-spike-out/kata-$L.zig" "$D/kata.zig"
+          cp "$GITHUB_WORKSPACE/zig-spike-out/expected-$L.txt" "$D/expected.txt"
+          ls -la "$D"/zig.wasm "$D"/libcompiler_rt.a "$D"/zig.tar.gz "$D"/kata.zig | awk '{print "     " $5, $9}'
+          cd "$D"
+          npm init -y >/dev/null
+          npm install --no-fund --no-audit @bjorn3/browser_wasi_shim @andrewbranch/untar.js
+          npm install --no-fund --no-audit -D esbuild @playwright/test
+          npx esbuild demo.mjs --bundle --format=esm --outfile=bundle.js --log-level=warning
+          npx playwright install --with-deps chromium
+          npx playwright test --config=playwright.config.js
+          echo "D: DEMO PASS on $L -- a real Chromium compiled Zig with zig.wasm and ran it" \
+            >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+
+      - name: SUMMARY -- the deliverable
+        if: always()
+        run: |
+          echo "## ---- Bx-11 Zig spike round 8: what does the fork ACTUALLY change ----"
+          echo "##"
+          # Round 5 aborted at step 4 and printed a summary of pure silence: no
+          # artifacts, no report, no explanation. An empty summary looked like a
+          # job that did nothing rather than one that fell at the first fence.
+          # Same lesson as round 3's vanished 0.16.0: name the hole.
+          if [ -z "${HOSTZIG:-}" ] || [ ! -x "${HOSTZIG:-/nonexistent}" ]; then
+            echo "## *** THE HOST COMPILER WAS NEVER ACQUIRED ***"
+            echo "##     Every probe below was skipped. This is a HOLE, not a result:"
+            echo "##     it says nothing whatever about Zig, the fork, or route A."
+            echo "##     Round 5 died exactly here on setup-zig@v1 mirror 404s."
+            echo "##"
+          else
+            echo "## host zig: $HOSTZIG ($("$HOSTZIG" version 2>&1))"
+            echo "##"
+          fi
+          echo "## artifacts that EXIST -- these outrank every step status:"
+          # find, not a fixed-depth glob. Round 6's glob was zig-spike-out/*/zig.wasm
+          # while --prefix puts it at fork/BIN/zig.wasm -- so the section headed
+          # "artifacts that EXIST, these outrank every report line" silently omitted
+          # the compiler itself, the single most important artifact in the job, and
+          # the report line I keep distrusting is what actually carried it.
+          find "$GITHUB_WORKSPACE/zig-spike-out" \( -name '*.wasm' -o -name '*.tar.gz' \
+               -o -name '*.a' -o -name '*.png' \) -printf '##   %s %p\n' 2>/dev/null \
+            | sort -k2 || echo "##   (none)"
+          echo "##"
+          echo "## which kata spelling this compiler accepted:"
+          if [ -f "$GITHUB_WORKSPACE/zig-spike-out/spelling.txt" ]; then
+            S=$(cat "$GITHUB_WORKSPACE/zig-spike-out/spelling.txt")
+            echo "##   kata-$S.zig"
+            if [ "$S" = "c" ]; then
+              echo "##   NOTE: c is the hello-world fallback. It prints a LITERAL string, so"
+              echo "##   the demo proves the pipeline but NOT that anything was computed."
+            else
+              echo "##   a/b compute 140 at runtime, so the demo shows real codegen, not an echo."
+            fi
+          else
+            echo "##   (none -- the gate never found one)"
+          fi
+          echo "##"
+          echo "## report:"
+          cat "$GITHUB_WORKSPACE/zig-spike-out/report.txt" 2>/dev/null | sed 's/^/##   /' || echo "##   (empty)"
+          echo "##"
+          echo "## which compiler the browser demo actually ran:"
+          if [ -f "$GITHUB_WORKSPACE/zig-spike-out/demoed.txt" ]; then
+            DM=$(cat "$GITHUB_WORKSPACE/zig-spike-out/demoed.txt")
+            echo "##   $DM"
+            case "$DM" in
+              up016-*) echo "##   SHIPPABLE. 0.16.0 is a real release; the CLI can pin it via" ;
+                       echo "##   brew/ziglang.org, so browser and CLI can speak the same dialect." ;;
+              fork)    echo "##   NOT SHIPPABLE as-is. The fork stamps version-string 0.17.0 and" ;
+                       echo "##   there is no 0.17 release. Users cannot install it, so the CLI" ;
+                       echo "##   could never match, and Bx-11 requires verdict-identical CLI." ;;
+            esac
+          else
+            echo "##   (none -- nothing gated)"
+          fi
+          echo "##"
+          echo "## THE PRODUCTION QUESTION -- browser and CLI must be the SAME zig, or a"
+          echo "## solution that compiles in one will not compile in the other. The CLI pins"
+          echo "## 0.14 (zig.toml tool_version) and its template says"
+          echo "##     pub fn main() !void / std.io.getStdOut().writer()"
+          echo "## while the fork accepted"
+          echo "##     pub fn main(init: std.process.Init) / std.Io.File.stdout()"
+          echo "## Different languages. And the fork CANNOT ship: it stamps version-string"
+          echo "## 0.17.0, there is no 0.17 release, and users install releases."
+          echo "##"
+          echo "## ROUND 7 KILLED THE EASY ANSWER: upstream 0.16.0 does not build for"
+          echo "## wasm32-wasi at all -- src/main.zig:3743, self_exe_path is void where"
+          echo "## ?[]const u8 is wanted. That is nowhere near dev.zig, so the published"
+          echo "## 8-line zig.patch is NOT the fork's delta. Hence PROBE 1."
+          echo "##"
+          echo "## how to read this:"
+          echo "##   D: fork delta = N commits/files/lines -> the whole answer is that number."
+          echo "##       Small and confined to src/ -> vendor it against a pinned tag, done."
+          echo "##       Sprawling -> Bx-11 cannot own it; wait for upstream."
+          echo "##   'base is an ancestor of 0.16.0: NO' -> the fork branched AFTER 0.16.0,"
+          echo "##       so no patch makes 0.16.0 work and CLI parity must target the NEXT"
+          echo "##       release. That would park Bx-11 until then, and that is a real answer."
+          echo "##   up016-full GATED     -> ship it: pinned 0.16.0 + the vendored delta."
+          echo "##   up016-patched GATED  -> even better: the 8 lines were enough after all,"
+          echo "##       and dev.zig's else=>false comptime-eliminated the self_exe_path path."
+          echo "##   up016-* BUILT but NOT gated -> a build is not a result. Without"
+          echo "##       .build_exe_command the guest cannot be invoked as 'zig build-exe'."
+          echo "##   only fork GATED      -> 0.16.0 cannot do this. Bx-11 waits for 0.17."
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zig-spike-r8
+          if-no-files-found: warn
+          path: |
+            zig-spike-out/
+            zig-spike-out/fork-delta.patch
+            tools/zig-spike/demo/demo.mjs
+            tools/zig-spike/demo/index.html
+            tools/zig-spike/demo/demo.spec.js
+            tools/zig-spike/*.sh
+            tools/zig-spike/zig.patch
+            tools/zig-spike/katas/
