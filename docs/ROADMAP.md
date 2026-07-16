@@ -285,6 +285,19 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       `docs/ci-dependency-hardening.md`. *Cheapest first step: a scheduled
       cold-vendor canary with no cache, so the next break surfaces on a Tuesday
       instead of at the next cache-key bump.*
+- [ ] **BUG (Bx-7). x86-64 cannot reach its own Lab ladder ceiling.** Found by
+      `e2e/lab-ladder-ceiling.spec.js`, confirmed on the live site:
+      `asm-x86_64` 002 at n=512 blows loadAsmX86 30s worker budget
+      (30,001ms TIMEOUT), while 001 at the same n takes 3,906ms and `asm-arm64`
+      does 002 in 6,023ms. `detByLang` declares `[32,64,128,256,512]`; 002 clean
+      is a hash table with linear probing in mmap memory and Blink single-steps
+      every instruction. The Lab runs the WHOLE plan (3 families x 5 sizes), so
+      live Analyze is worse than that one case. Marked `test.fixme` so CI names it
+      every run rather than forgetting it.
+      *Needs a number first:* 002 timed OUT, so nobody knows whether it wants 35s
+      or 5 minutes -- and that decides between raising the timeout and lowering the
+      declared ladder. Declaring a ceiling you cannot reach is the bug either way.
+      *Not urgent:* Run works fine; only Analyze at the top rung is affected.
 - [ ] **Bx-11. Zig** -- self-hosted zig-compiler-in-wasm. *Spike first:* a turnkey offline
       client-side compile artifact is unproven; feasibility spike before it earns a slot.
       *Langbox spike done (2026-07-15, ON HOLD -- see docs/langbox.md):* real `zig` 0.14.0 inside
