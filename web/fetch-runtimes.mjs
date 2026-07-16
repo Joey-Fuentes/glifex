@@ -142,10 +142,34 @@ const RUNTIMES = {
   },
 };
 
+// A bare Node fetch sends no headers and undici defaults to "user-agent: node".
+// teavm.org began answering 415 to it -- and a GET has no body, so a 415 is the
+// server rejecting the CLIENT, not a payload. The site itself is up and the
+// paths are unchanged (a move would be 404), so present as an ordinary browser.
+const FETCH_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+  Accept: "*/*",
+  "Accept-Language": "en-US,en;q=0.9",
+};
+
 async function fetchTo(url, destDir, saveAs) {
   const name = saveAs || url.split("/").pop();
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status}`);
+  const res = await fetch(url, { headers: FETCH_HEADERS, redirect: "follow" });
+  if (!res.ok) {
+    // A bare status code is not diagnosable. Whatever happens next, the log
+    // should say WHY: a 415 carrying an HTML body is a WAF or an error page;
+    // a 415 with nothing is the origin itself.
+    let hint = "";
+    try {
+      const ct = res.headers.get("content-type") || "?";
+      const body = (await res.text()).slice(0, 160).replace(/\s+/g, " ").trim();
+      hint = " content-type=" + ct + (body ? " body=" + JSON.stringify(body) : "");
+    } catch (e) {
+      hint = " (body unreadable)";
+    }
+    throw new Error(String(res.status) + hint);
+  }
   const buf = Buffer.from(await res.arrayBuffer());
   await writeFile(join(destDir, name), buf);
   return { name, url, bytes: buf.length };
