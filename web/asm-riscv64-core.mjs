@@ -131,7 +131,19 @@ async function getRiscv() {
 }
 
 const MAX_STEPS = 5000000;
-const POISON = 0xE00;
+// The poison window must cover the LARGEST stack allocation the Lab's ladder
+// produces, or the depth scan saturates and reports a flat number -- which reads
+// as O(1) and is a confident wrong answer, worse than no measurement.
+//
+// 0xE00 (3584 B) came from asm-x86-core.mjs, where it is correct: x86-64's 002
+// mmaps its hash table, so its stack stays tiny. On THIS track there is no mmap
+// -- no kernel behind the emulator -- so the table is a stack allocation:
+// next_pow2(2n) slots x 16 B = 16 KB at the ladder's top rung (n=512).
+//
+// Measured with the old window: 32:1040  64:2064  128:3584  256:3584  512:3584
+// -- pinned from n=128 up. With this one: 128:4112  256:8208  512:16400, which
+// doubles per rung exactly as O(n) should.
+const POISON = 0x8000;   // 32 KB: 2x the 16 KB the top rung actually needs
 
 export async function driveProblem(source, cases) {
   const m = source.match(/\.globl\s+([A-Za-z_][A-Za-z0-9_]*)/);
@@ -232,7 +244,14 @@ export async function driveProblem(source, cases) {
     results.push({
       i, ok: ret && !threw && eq(got, c.expected), got, expected: c.expected,
       insns, cycles: insns,               // exact -- libriscv counts them
-      peakStack, spaceStack: peakStack,
+      // The Lab reads `.space` for its primary workspace verdict (lab.js:406 ->
+      // spaceBy -> spaceSeries -> spaceJ). For THIS track the stack IS the
+      // workspace: libriscv simulates a CPU and not a kernel, so there is no
+      // mmap behind an ecall and no heap to measure. 002's hash table is a stack
+      // allocation for exactly that reason.
+      //
+      // Deliberately NOT also setting spaceStack -- see asm-arm64-core.mjs.
+      space: peakStack, peakStack,
       ret, threw,
     });
   }
