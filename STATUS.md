@@ -36,7 +36,7 @@ what remains written-but-unrun.
 | Zig         | ✅ | ⏭ env | ✅ | macOS runners: zig 0.14.0 can't locate libSystem at link — runner environment, not code |
 | WAT         | ✅ | ✅ | ⏭ tc | hand-written WebAssembly Text; Node host marshals arrays into linear memory; wabt via apt/brew |
 | asm-x86_64  | ✅ | ⏭ arch | ⏭ ABI | hand-written SysV AT&T; Windows x64 ABI differs (rcx/rdx) — platform-scoped by design |
-| asm-arm64   | ⏭ arch | ✅ | ⏭ ABI | hand-written AAPCS64; Mach-O + ELF dual symbol aliases |
+| asm-arm64   | ⏭ arch | ✅ | ⏭ ABI | hand-written AAPCS64; Mach-O + ELF dual symbol aliases. Browser: ✅ Bx-10 — guest as+ld under Blink, executed on VIXL-in-wasm32 (docs/vixl-arm64.md) |
 
 ⏭ = deliberate, guard-enforced skip, shown honestly in run logs:
 **arch** (wrong hardware) · **ABI** (calling convention scoped by design) ·
