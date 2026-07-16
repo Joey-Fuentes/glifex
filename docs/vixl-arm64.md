@@ -246,21 +246,54 @@ Each cost at least one round trip.
 
 ---
 
-## 7. Remaining work
+## 7. What shipped, and what is still open
 
-1. **Pin binutils.** The spike built from `binutils-gdb` git HEAD
-   (2.47.50.20260716 — built that morning). Vendor a pinned commit.
-2. **Vendor step + cache key** in `pages.yml`/`ci.yml` (`web/vendor/asm-arm64/`,
-   gitignored, `manifest.json` presence probe). **Bump the cache key** or the
-   step is skipped and the runtime never lands.
-3. `web/asm-arm64-worker.js` + `runtimes.js` `loadAsmArm64` + LOADERS entry.
-   Model on `asm-x86-worker.js` / `asm-x86-core.mjs`.
-4. **Corpus**: `asm-arm64` exists for 001 only at 3 variants (no brute-force);
-   x86-64 has 001/002/003 at 4. Expand.
-5. `sizes.wallByLang["asm-arm64"]` — start at Rust's `[64,128,256,512,1024]`.
-6. `e2e/asm-arm64-smoke.spec.js` — chromium, **plain server** (no COI).
-7. Tune `STACK_SIZE` (8 MB) and `INITIAL_MEMORY` (32 MB) down from placeholders.
-8. Build the Simulator **once per worker**; `gx_init` is 771 ms.
+**Bx-10 is built.** #91 vendor step (pinned, self-bumping cache) · #92 worker +
+core + loader · #93/#96 corpus 001/002/003 × 4 variants · #94 guest stack 1 MB ·
+#95 vendor-sync guard · #97 ladders, honest step budget, units, smoke, stack
+probe.
+
+Verified against the deployed toolchain and the deployed VIXL, at the top rung
+of every shipped ladder:
+
+| problem | ladder | clean | optimized | brute-force |
+|---|---|---|---|---|
+| 001 | `[32,64,128,256,512]` | 8,587 | 8,587 | 2,630,160 |
+| 002 | `[32,64,128,256,512]` | 14,090 | 13,634 | 1,180,918 |
+| 003 | `[4,8,12,16,20]` | 101 | 64 | 197,012 |
+
+Ladders mirror `asm-x86_64`. Instruction counts are **exact** — VIXL
+single-steps — so the det tier gets a real signal, not an estimate.
+
+### Still open, in rough priority
+
+1. **`BINUTILS_SHA256` is blank** in `pins.env`. Deliberately: we had never seen
+   the hash, and inventing one is worse than not pinning. The build prints it;
+   one paste closes this.
+2. **`EMSDK_VERSION=latest`** — the only unpinned input. The build records the
+   resolved `emcc --version` in the manifest, so a regression is at least
+   attributable. Suspect for the unexplained `gx_init` swing (103 ms on spike
+   builds vs 267 ms on the deployed one — same code).
+3. **`STACK_SIZE=8388608` / `INITIAL_MEMORY=33554432`** in `build-vixl.sh` are
+   "take it off the table" values, never tuned against a measured high-water.
+   (Not to be confused with the *guest* stack, which is measured — §3.)
+4. **001's `clean` and `optimized` are the same algorithm** — both 8,587
+   instructions, so they plot exactly on top of each other in Compare. Matches
+   the x86-64 track's own 002 (both "hash table, linear probing"), so it is
+   precedent rather than defect, but it is a dull lesson for the one track with
+   exact counts. 002 does it properly: 14,090 vs 13,634, the Fibonacci hash
+   earning its keep.
+5. **Spike branches** `chore/export-armas-spike-*` and `chore/export-vixl-*` are
+   throwaway by design and never merged (like `chore/export-rust-vendor`).
+   Deletable.
+6. **#93, #94 and #95 carry the wrong commit subject** — all three squash-merged
+   with #91's message ("vendor the arm64 toolchain"). The PR titles and bodies
+   on GitHub are correct; only the commit subjects lie. What they really are:
+   **#93** corpus 001+003 · **#94** guest stack 8 KB → 1 MB · **#95** the
+   vendor-sync guard. Cause: the batch generator substituted the commit message
+   by regex, the anchor matched inside #91's body instead of at its end, and the
+   substitution silently did not fire. Payloads were verified obsessively; the
+   commit message was the one artifact with no check at all.
 
 ---
 
