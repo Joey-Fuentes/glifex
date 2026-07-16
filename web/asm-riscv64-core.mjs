@@ -182,7 +182,11 @@ export async function driveProblem(source, cases) {
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i];
-    M._gx_reset();                        // reloads the ELF: fresh memory per case
+    // machine.reset(), NOT a rebuild. Each Machine allocates a
+    // 2^RISCV_ENCOMPASSING_ARENA_BITS arena, so rebuilding per case exhausts the
+    // heap -- measured: it OOMs trying to grow to 512 MB with two live arenas.
+    // Same shape as VIXL's ResetState(), which arm64 uses here.
+    M._gx_reset();
     const sp0 = g.getX(SP);
     // Poison below sp so the depth scan can see how much stack the solve used.
     g.writeBytes(sp0 - big(POISON), new Uint8Array(POISON).fill(0xA5));
