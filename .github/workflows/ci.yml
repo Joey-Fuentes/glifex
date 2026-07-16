@@ -167,7 +167,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: web/vendor
-          key: vendor-v6-ci-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/arm64-toolchain/**', '.github/workflows/ci.yml') }}
+          key: vendor-v7-ci-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', '.github/workflows/ci.yml') }}
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
@@ -279,6 +279,33 @@ jobs:
           # silently reverts to VIXL's 8 KB default, 002's hash table breaks
           # around n=256 and looks like a hash bug, not a stack bug.
           node tools/arm64-toolchain/verify-stack.mjs web/vendor/asm-arm64
+      - name: Vendor riscv64 toolchain (libriscv wasm32 + musl binutils, pinned)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          sudo apt-get install -y binutils-riscv64-linux-gnu >/dev/null
+          . tools/riscv-toolchain/pins.env
+          if [ ! -d "$HOME/emsdk" ]; then
+            git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+            (cd "$HOME/emsdk" && ./emsdk install "$EMSDK_VERSION" && ./emsdk activate "$EMSDK_VERSION")
+          fi
+          . "$HOME/emsdk/emsdk_env.sh"
+          export EMSDK="$HOME/emsdk"
+          mkdir -p web/vendor/asm-riscv64
+          bash tools/riscv-toolchain/build-binutils.sh "$PWD/web/vendor/asm-riscv64"
+          bash tools/riscv-toolchain/build-libriscv.sh "$PWD/web/vendor/asm-riscv64"
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$BLINKENLIB_REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.js"   -o web/vendor/asm-riscv64/blinkenlib.js
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.wasm" -o web/vendor/asm-riscv64/blinkenlib.wasm
+          echo "$BLINKENLIB_JS_SHA256  web/vendor/asm-riscv64/blinkenlib.js"   | sha256sum -c -
+          echo "$BLINKENLIB_WASM_SHA256  web/vendor/asm-riscv64/blinkenlib.wasm" | sha256sum -c -
+          echo "{\"runtime\":\"asm-riscv64\",\"libriscv\":\"$LIBRISCV_COMMIT\",\"binutils\":\"$BINUTILS_VERSION (musl-static, GPL-3.0, guest)\",\"blink\":\"ISC\",\"libriscv_license\":\"BSD-3-Clause\",\"ext_c\":\"ON (mandatory)\"}" > web/vendor/asm-riscv64/manifest.json
+          rm -f web/vendor/asm-riscv64/binutils-configure.log web/vendor/asm-riscv64/binutils-make.log web/vendor/asm-riscv64/libriscv-*.log
+          ls -la web/vendor/asm-riscv64
+          test "$(stat -c%s web/vendor/asm-riscv64/gx_rv.wasm)" -gt 100000 || { echo "gx_rv.wasm too small"; exit 1; }
+          test "$(stat -c%s web/vendor/asm-riscv64/riscv64-as.elf)" -gt 1000000 || { echo "riscv64-as.elf too small"; exit 1; }
+          # A size check proves the fetch worked, not that the runtime is CORRECT.
+          # RISCV_EXT_C=OFF fails at ELF LOAD, so only running something catches it.
+          node tools/riscv-toolchain/verify-riscv.mjs web/vendor/asm-riscv64
       - name: Mark vendor complete (cached for future runs)
         run: touch web/vendor/.vendor-complete
       - name: Build corpus & run E2E (incl. offline-mode test)
