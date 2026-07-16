@@ -58,7 +58,24 @@ int gx_init() { return g_m ? 0 : -1; }
 uint64_t gx_sym(const char* name) {
   try { return (uint64_t)g_m->address_of(name); } catch (...) { return 0; }
 }
-void gx_reset() { if (!g_elf.empty()) gx_load_elf(g_elf.data(), (int)g_elf.size()); }
+// Per-case reset. Deliberately does NOT rebuild the Machine: each one allocates
+// a 2^RISCV_ENCOMPASSING_ARENA_BITS arena, and rebuilding per case OOMs -- with
+// two live arenas emscripten tries to grow the heap to 512 MB and aborts.
+//
+// machine.reset() carries an upstream warning: "not a reliable way to reset
+// complex machines with all kinds of features attached to it ... recommended to
+// create a new machine instead". Ours is NOT complex -- no syscalls, no fds, no
+// signals, no threads, just a bare function driven register-by-register. Same
+// shape as VIXL's ResetState(), which asm-arm64-core.mjs relies on for exactly
+// this. Verified: 003's four variants run every ladder rung with no OOM and
+// correct answers.
+void gx_reset() {
+  try { g_m->reset(); }
+  catch (const std::exception& e) {
+    std::printf("[gx] reset: %s\n", e.what());
+    std::fflush(stdout);
+  }
+}
 uint64_t gx_read_x(int n) { return (uint64_t)g_m->cpu.reg((uint32_t)n); }
 void gx_write_x(int n, uint64_t v) { g_m->cpu.reg((uint32_t)n) = v; }
 void gx_set_pc(uint64_t pc) { g_m->cpu.jump((MachineT::address_t)pc); }
