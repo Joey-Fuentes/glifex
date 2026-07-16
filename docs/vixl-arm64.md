@@ -136,11 +136,20 @@ addresses therefore *are* wasm linear-memory offsets. This was flagged in
 research as a possibly-fatal risk; it is not. It works, including
 `stp`/`ldp` pre/post-index frames and caller-supplied buffers.
 
-### No cross-origin isolation needed
+### Cross-origin isolation — tested as it ships
 
-Single-threaded, `shared:false`, no SharedArrayBuffer — like C# and Rust, unlike
-Python/Ruby/PHP/WAT/retro. Verified `coi:false` on a plain `http.server`. So
-`asm-arm64-smoke.spec.js` runs on CI's plain server and **will not hang**.
+arm64 is single-threaded (`shared:false`, no SharedArrayBuffer), so unlike
+Python/Ruby/PHP/WAT/retro it does not *require* isolation — verified `coi:false`
+on a plain `http.server`, 7/7.
+
+**That is a property, not a testing strategy.** The live site IS isolated
+(`web/sw.js` + the `#coi-boot` path), so `e2e/asm-arm64-smoke.spec.js` uses
+`e2e/coi-fixtures` like the other asm tracks and goes through the same
+bootstrap — including the one reload the app performs to become isolated.
+Testing on a plain server would prove something no user ever experiences. The
+first browser run of VIXL was in fact isolated (`{"coi":true,"sab":"function"}`,
+7/7); the plain-server run only established that isolation is not a
+*requirement*.
 
 ---
 

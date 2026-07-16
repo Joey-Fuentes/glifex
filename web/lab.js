@@ -504,7 +504,11 @@ const GlifexLab = (() => {
 
   function render(panel, X) {
     const { cfg, tierId, tier, j, boundMode, totalRetries } = X;
-    const unit = tierId === "det" ? (X.lang === "asm-x86_64" ? "instructions" : "cycles") : "ns";
+    // asm-x86_64 (Blink) and asm-arm64 (VIXL) both SINGLE-STEP, so their det
+    // metric is an exact instruction count. The retro cores (6502/sm83/i8080)
+    // model cycles. Labelling instructions as "cycles" would claim a timing
+    // fidelity VIXL does not have and never claimed.
+    const unit = tierId === "det" ? (X.lang === "asm-x86_64" || X.lang === "asm-arm64" ? "instructions" : "cycles") : "ns";
     const vline = (kind, html) => `<div class="lab-verdict ${kind}">${html}</div>`;
 
     let html = "";
@@ -789,7 +793,7 @@ const GlifexLab = (() => {
       &middot; oracle: javascript clean &middot; correctness-gated${overhead}
       &middot; ${new Date().toISOString().slice(0, 10)}`;
   }
-  const unitOf = (X) => (X.tierId === "det" ? (X.lang === "asm-x86_64" ? "instructions" : "cycles") : "ns");
+  const unitOf = (X) => (X.tierId === "det" ? (X.lang === "asm-x86_64" || X.lang === "asm-arm64" ? "instructions" : "cycles") : "ns");
 
   function init() {
     const btn = $("#lab-btn");

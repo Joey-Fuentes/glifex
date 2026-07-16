@@ -186,6 +186,20 @@ export async function driveProblem(source, cases) {
       }
     } catch (e) { threw = String((e && e.message) || e); }
 
+    // Exhausting the budget must be an ERROR, not a wrong answer. Left alone it
+    // returns ret:false plus whatever the output buffer happened to hold, which
+    // reads as "your algorithm is incorrect" -- the worst failure shape there
+    // is, because it is plausible. Seen live: the Lab walked the default ladder
+    // to n=32768 and reported brute-force as INCORRECT when it had simply been
+    // truncated at 5e6 steps.
+    if (!ret && !threw) {
+      return {
+        error: "Your arm64 program ran past " + MAX_STEPS.toLocaleString() +
+          " instructions on case " + i + " without returning -- likely a runaway loop, " +
+          "or an algorithm far slower than expected at this input size.",
+      };
+    }
+
     let got = null;
     try { got = adapter.decode(g, ctx); } catch (e) { threw = threw || String(e.message || e); }
 

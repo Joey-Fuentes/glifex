@@ -80,7 +80,7 @@ export const LANG_OVERRIDES = {
 export const PROBLEMS = {
   "001-anagram-detection": {
     sizeLabel: "string length n",
-    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] }, detByLang: { "asm-x86_64": [32, 64, 128, 256, 512] } },
+    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] }, detByLang: { "asm-x86_64": [32, 64, 128, 256, 512], "asm-arm64": [32, 64, 128, 256, 512] } },
     declared: { upper: "O(n)", lower: "O(1)" },
     roles: { upper: "worst", lower: "best" },
     modes: [
@@ -92,7 +92,7 @@ export const PROBLEMS = {
 
   "002-two-sum": {
     sizeLabel: "array length n",
-    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] }, detByLang: { "asm-x86_64": [32, 64, 128, 256, 512] } },
+    sizes: { wall: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768], wallByLang: { rust: [64, 128, 256, 512, 1024] }, detByLang: { "asm-x86_64": [32, 64, 128, 256, 512], "asm-arm64": [32, 64, 128, 256, 512] } },
     declared: { upper: "O(n)", lower: "O(1)" },
     roles: { upper: "worst", lower: "best" },
     // Base array: distinct even values, shuffled; target = odd (sum of the
@@ -178,7 +178,11 @@ export const PROBLEMS = {
       // small enough to drive within the worker budget; its 64-bit result
       // register has none of the retro u16 cap that holds the shared det
       // ladder at 24, so it uses its own tighter range.
-      detByLang: { "asm-x86_64": [4, 8, 12, 16, 20] },
+      // arm64 is single-stepped on VIXL, same as x86-64 under Blink, so the
+      // exponential brute-force must stay small: fib(20) naive is 197012
+      // instructions (measured). Verified at the ceiling on the deployed
+      // artifact -- see docs/vixl-arm64.md.
+      detByLang: { "asm-x86_64": [4, 8, 12, 16, 20], "asm-arm64": [4, 8, 12, 16, 20] },
     },
     // Retro ladder tops out at 24: fib(25) = 75025 overflows the tracks'
     // u16 result contract. Wall ladder tops at 78: fib(78) is the last
