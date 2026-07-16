@@ -1,0 +1,111 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 2. Spike 1's log is the input to this one.
+#
+# WHAT SPIKE 1 SETTLED
+#   - dart2js COMPILES dart:io. It emits code that throws UnsupportedError
+#     ("_Namespace") at RUNTIME, only when the filesystem is actually touched.
+#     I had asserted a compile-time rejection; the control falsified it in four
+#     seconds. So the task is not to strip dart:io out of the compiler's
+#     closure -- it is to never CALL it. That makes the track cheaper, not
+#     dearer.
+#   - compiler_api.dart is intact at commit 0315596: 280 lines, importing only
+#     dart:async and dart:typed_data. readFromUri is NON-generic and returns
+#     Future<Input<Uint8List>> -- I would have written the generic form from
+#     memory and been wrong. This is why spike 1 read instead of writing.
+#   - pkg/compiler is 4/278 files on dart:io: the CLI entrypoint plus the two
+#     dart:io-backed providers. That is the host adapter layer -- precisely
+#     what an embedder replaces. The roadmap's "the blocker shrinks to a
+#     dart:io shim" is now measured rather than asserted.
+#   - dart2js_platform.dill is 10,292,168 bytes. That is what a browser track
+#     must serve, and it is the first hard number this track has ever had.
+#
+# WHAT KILLED SPIKE 1 WAS MY OWN CHECKOUT, NOT DART
+#   "could not find package shell_arg_splitter at https://pub.dev". pkg/compiler
+#   says "resolution: workspace" and "we get our versions from the DEPS file".
+#   I had materialised five directories and then resolved through an external
+#   path-dependency: the wrong shape twice over. Reporting that as "the route is
+#   blocked" would have been reporting a wall I built. So spike 2 checks out ALL
+#   of pkg/ and resolves at the workspace root.
+#
+# THE GATES, ORDERED BY HOW MUCH I HAVE TO GUESS -- that ordering is the design.
+#   GATE 1  is the roadmap's spike, verbatim: "self-compile a modern dart2js and
+#           measure the artifact size + compile time". It points dart2js at
+#           dart2js and reads the number off. NOTHING of mine is in that compile
+#           path, so it cannot fail for a reason I invented. Even if every gate
+#           below it dies, this lands the cost of the track.
+#   GATE 2a runs the embeddable core on the VM, isolating "is my API usage
+#           correct?" from every browser concern. dart:io exists here and does
+#           one thing: hand the dill over as bytes, exactly as a fetch() will.
+#   GATE 2b runs that same core AS JAVASCRIPT with no dart:io reachable, then
+#           EXECUTES the JS it produced and checks the answer. Compiling is not
+#           the gate. Computing 55 is the gate. (arm64 shipped a blown budget as
+#           plausible-looking output once; plausible output is the worst failure
+#           shape there is.)
+#
+# The one line in gx_core.dart written from expectation rather than evidence is
+# the CompilerOptions.parse call -- spike 1 recorded the API but not that
+# constructor. So section 4 prints the CLI's real call site and the real parse
+# signature BEFORE the gate runs: if the gate throws, the correction is already
+# in the same log and spike 3 costs one round instead of two.
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  dependency census -- was shell_arg_splitter just a narrow checkout?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/gate1/*.gz
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            dartspike/clone.log
+            tools/dart-spike/
