@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # build-binutils.sh <out-dir>
 # The guest assembler+linker: an x86-64 MUSL-static binutils that TARGETS
-# aarch64. x86-64 because Blink emulates x86-64; musl because a glibc-static as
+# riscv64. x86-64 because Blink emulates x86-64; musl because a glibc-static as
 # SIGSEGVs under Blink (docs/vixl-arm64.md section 4). Recipe is the
-# x86-64-playground's compile_musl_binutils.sh with the target triple changed.
+# x86-64-playground's compile_musl_binutils.sh with the target triple changed --
+# Bx-10's arm64 script, retargeted. 1.94 MB, smaller than arm64's 2.85 MB.
 set -euo pipefail
 OUT="${1:?}"; mkdir -p "$OUT"
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -49,7 +50,7 @@ CXXFLAGS="-O3 -static --static" \
     --disable-werror --enable-static --enable-plugins=no --disable-shared \
     > "$OUT/binutils-configure.log" 2>&1
 
-# all-gas all-ld, NOT "make all": an aarch64 target pulls in gold/gprofng that
+# all-gas all-ld, NOT "make all": a non-x86 target pulls in gold/gprofng that
 # the upstream flag set never disables and that fail under musl.
 if ! make -j"$(nproc)" all-gas all-ld > "$OUT/binutils-make.log" 2>&1; then
   echo "## MAKE FAILED -- error lines (tail is useless under make -j):"
@@ -59,7 +60,12 @@ fi
 
 cp gas/as-new "$OUT/riscv64-as.elf"
 cp ld/ld-new  "$OUT/riscv64-ld.elf"
-chmod +x "$OUT"/aarch64-*.elf
+# Name the files instead of globbing them. A glob is what survived the sed that
+# retargeted this script from aarch64: "aarch64-as" and "aarch64-ld" were
+# rewritten, "aarch64-*" matched neither pattern, and the step died on
+#   chmod: cannot access '.../asm-riscv64/aarch64-*.elf'
+# after successfully building riscv64-as.elf.
+chmod +x "$OUT/${TARGET_TRIPLE%%-*}-as.elf" "$OUT/${TARGET_TRIPLE%%-*}-ld.elf"
 strip --strip-unneeded "$OUT/riscv64-as.elf" "$OUT/riscv64-ld.elf"
 
 echo "## ---- gates ----"
@@ -67,7 +73,7 @@ FAIL=0
 for f in "$OUT/riscv64-as.elf" "$OUT/riscv64-ld.elf"; do
   n=$(basename "$f")
   # MUSL_LOCPATH is the real libc marker. "linux-musl" is NOT -- that is a
-  # target triple, absent from an aarch64-targeting build by construction.
+  # target triple, absent from a riscv64-targeting build by construction.
   # And grep glibc false-positives on binutils' own GLIBC_ABI_DT_RELR strings.
   strings -a "$f" | grep -q "MUSL_LOCPATH"     && echo "  $n musl -- OK"   || { echo "  $n NOT musl -- FAIL"; FAIL=1; }
   # NOTE: an earlier version also asserted __libc_start_main was absent and
