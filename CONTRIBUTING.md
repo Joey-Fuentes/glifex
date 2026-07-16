@@ -34,6 +34,12 @@ The set of languages is **not** hardcoded. Add one without touching `glifex.py`:
    the variant argument, diffs against `expected`, exits non-zero on failure.
 3. `glifex doctor` and `glifex new` pick it up automatically.
 
+That is the whole story **for the CLI**. Making the language also *run in the
+browser* — vendored runtime, worker, corpus, Lab wiring, e2e — is a much larger
+job with its own sequence and its own traps. It has been done thirteen times now;
+the accumulated map, checklist and failure modes are in
+**`docs/adding-a-language.md`**. Read it before starting, not after.
+
 ### The harness contract
 
 A harness must: read `../test_cases.json`; select the variant from `argv[1]`

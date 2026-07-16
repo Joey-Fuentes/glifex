@@ -149,36 +149,70 @@ rather than inherited.
 **`as` uses `#` for comments; aarch64 uses `//`.** Every kata failed once on
 this. The assembler recipe transferring does **not** mean the syntax transfers.
 
-## 6. What this track inherits, and what it still needs
+## 6. What shipped, and what it cost
 
-**Free from Bx-10:** Blink (vendored, proven); the musl binutils recipe; the
-`pins.env` self-bumping vendor pattern; `vendor-sync.test.mjs`; and — thanks to
-the `det` fallback — a **Lab ladder that arrives automatically** at
-`[32,64,128,256,512]` without anyone remembering to add one.
+**Bx-10b is built.** #101 docs · #102 vendor · #103/#104 runtime · corpus ·
+registry · Lab units + smoke. riscv64 is selectable on 001/002/003 with four
+variants each.
 
-**Still to build** — five PRs, mirroring Bx-10:
+Measured on a real libriscv build, over the Lab's own det ladder:
 
-1. **Vendor** — `tools/riscv-toolchain/{pins.env, gx_rv.cpp, build-binutils.sh,
-   build-libriscv.sh}` + the step in `pages.yml`, `ci.yml` **and**
-   `export-vendor-bundle.yml`. `vendor-sync.test.mjs` will force the third one.
-2. **Runtime** — `asm-riscv64-{blink,core}.mjs`, worker, `runtimes.js` loader.
-   Simpler than arm64's: libriscv takes the ELF, so no `PT_LOAD` relocation.
-3. **Corpus** — 001/002/003 × 4 variants.
-4. **Lab** — units + smoke spec. The ladder is already handled.
-5. **Docs** — this file, ROADMAP, STATUS.
+| | clean | optimized | brute-force |
+|---|---|---|---|
+| **001** @ n=512 | 11,020 | 11,532 | 2,654,674 |
+| **002** @ n=512 | 17,700 | 17,348 | 1,441,530 |
+| **003** @ n=20 | 102 | 82 | 229,848 |
 
-**Three things to fix on the way in:**
+clean/optimized ×2 per doubling (O(n)); brute-force ×4 (O(n²)) and ~×7 for fib
+(O(phi^n)). Instruction counts are **exact** — `instruction_counter()` is
+libriscv's own, where VIXL made us count steps by hand.
 
-- **The vendor cache key hashes `tools/arm64-toolchain/**`.** RISC-V's pins would
-  not self-bust. Generalise to `tools/**` in PR1, or this track inherits the
-  exact footgun #91 retired.
-- **`lab.js`'s unit selector is a hand-kept list**:
-  `X.lang === "asm-x86_64" || X.lang === "asm-arm64" ? "instructions" : "cycles"`,
-  at two sites. A third det track needs a third `||`. That is the same shape as
-  the `detByLang` omission that broke arm64 live — **derive it, don't enumerate
-  it**, before adding the entry.
-- **blinkenlib would be vendored a third time** (~250 KB each). Share it or
-  accept the duplication — a decision, not a default.
+**Free from Bx-10:** Blink (vendored, proven); the musl binutils recipe (one
+triple changed → 1.94 MB, smaller than arm64's 2.85 MB); the `pins.env`
+self-bumping vendor pattern; `vendor-sync.test.mjs`; and — thanks to #100's `det`
+fallback — a **Lab ladder that arrived automatically**, `[32,64,128,256,512]` on
+001/002 and `[3,6,12,24]` on 003, with no `detByLang` entry.
+
+### What the track taught that the spike could not
+
+The spike drove single register-only katas. None of this was visible until a
+corpus ran over a ladder:
+
+1. **`RISCV_ENCOMPASSING_ARENA_BITS=28` is libriscv's LuaJIT number** — a 256 MB
+   arena per Machine. Our katas need ~2.5 MB, and two live arenas OOM the heap
+   (emscripten tries to grow to 512 MB and aborts). **24** — 16 MB, 6× headroom.
+2. **`gx_reset()` must not rebuild the Machine.** Rebuilding per case allocates a
+   fresh arena and dies at the 4th. `machine.reset()` carries an upstream warning
+   — *"not reliable for complex machines with all kinds of features attached"* —
+   which does not apply here: no syscalls, no fds, no signals, no threads. Same
+   reason VIXL's `ResetState()` works for arm64.
+3. **RV64G has no `clz`** (it is Zbb, unlike aarch64). 003's `optimized` first
+   searched for the MSB from bit 63 and came out **3.6× slower than clean**
+   (371 vs 102). Now a 3-step binary search: `fib(93)` is the largest that fits
+   in u64, so n < 128 and the MSB is ≤ 6.
+4. **`languages/*.toml` is not only a CLI concern.** `build.mjs` reads its
+   `display` key into the corpus's `displayNames`, so registering a plugin makes
+   the git-tracked corpus stale.
+5. **Guest memory is not wasm memory.** VIXL dereferenced a guest address as a
+   raw host pointer, so arm64 pokes `HEAPU8` directly. libriscv owns its address
+   space: inputs go through `copy_to_guest`/`copy_from_guest`. The `__glifex_io`
+   `.bss` trick ports unchanged — the linker places it at `0x20000`, `gx_sym`
+   finds it.
+6. **002's hash table is stack-allocated**, like arm64's: libriscv simulates a
+   CPU and not a kernel, so there is no `mmap` behind an `ecall`. 16 KB at the
+   top rung, and **no equivalent of arm64's 8 KB guest-stack cliff** — `sp` sits
+   at `0x260000` with megabytes below it.
+
+### Still open
+
+- **`BINUTILS_SHA256` is blank** in `pins.env`, deliberately: we had never seen
+  the hash. The build prints it; one paste closes this.
+- **`EMSDK_VERSION=latest`** — the only unpinned input. The build records the
+  resolved `emcc --version` in the manifest.
+- **`asm-arm64.toml` has no `display` key**, so arm64 renders as its raw id in
+  the dropdown while every other asm track gets a proper name. Pre-existing;
+  one line plus a rebake.
+- **Spike (riscv-isa-sim) was never judged** — see the note at the end of §7.
 
 ## 7. Further architectures — for whoever comes next
 
