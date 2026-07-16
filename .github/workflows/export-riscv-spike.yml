@@ -1,0 +1,98 @@
+# THROWAWAY spike round 2 -- RISC-V RV64GC. Never merged.
+# chore/export-riscv-spike-* only.
+#
+# ROUND 1 FOUND (logs + artifact, all measured):
+#   - libriscv is the shortlist: BSD-3-Clause, 256 files (Spike has 1,961),
+#     embedding-shaped, and examples/wasm/ ALREADY EXISTS in-tree. Bx-10 started
+#     from "nobody has built VIXL to wasm"; this starts from "someone did".
+#   - the assembler half TRANSFERRED: riscv64-as.elf, musl-static, 1.94 MB
+#     (smaller than arm64's 2.85 MB). Bx-10's recipe with one triple changed.
+#   - the C extension is AUTOMATIC: plain "add a0,a0,a1 / ret" at -march=rv64gc
+#     came out as two 2-BYTE instructions. insns != bytes/4 anywhere.
+#   - MORE katas need a link than on aarch64: even loop.s carries
+#     R_RISCV_RVC_BRANCH/RVC_JUMP on purely local branches, because of RISC-V
+#     LINKER RELAXATION -- a mechanism with no aarch64 analogue.
+#   - auipc behaves as predicted: PCREL_HI20 + PCREL_LO12_I, the adrp/:lo12:
+#     shape. Whether it relocates freely to a foreign base is still UNTESTED.
+#
+# ROUND 1 ALSO GOT TWO THINGS WRONG, both mine:
+#   - every kata failed to assemble because I used // comments. RISC-V's as uses
+#     '#'. I copied Bx-10's kata style while writing a header about how the
+#     recipe transfers. Fixed here.
+#   - the Spike probe searched for set_XPR/get_XPR, got ABSENT, and that proved
+#     NOTHING -- I invented those names. So Spike is unjudged, not rejected.
+#
+# ROUND 2 ASKS THE ONLY QUESTION THAT MATTERS: not "does libriscv look right"
+# but "does it BUILD to wasm and RUN an RV64GC kata driven blinkenlib-style".
+# A directory listing is not a working build.
+name: export-riscv-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-riscv-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools binutils-riscv64-linux-gnu build-essential texinfo bison flex file cmake
+          riscv64-linux-gnu-as --version | head -1
+
+      - name: Install emsdk
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          cd "$HOME/emsdk" && ./emsdk install latest && ./emsdk activate latest
+          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
+          . "$HOME/emsdk/emsdk_env.sh" && emcc --version | head -1
+
+      - name: Read libriscv's real API -- do not guess symbol names
+        continue-on-error: true
+        run: bash tools/riscv-spike/probe-libriscv.sh "$GITHUB_WORKSPACE/rv"
+
+      - name: Build libriscv to wasm -- their example, then our wrapper
+        continue-on-error: true
+        run: |
+          . "$HOME/emsdk/emsdk_env.sh"
+          bash tools/riscv-spike/try-wasm.sh "$GITHUB_WORKSPACE/rv"
+
+      - name: Assemble the katas -- with '#' comments this time
+        continue-on-error: true
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/rv/katas"
+          for f in tools/riscv-spike/katas/*.s; do
+            b=$(basename "$f" .s)
+            riscv64-linux-gnu-as -march=rv64gc "$f" -o "${TMPDIR:-/tmp}/$b.o" 2>&1 || { echo "  $b ASSEMBLE FAILED"; continue; }
+            riscv64-linux-gnu-objcopy -O binary --only-section=.text "${TMPDIR:-/tmp}/$b.o" "$GITHUB_WORKSPACE/rv/katas/$b.bin"
+            R=$(riscv64-linux-gnu-objdump -r "${TMPDIR:-/tmp}/$b.o" 2>/dev/null | grep -c R_RISCV || true)
+            echo "  $b  .text=$(stat -c%s "$GITHUB_WORKSPACE/rv/katas/$b.bin") bytes  relocs=$R"
+            riscv64-linux-gnu-objdump -d "${TMPDIR:-/tmp}/$b.o" 2>/dev/null | sed -n '/>:/,$p' | head -8 | sed 's/^/     /'
+          done
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: THE GATE -- run add.bin on the libriscv wasm, blinkenlib-style
+        continue-on-error: true
+        run: |
+          test -f "$GITHUB_WORKSPACE/rv/gx_rv.mjs" || { echo "## no wasm wrapper -- the build step above is the story"; exit 0; }
+          node tools/riscv-spike/run-kata.mjs "$GITHUB_WORKSPACE/rv" "$GITHUB_WORKSPACE/rv/katas/add.bin" \
+            && echo "## VERDICT: libriscv runs RV64GC in wasm, driven register-by-register. The pattern ports." \
+            || echo "## VERDICT: it built but would not drive -- read the step count and a0 above."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: riscv-spike-2
+          if-no-files-found: warn
+          path: |
+            rv/
+            tools/riscv-spike/katas/*.s
