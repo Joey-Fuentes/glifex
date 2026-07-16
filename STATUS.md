@@ -37,7 +37,7 @@ what remains written-but-unrun.
 | WAT         | ✅ | ✅ | ⏭ tc | hand-written WebAssembly Text; Node host marshals arrays into linear memory; wabt via apt/brew |
 | asm-x86_64  | ✅ | ⏭ arch | ⏭ ABI | hand-written SysV AT&T; Windows x64 ABI differs (rcx/rdx) — platform-scoped by design |
 | asm-arm64   | ⏭ arch | ✅ | ⏭ ABI | hand-written AAPCS64; Mach-O + ELF dual symbol aliases. Browser: ✅ Bx-10 — guest as+ld under Blink, executed on VIXL-in-wasm32 (docs/vixl-arm64.md) |
-| asm-riscv64 | — | — | — | not in the corpus yet. Browser path PROVEN (Bx-10b): guest as+ld under Blink, executed on libriscv-in-wasm32 — see docs/libriscv-riscv64.md |
+| asm-riscv64 | — | — | ✅ | hand-written RV64GC, lp64d ABI. Browser: ✅ Bx-10b — guest as+ld under Blink, executed on libriscv-in-wasm32 (docs/libriscv-riscv64.md). CLI: gcc on a RISC-V host |
 
 ⏭ = deliberate, guard-enforced skip, shown honestly in run logs:
 **arch** (wrong hardware) · **ABI** (calling convention scoped by design) ·
