@@ -1,0 +1,226 @@
+# THROWAWAY spike -- Bx-11 Zig. Never merged. Read the SUMMARY step, not the red X.
+#
+# THE DECISIVE QUESTION (adding-a-language.md section 1 shape)
+#   Can a Zig compiler, itself running as wasm32-wasi under a JS WASI host, take
+#   one main.zig and emit a runnable .wasm -- offline, no LLVM, no external linker?
+#
+#   NOT "can zig target wasm". It obviously can, at host build time -- that is the
+#   SwiftWasm/dart2wasm trap Bx-14 and Bx-13 both name. The compiler must be the guest.
+#
+# WHY ZIG MIGHT WIN WHERE RUSTC LOST
+#   Bx-6 went to Miri because rustc needs an in-browser LINKER. Zig ships its own
+#   (src/link/Wasm.zig) and its own wasm backend (src/arch/wasm/CodeGen.zig), so
+#   -fno-llvm -fno-lld would mean the linker problem never exists. That IF is the
+#   whole spike. PROBE 1 greps upstream for those two files rather than believing me.
+#
+# ROUTES, and which probe decides each
+#   A  full zig built for wasm32-wasi, use-llvm=false      the prize        P3, P5
+#   B  stage1/zig1.wasm, the bootstrap artifact ROADMAP flags               P4
+#   C  zig-in-wasm emits C, fed to the ALREADY VENDORED clang.webc          P4 decides
+#   D  static musl x86-64 zig under Blink, already vendored + proven        sized in P0 only
+#
+# KILL CRITERIA, stated before the run
+#   P2 fails                -> -fno-llvm/-fno-lld is not real for wasm32-wasi; A and D die.
+#   P3 and P4 both fail     -> only C (two compilers) or D (emulated) remain; Bx-11 stays parked.
+#
+# WHY EVERY PROBE IS continue-on-error
+#   Joe is on Termux and a round trip is expensive. One run must return ALL the
+#   data, not stop at the first unknown. The SUMMARY step is the deliverable.
+#
+# WHAT I DO NOT KNOW, and therefore do not hardcode
+#   Zig is pre-1.0 and my knowledge stops at Jan 2026. So P1 dumps the real
+#   "zig build --help" and P3 composes its flags FROM that output. If an option
+#   name is wrong, the right one is in the log and costs no round trip.
+name: export-zig-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-zig-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make the output dir
+        run: mkdir -p "$GITHUB_WORKSPACE/zig-spike-out"
+
+      - uses: mlugg/setup-zig@v1
+        with: { version: "0.14.0" }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Install wasmtime -- the bulletproof control host
+        run: |
+          curl -sSf https://wasmtime.dev/install.sh | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: PROBE 0 -- versions, and route D's sizing while we are here
+        continue-on-error: true
+        run: |
+          echo "## zig       $(zig version)"
+          echo "## wasmtime  $(wasmtime --version)"
+          echo "## node      $(node --version)"
+          ZR=$(dirname "$(readlink -f "$(which zig)")")
+          echo "## route D input -- the real x86-64 static-musl zig Blink would host:"
+          du -sh "$ZR" 2>/dev/null | sed 's/^/     /' || true
+          file "$(readlink -f "$(which zig)")" 2>/dev/null | sed 's/^/     /' || true
+
+      - name: Install the browser WASI shim -- the host the browser will really use
+        continue-on-error: true
+        run: |
+          cd "$GITHUB_WORKSPACE/tools/zig-spike"
+          npm install @bjorn3/browser_wasi_shim
+          npm ls --depth=0 2>&1 | sed 's/^/     /' || true
+
+      - name: PROBE 1 -- provenance, read from the source rather than believed
+        continue-on-error: true
+        run: |
+          git clone --depth 1 --branch 0.14.0 https://github.com/ziglang/zig.git "$HOME/zig-src"
+          cd "$HOME/zig-src"
+          echo "## zig     $(git rev-parse HEAD)"
+          echo "## dated   $(git log -1 --format=%cd --date=short)"
+          echo "## license $(head -1 LICENSE 2>/dev/null)"
+          echo "## tree    $(du -sh . | cut -f1)"
+          echo
+          echo "## THE TWO FILES THE WHOLE TRACK RESTS ON -- present or absent, no opinion:"
+          ls -la src/link/Wasm.zig src/arch/wasm/CodeGen.zig 2>&1 | sed 's/^/     /'
+          echo
+          echo "## the lib dir must ship into the browser FS. This is the Rust sysroot"
+          echo "## problem again -- Bx-6 took a round to find that 23 rlibs was the floor:"
+          du -sh lib lib/std 2>/dev/null | sed 's/^/     /' || true
+          echo "     std .zig files: $(find lib/std -name '*.zig' | wc -l)"
+          echo
+          echo "## route B's artifact:"
+          ls -la stage1/zig1.wasm 2>&1 | sed 's/^/     /'
+          echo "## and how the build system itself invokes it -- grep, not memory:"
+          grep -n "zig1" build.zig 2>/dev/null | head -20 | sed 's/^/     /' || true
+          echo
+          echo "## EVERY option this build.zig really accepts. My flag guesses may be"
+          echo "## wrong; if P3 dies on an unknown option, the right name is in here:"
+          zig build --help 2>&1 | sed -n '/Project-Specific Options/,/General Options/p' | sed 's/^/     /' || true
+
+      - name: PROBE 2 -- THE CONTROL. Is -fno-llvm -fno-lld real for wasm32-wasi
+        continue-on-error: true
+        run: |
+          cd "$GITHUB_WORKSPACE/tools/zig-spike"
+          echo "## 30 seconds that decide whether routes A and D can exist at all."
+          set -x
+          zig build-exe hello.zig -target wasm32-wasi -O ReleaseSmall -fno-llvm -fno-lld -femit-bin=hello.wasm
+          set +x
+          ls -la hello.wasm | sed 's/^/     /'
+          OUT=$(wasmtime run hello.wasm)
+          echo "     control host  got=$OUT want=55"
+          test "$OUT" = "55" || exit 1
+          echo "## and the same module under the JS shim the Rust track already bundles:"
+          node drive.mjs hello.wasm - || echo "     ^^ shim arm only -- wasmtime above is the gate"
+          cp hello.wasm "$GITHUB_WORKSPACE/zig-spike-out/"
+          echo "P2 PASS -- self-hosted wasm backend + self-hosted wasm linker both work" \
+            >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+
+      - name: PROBE 3 -- ROUTE A. Build the compiler itself for wasm32-wasi, no LLVM
+        continue-on-error: true
+        timeout-minutes: 90
+        run: |
+          cd "$HOME/zig-src"
+          HELP=$(zig build --help 2>&1 || true)
+          FLAGS="-Dtarget=wasm32-wasi -Doptimize=ReleaseSmall"
+          if echo "$HELP" | grep -q -- "-Duse-llvm";        then FLAGS="$FLAGS -Duse-llvm=false"; fi
+          if echo "$HELP" | grep -q -- "-Denable-llvm";     then FLAGS="$FLAGS -Denable-llvm=false"; fi
+          if echo "$HELP" | grep -q -- "-Dsingle-threaded"; then FLAGS="$FLAGS -Dsingle-threaded=true"; fi
+          if echo "$HELP" | grep -q -- "-Dstrip";           then FLAGS="$FLAGS -Dstrip=true"; fi
+          if echo "$HELP" | grep -q -- "-Dno-lib";          then FLAGS="$FLAGS -Dno-lib"; fi
+          echo "## flags composed from the REAL --help, not from memory:"
+          echo "     zig build $FLAGS"
+          set -x
+          time zig build $FLAGS --prefix "$GITHUB_WORKSPACE/zig-spike-out/routeA" 2>&1 | tail -80
+          set +x
+          find "$GITHUB_WORKSPACE/zig-spike-out/routeA" -name '*.wasm' -exec ls -la {} \; | sed 's/^/     /' || true
+          echo "P3 built something -- see the ls above for what and how big" \
+            >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+
+      - name: PROBE 4 -- ROUTE B. What can stage1/zig1.wasm actually do
+        continue-on-error: true
+        run: |
+          cd "$HOME/zig-src"
+          test -f stage1/zig1.wasm || { echo "## no stage1/zig1.wasm at 0.14.0 -- route B does not exist"; exit 1; }
+          W="$HOME/zig-src/stage1/zig1.wasm"
+          ls -la "$W" | sed 's/^/     /'
+          mkdir -p "$HOME/b" && cd "$HOME/b"
+          cp "$GITHUB_WORKSPACE/tools/zig-spike/hello.zig" .
+          cp -r "$HOME/zig-src/lib" .
+          echo "## its real arg shape, from build.zig -- the only trustworthy source:"
+          grep -n -B2 -A8 "zig1" "$HOME/zig-src/build.zig" | head -50 | sed 's/^/     /' || true
+          echo
+          echo "## My expectation, recorded so the log can refute it: zig1.wasm is built"
+          echo "## -Donly-c for bootstrap, so it emits C and CANNOT emit wasm. If that is"
+          echo "## right, route B is dead and route C (emit C, feed the vendored"
+          echo "## clang.webc the C track already ships) is what B turns into."
+          for A in "version" \
+                   "build-exe hello.zig -target wasm32-wasi --zig-lib-dir lib -ofmt=c" \
+                   "build-exe hello.zig -target wasm32-wasi --zig-lib-dir lib"; do
+            echo "---- zig1.wasm $A"
+            wasmtime run --dir=. "$W" -- $A 2>&1 | head -20 | sed 's/^/     /' || true
+          done
+
+      - name: PROBE 5 -- THE GATE. zig.wasm compiles kata.zig into a .wasm that runs
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          ZW=$(find "$GITHUB_WORKSPACE/zig-spike-out/routeA" -name '*.wasm' 2>/dev/null | head -1 || true)
+          test -n "$ZW" || { echo "## route A produced no wasm -- the gate is not reachable this round"; exit 1; }
+          echo "## the compiler under test: $ZW"
+          mkdir -p "$HOME/gate" && cd "$HOME/gate"
+          cp "$GITHUB_WORKSPACE/tools/zig-spike/kata.zig" .
+          cp -r "$HOME/zig-src/lib" .
+          echo "## compiling kata.zig with a compiler that is ITSELF wasm:"
+          time wasmtime run --dir=. "$ZW" -- build-exe kata.zig -target wasm32-wasi \
+            -fno-llvm -fno-lld --zig-lib-dir lib -femit-bin=out.wasm 2>&1 | head -60 | sed 's/^/     /'
+          ls -la out.wasm | sed 's/^/     /'
+          OUT=$(wasmtime run out.wasm)
+          echo "     got=$OUT want=140"
+          test "$OUT" = "140" || exit 1
+          echo "## and the emitted module under the JS shim -- this is the browser signal:"
+          node "$GITHUB_WORKSPACE/tools/zig-spike/drive.mjs" out.wasm - || true
+          cp out.wasm "$GITHUB_WORKSPACE/zig-spike-out/"
+          echo "P5 PASS -- THE GATE. Zig compiles itself to wasm and that wasm compiles zig to wasm." \
+            >> "$GITHUB_WORKSPACE/zig-spike-out/report.txt"
+
+      - name: SUMMARY -- the deliverable
+        if: always()
+        run: |
+          echo "## ---- Bx-11 Zig spike, what this run establishes ----"
+          echo "##"
+          echo "## artifacts that exist prove more than any step status:"
+          ls -la "$GITHUB_WORKSPACE/zig-spike-out"/*.wasm 2>/dev/null | awk '{print "##   " $5, $9}' || echo "##   (none)"
+          find "$GITHUB_WORKSPACE/zig-spike-out/routeA" -name '*.wasm' -exec ls -la {} \; 2>/dev/null | awk '{print "##   " $5, $9}' || true
+          echo "##"
+          echo "## report lines each probe wrote for itself:"
+          cat "$GITHUB_WORKSPACE/zig-spike-out/report.txt" 2>/dev/null | sed 's/^/##   /' || echo "##   (empty -- no probe reached its own success line)"
+          echo "##"
+          echo "## how to read this:"
+          echo "##   P2 pass + P3 wasm + P5 pass  -> route A is real; Bx-11 is a compiler-in-wasm"
+          echo "##                                   track emitting NATIVE wasm. Best shape since Bx-5."
+          echo "##   P2 pass, P3 fails            -> the wasm backend cannot build the compiler yet."
+          echo "##                                   Route D (Blink, already vendored) is next, not C."
+          echo "##   P2 fails                     -> -fno-llvm/-fno-lld is a lie for wasm32-wasi."
+          echo "##                                   A and D both die; only C survives."
+          echo "##   P4 emits C only              -> route B is really route C: two compilers,"
+          echo "##                                   the second one already vendored."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zig-spike-demo
+          if-no-files-found: warn
+          path: |
+            zig-spike-out/
+            tools/zig-spike/*.zig
+            tools/zig-spike/drive.mjs
