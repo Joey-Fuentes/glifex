@@ -10,6 +10,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/pins.env"
 VER="$BINUTILS_VERSION"
 
+# The target triple, in ONE place. It names both the configure target and the
+# build directory, because autotools caches target_alias and a tree configured
+# for one --target cannot be reconfigured for another. arm64 is the only user of
+# $HOME/bu today -- but riscv64 collided with it exactly this way when it was
+# created by retargeting THIS script, and the next architecture to copy it would
+# do the same. Deriving the build dir from the triple removes the trap.
+TARGET_TRIPLE="aarch64-linux-gnu"
+
 command -v musl-gcc >/dev/null || { echo "FATAL musl-gcc missing (apt install musl-tools)"; exit 1; }
 
 cd "$HOME"
@@ -24,14 +32,15 @@ else
 fi
 tar xf "binutils-$VER.tar.xz"
 
-mkdir -p bu && cd bu
+BUILD="bu-$TARGET_TRIPLE"
+mkdir -p "$BUILD" && cd "$BUILD"
 # -static rides in CFLAGS, NOT LDFLAGS: CCLD expands $(CFLAGS) $(LDFLAGS), and
 # binutils does not reliably propagate configure-time LDFLAGS into sub-builds.
 CC=musl-gcc \
 CFLAGS="-O3 -static --static -static-libgcc -static-libstdc++" \
 CXXFLAGS="-O3 -static --static" \
   "$HOME/binutils-$VER/configure" \
-    --target=aarch64-linux-gnu --enable-targets=aarch64-linux-gnu \
+    --target="$TARGET_TRIPLE" --enable-targets="$TARGET_TRIPLE" \
     --enable-default-execstack=no --enable-deterministic-archives \
     --enable-new-dtags --disable-doc --disable-gprof --disable-nls \
     --disable-binutils --disable-gdb --disable-gdbserver \
@@ -49,7 +58,10 @@ fi
 
 cp gas/as-new "$OUT/aarch64-as.elf"
 cp ld/ld-new  "$OUT/aarch64-ld.elf"
-chmod +x "$OUT"/aarch64-*.elf
+# Name the files rather than globbing them: a glob is what survived the sed that
+# created the riscv64 script from this one, and it failed with
+#   chmod: cannot access '.../asm-riscv64/aarch64-*.elf'
+chmod +x "$OUT/${TARGET_TRIPLE%%-*}-as.elf" "$OUT/${TARGET_TRIPLE%%-*}-ld.elf"
 strip --strip-unneeded "$OUT/aarch64-as.elf" "$OUT/aarch64-ld.elf"
 
 echo "## ---- gates ----"
@@ -60,7 +72,12 @@ for f in "$OUT/aarch64-as.elf" "$OUT/aarch64-ld.elf"; do
   # target triple, absent from an aarch64-targeting build by construction.
   # And grep glibc false-positives on binutils' own GLIBC_ABI_DT_RELR strings.
   strings -a "$f" | grep -q "MUSL_LOCPATH"     && echo "  $n musl -- OK"   || { echo "  $n NOT musl -- FAIL"; FAIL=1; }
-  strings -a "$f" | grep -q "__libc_start_main" && { echo "  $n glibc -- FAIL"; FAIL=1; } || echo "  $n no glibc -- OK"
+  # This used to assert __libc_start_main was ABSENT and call that "not glibc".
+  # It is not: musl implements that symbol too, and it only disappears because we
+  # strip below. The check was passing by luck and would false-FAIL an unstripped
+  # musl build. MUSL_LOCPATH above is the real marker; this tests for glibc's own
+  # banner instead.
+  strings -a "$f" | grep -q "GNU C Library" && { echo "  $n glibc -- FAIL"; FAIL=1; } || echo "  $n not glibc -- OK"
   readelf -l "$f" | grep -qw INTERP             && { echo "  $n dynamic -- FAIL"; FAIL=1; } || echo "  $n static -- OK"
   echo "  $n $(stat -c%s "$f") bytes"
 done
