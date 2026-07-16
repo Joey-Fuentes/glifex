@@ -1,0 +1,115 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 3. Spike 2 tested nothing about Dart -- it died on my own git
+# scaffolding, in one line:
+#
+#   git sparse-checkout set pkg tools sdk/lib/libraries.json
+#   fatal: 'sdk/lib/libraries.json' is not a directory
+#   fatal: specify directories rather than patterns (no leading slash)
+#
+# Cone mode takes DIRECTORIES ONLY, and "set" is atomic, so pkg/ and tools/
+# never landed either. The probe then produced six sections of confident
+# reporting about an empty tree. Two rounds lost to the same step. The fixed
+# command has now been run against a real git repo locally, and section 1
+# ASSERTS the checkout instead of narrating its absence.
+#
+# WHAT SPIKE 2 ESTABLISHED ANYWAY, all of it incidental but all of it real:
+#   - The SDK root pubspec.yaml IS a pub workspace and pkg/compiler is a listed
+#     member, so resolving at the root is the right shape.
+#   - Cone mode ships root files for free: the root pubspec.yaml printed even
+#     though both sparse commands had failed. The /pubspec.yaml and /DEPS lines
+#     were never needed, and were the exact thing that broke the checkout.
+#   - All 27 Dart errors were RESOLUTION errors -- Type not found, Undefined
+#     name, Couldn't resolve the package. Not one was a syntax error. The CFE
+#     parsed every line of gx_core.dart and both drivers, including the
+#     dart:js_interop externals. The embed code parses; it has only ever failed
+#     to find its imports.
+#   - The workspace lists pkg/dartpad AND pkg/dartpad_worker. See section 2.
+#
+# WHAT SPIKE 1 ESTABLISHED
+#   - dart2js COMPILES dart:io. It throws UnsupportedError("_Namespace") at
+#     RUNTIME, only when the filesystem is touched. I had asserted a
+#     compile-time rejection; a four-second control falsified it. The task is
+#     not to strip dart:io out of the compiler -- it is to never call it.
+#   - compiler_api.dart is intact: 280 lines, importing only dart:async and
+#     dart:typed_data. readFromUri is NON-generic, returning Input<Uint8List>.
+#   - pkg/compiler is 4/278 files on dart:io: the CLI plus the two dart:io
+#     providers -- the host adapter layer an embedder replaces.
+#   - dart2js_platform.dill is 10,292,168 bytes.
+#
+# NEW IN SPIKE 3
+#   S2 reads pkg/dartpad_worker before I write another line of my own. A package
+#      named dartpad_worker sitting in the SDK is exactly the kind of thing that
+#      was "sitting in the upstream project's own script the whole time" -- and
+#      libriscv won Bx-10b on the single fact that it already had a wasm example
+#      in-tree. Proven beats promising.
+#   S4 falls back to a TRIMMED workspace if the full one will not resolve: the
+#      SDK workspace has ~60 members and any one of them needing a DEPS-only
+#      package would sink dart2js for reasons unrelated to dart2js.
+#
+# THE GATES, still ordered by how much I have to guess. Gate 1 has nothing of
+# mine in its compile path, which after two rounds of failing on my own
+# scaffolding is the property I want most: it cannot fail for a reason I
+# invented, and it is the roadmap's spike verbatim.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/gate1/*.gz
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            dartspike/clone.log
+            tools/dart-spike/
