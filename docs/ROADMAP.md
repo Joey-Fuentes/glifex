@@ -383,18 +383,45 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
         inflates allocation until Go's concurrent GC pauses land inside the timed region.
         Go's Lab space verdict is sound; its time verdict is not, yet.
         [Bx-12-go-lab-time-known-issue]
-- [ ] **Bx-13. Dart** -- **likely the easiest remaining track, not the hardest.** The note below
-      was right that *dart2wasm* is a host build-time tool -- but the client-side path is not
-      unproven, it **shipped**: Google's `try.dartlang.org` (2013) compiled Dart to JS **in the
-      browser, offline**, by running **dart2js on itself** -- dart2js is written in Dart, so it
-      self-hosts to JS and the browser runs the output natively. The structural reason this works
-      for Dart and not Kotlin: **no JVM underneath.** kotlinc needs a JDK (121 missing classes);
-      dart2js needs only Dart's core libs. The blocker shrinks to a `dart:io` shim (virtual FS),
-      not a runtime port. No emulation, no ~300x, no vendored VM -- the same shape as the eight
-      tracks glifex already ships.
-      *Spike:* self-compile a modern dart2js (or dart2wasm, the modern equivalent) to JS/wasm and
-      measure the artifact size + compile time; try.dartlang.org was retired (DartPad went
-      server-side) and today's compiler is bigger and leans harder on `dart:io`.
+- [x] **Bx-13. Dart** -- **feasibility PROVEN. Track not built.** Full record, every
+      number measured: `docs/dart2js-self-hosted.md`.
+      The steer was right: **dart2js is written in Dart, so it self-hosts to JS and the
+      browser runs the output natively.** `try.dartlang.org` (2013) really did this, and
+      it still works. Measured: **dart2js, compiled to JS by dart2js, runs in real
+      headless Chromium and compiles Dart correctly** -- byte-identical to the VM (622
+      elements, 10538 types, 275 methods, 107,044 chars), in **4.4s**, over **5.4 MB
+      gzipped** (compiler 2.37 + platform dill 3.28 + libraries.json 0.002). Cheaper than
+      most tracks glifex already ships. No VM, no emcc, no gclient, no embedder; output
+      runs at native JS speed.
+      *What this entry got wrong -- all of it corrected by the spikes:*
+      **(a)** "the blocker shrinks to a `dart:io` shim" -- no. dart2js **compiles**
+      `dart:io` and throws only when it is **called**, which is precisely why the compiler
+      self-hosts at all. The real blocker was `dart:ffi`, reached only via the CLI
+      entrypoint (`src/dart2js.dart` -> `src/io/mapped_file.dart` -> `package:mmap`) --
+      i.e. in the host adapter layer an embedder replaces anyway. Route through
+      `compiler_api.dart` (280 lines; imports only `dart:async` + `dart:typed_data`), not
+      the CLI.
+      **(b)** "or dart2wasm, the modern equivalent" -- no. dart2wasm shells out to a
+      `wasm-opt` **subprocess** (`wasmOptPath`, `maxActiveWasmOptProcesses`), which a
+      browser cannot provide.
+      **(c)** "DartPad went server-side" -- it came back. The SDK now ships
+      `pkg/dartpad_worker` + `pkg/dartpad` (DDC in a worker, virtual FS). Irrelevant
+      either way: `modulovalue/dart-live` runs the **whole Dart VM** in a browser today
+      (emcc + the VM's own ARM32 simulator; 36.5 MB / 11.2 MB gz), so the question was
+      never *whether*, only *how cheaply*.
+      **(d)** "today's compiler is bigger and leans harder on `dart:io`" -- it is 2.37 MB
+      gzipped, and `dart:io` is **4 of 278 files**, all in the layer we replace.
+      *Known blocker, with a fix:* one line. `js_::_isJSObject`'s `Name.library` points at
+      `dart:_rti`, so `kernel/library_index.dart:329` silently drops it and
+      `shared_interop_transformer`'s unguarded constructor dies. dart2js miscompiles
+      kernel's private-Name association; it bites exactly one member because `_isJSObject`
+      is the only one with a same-named private twin in another library. Fix: compare
+      `member.enclosingLibrary` rather than `member.name.library`, in a pinned SDK
+      checkout before `dart compile js` -- the compiler, not the dill; the same discipline
+      as riscv64-from-pinned-sources. Worth reporting upstream (there is no dart2js
+      self-host test in `test_matrix.json`, only a DDC one), but not a gate.
+      *Next:* Bx-13a vendoring (pinned SDK + the one patch + `dart compile js`), then the
+      worker + harness -- ordinary track work now the hard question is settled.
 - [ ] **Bx-14. Swift** -- Emscripten + MiniSwift, but **the scope caveat resolved badly: MiniSwift
       (`toprakdeviren/msf`, MIT, C11, no deps, 280+ tests, has a `make wasm` target) is a FRONTEND
       ONLY** -- "Lexer -> Parser -> Sema -> typed AST. No LLVM, no codegen, no runtime." It cannot

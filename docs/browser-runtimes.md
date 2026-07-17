@@ -11,7 +11,7 @@
 > executes the code, and GNU as+ld cross-targeting aarch64 run as musl-static guests **under Blink** to
 > assemble it -- not arm-sandbox, not clang, and the Unicorn/Keystone GPL route is retired for real.
 > Blink is still x86-64-guest-only and still never emulates arm64 -- it runs the *assembler*, which is an
-> x86-64 binary that *emits* aarch64. Zig/Go/Dart and Swift remain feasibility
+> x86-64 binary that *emits* aarch64. Zig and Swift remain feasibility
 > *spikes*. Also: PHP and C/C++ browser runtimes already shipped (Bx-2/Bx-3, verified in STATUS) -- the old
 > "feasible to add now" wording below predates that. These toolchain calls are under active re-research
 > (J. Fuentes, in parallel); the per-target notes and "Decisions locked" below will be reconciled once it
@@ -55,7 +55,7 @@ Tiered by feasibility × fidelity × effort.
 
 **Zig** — the **self-hosted Zig compiler** runs as WASM (the bootstrap ships a `zig1.wasm`; zigwasm.org does interactive in-browser compilation of the compiler + stdlib). User source → zig-in-wasm compiles → run. **Fidelity: high** (the real compiler). Moderate size. License: MIT. Caveat: Zig is pre-1.0 and ships breaking changes — pin a version.
 
-**Dart** — `dart2wasm` (the real Dart front-end) now runs **client-side** in the browser (2026): source → wasm on the page, no compiler server. **Fidelity: high** (real dart2wasm). BSD. Caveat: Dart-to-wasm requires **WasmGC** (Chromium/V8 119+), so modern-browsers-only; in-browser compilation is a recent capability — verify maturity when we build it.
+**Dart** — **dart2js self-hosted to JS** (Bx-13, feasibility proven — docs/dart2js-self-hosted.md). dart2js is written in Dart, so it compiles itself to JavaScript and the browser runs the output natively: measured at **5.4 MB gzipped**, **4.4s** per compile in real Chromium, byte-identical to the VM. **Fidelity: high** (the real dart2js). BSD-3. **No WasmGC needed** — the output is plain JS. *Correction:* the dart2wasm claim that stood here was wrong — dart2wasm shells out to a `wasm-opt` subprocess, which a browser cannot provide.
 
 **Retro trio — 6502, Z80, SM83 (CPU-core-only)** — small OSS CPU cores (JS or WASM) + an OSS assembler (GoodASM covers all three, stable; or per-arch JS assemblers) + a new per-chip register/memory harness. **Fidelity: high and PROVABLE** — SingleStepTests/jsmoo give cycle-by-cycle reference suites (1000 tests/opcode w/ bus activity) we can run in CI to prove the core matches silicon. **Size: smallest of everything.** License: cores/assembler MIT/BSD-class. Scope: pure CPU (registers + RAM in, result out) — **no Game Boy hardware/PPU/MMIO** (separate future track).
 
@@ -98,7 +98,7 @@ Prereq: **B1** (regression-test the 5 existing browser runtimes) lands first —
 4. **C#** — Roslyn; moderate size.
 5. **Zig** — self-hosted compiler-in-wasm.
 6. **Retro trio (6502 / Z80 / SM83)** — small, provable, distinctive; establishes the CPU-core harness. (Could move earlier — small and high-value.)
-7. **Dart** — dart2wasm client-side (WasmGC caveat).
+7. **Dart** — dart2js self-hosted to JS; no WasmGC. Feasibility proven (Bx-13).
 8. **x86-64** — Blink + clang-cross-assemble; introduces the ELF+syscall harness.
 9. **arm64** — VIXL-in-wasm32 + GNU as/ld under Blink; all-permissive, spike proven (`docs/vixl-arm64.md`).
 10. **Go** — gc-in-wasm (heavy).
@@ -120,7 +120,8 @@ Each target ships as its own PR (a `fetch-runtimes.mjs` entry + a `runtimes.js` 
 - Java: SHIPPED in-browser via teavm-javac (real javac AOT to WasmGC); GraalVM-wasm was the pre-ship plan. Known JS-call-stack compile ceiling (docs/teavm-javac-compile-ceiling.md). *(shipped)*
 - Kotlin: gated with Java (JVM-based compiler); CLI-only until GraalVM-wasm hosts kotlinc. *(research-confirmed)*
 - Swift: CLI-only until an in-browser swiftc is real (SwiftWasm is cross-compile today). *(research-confirmed)*
-- PHP / Zig / Dart: feasible now — php-wasm interpreter, self-hosted zig-in-wasm, client-side dart2wasm (WasmGC-only). *(research-confirmed)*
+- PHP / Zig: feasible now — php-wasm interpreter, self-hosted zig-in-wasm. *(research-confirmed)*
+- Dart: **proven, not researched** — dart2js self-hosts to JS and compiles in Chromium; 5.4 MB gz, 4.4s. Not dart2wasm, and no WasmGC. *(measured, Bx-13)*
 
 ## Full corpus coverage
 
