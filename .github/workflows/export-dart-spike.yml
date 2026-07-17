@@ -1,0 +1,106 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 13. Spike 12 held the event loop open and gate 2b stopped exiting
+# silently -- it now HANGS. That is the finding, not a setback.
+#
+# Before, node exited because the loop was EMPTY, which means the compile had
+# nothing pending whatsoever. That is not slow work. That is an await that will
+# never resume.
+#
+# THE CLUE WAS ALREADY IN THE LOG. Gate 2a-GX's output ran under node and
+# printed [KATA] gx ok solve(10)=55 -- but that kata is SYNCHRONOUS. gx_web's
+# main is async and stalls at its first await. dart2js targets the BROWSER: its
+# async scheduler picks a strategy at startup from self.scheduleImmediate /
+# self.MutationObserver / setTimeout, and under bare node CommonJS there is no
+# 'self'. A no-op scheduleImmediate gives exactly this signature -- sync code
+# runs, the first await never resumes, nothing is pending, the loop empties.
+#
+# THAT IS A HYPOTHESIS, and twelve spikes have taught me what mine are worth:
+# every time I reasoned, I was wrong; every time I ran a two-second control, I
+# learned the answer. So section 7b is 20 lines of Dart with an await in it, and
+# it runs BEFORE the 40-second compile it exists to explain. Both ways, because
+# a control that only tests the happy path proves nothing:
+#     7b-1  bare node          -- stalls if the hypothesis holds
+#     7b-2  with self defined  -- passes if the hypothesis holds
+# If 7b-1 passes, the hypothesis is dead and the fault is inside the compile,
+# where gate 2b's stage marks and input dump will have to find it.
+#
+# drive-web.cjs now defines globalThis.self and says whether it had to. The
+# watchdog drops from 600s to 120s: the probe captures to a file and prints
+# afterwards, so a stall is total silence, and ten minutes of silence wastes a
+# round.
+#
+# WHAT IS GREEN AND STAYING GREEN
+#   GATE 2a-REF: the SDK's own runCompiler, in memory  -> solve(10)=55
+#   GATE 2a-GX:  MY providers, no filesystem in the compile path, 3.5s,
+#                out.js + out.js.map, 107,044 chars  -> solve(10)=55
+#   GATE 2b:     the embeddable compiler compiles to JS at 2.37 MB gzipped.
+#                Only its EXECUTION under node is unresolved.
+#
+# SETTLED
+#   dart:ffi enters pkg/compiler through exactly ONE file, src/io/mapped_file.
+#   dart, imported by exactly ONE file, src/dart2js.dart -- the CLI.
+#   Wire bill: 25.3 MB raw / ~5.7 MB gz, against dart-live's 36.5 / 11.2.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/*.log
+            dartspike/gate2/gx_ref_out.js
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            dartspike/ctrl/*.js
+            tools/dart-spike/
