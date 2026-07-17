@@ -411,15 +411,25 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       never *whether*, only *how cheaply*.
       **(d)** "today's compiler is bigger and leans harder on `dart:io`" -- it is 2.37 MB
       gzipped, and `dart:io` is **4 of 278 files**, all in the layer we replace.
-      *Known blocker, with a fix:* one line. `js_::_isJSObject`'s `Name.library` points at
-      `dart:_rti`, so `kernel/library_index.dart:329` silently drops it and
-      `shared_interop_transformer`'s unguarded constructor dies. dart2js miscompiles
-      kernel's private-Name association; it bites exactly one member because `_isJSObject`
-      is the only one with a same-named private twin in another library. Fix: compare
-      `member.enclosingLibrary` rather than `member.name.library`, in a pinned SDK
-      checkout before `dart compile js` -- the compiler, not the dill; the same discipline
-      as riscv64-from-pinned-sources. Worth reporting upstream (there is no dart2js
-      self-host test in `test_matrix.json`, only a DDC one), but not a gate.
+      *Known blocker, with a fix -- and it is kernel's bug, not dart2js's:*
+      `pkg/kernel/lib/binary/ast_from_binary.dart`'s `BinaryBuilder.readName` packs its
+      name-cache key as `stringReference | (libraryReferenceIndex << 30)`. `_nameCache` is
+      a `Map`, not a `List`, so the key never needed packing -- and **both bitwise
+      operators are 32-bit on web targets**, so the key retains only
+      `libraryReferenceIndex & 3`. **Two libraries congruent mod 4 collide** and the cache
+      returns the `Name` read first. Measured: `dart:_rti` and `dart:js_interop` both key
+      to `-1073736788` on web, distinctly on the VM. dart2js is faithful here -- it
+      compiled a 64-bit assumption to correct 32-bit web semantics. Latent since
+      `e3d4fbec80c` (2022, "[kernel] Deduplicate Names when loading dill").
+      *Fix:* four edits in that file, keying the cache on a record `(int, int)` instead of
+      a packed int -- structural equality, no arithmetic. Applied to a pinned SDK checkout
+      before `dart compile js`; the compiler, not the dill. Proven end to end: 622 / 10538
+      / 275 / 107,044 / solve(10)=55, browser gate 4.4s, `library_index.dart` pristine.
+      *Do not just pin a newer SDK.* On main the crash does not reproduce -- and **1651
+      names are still misattributed** (VM: 91). The dice merely landed differently.
+      Skipping the patch there would **appear** to work, which is worse than crashing.
+      Being reported upstream against `pkg/kernel`.
+
       *Next:* Bx-13a vendoring (pinned SDK + the one patch + `dart compile js`), then the
       worker + harness -- ordinary track work now the hard question is settled.
 - [ ] **Bx-14. Swift** -- Emscripten + MiniSwift, but **the scope caveat resolved badly: MiniSwift
