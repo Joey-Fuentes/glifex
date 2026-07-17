@@ -1,0 +1,109 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 8. Spike 7 resolved the tree and the thesis held.
+#
+# THE HEADLINE, from gate 2b:
+#   Compiled 27,568,167 input bytes to 16,219,704 characters JavaScript in 41.6s
+#   embedded compiler: 16,219,704 bytes / 2,369,595 gzipped
+# dart2js compiled an EMBEDDABLE DART COMPILER to JavaScript. That is the
+# roadmap's spike, answered: the artifact exists and it costs 2.4 MB on the wire.
+#
+# AND GATE 1 FAILED, which is the more interesting half.
+#   dart compile js pkg/compiler/lib/src/dart2js.dart
+#     Error: Dart library 'dart:ffi' is not available on this platform.
+#     compiler/src/dart2js.dart => src/io/mapped_file.dart => package:mmap => dart:ffi
+# The CLI entrypoint cannot self-host, and NOT because of dart:io -- spike 1
+# proved that compiles and only throws when called. dart:ffi is a hard front-end
+# rejection on the IMPORT GRAPH, before tree shaking; reachability is irrelevant.
+# Gate 2b compiled anyway because the embeddable entrypoint never imports
+# mapped_file.dart. That contrast IS the finding: the dart:ffi dependency sits in
+# the host adapter layer, on the CLI's side of the line, exactly where dart:io
+# does. Gate 1 is retired -- re-running a compile known to fail teaches nothing.
+# Section 6 censuses dart:ffi instead, to check that gate 2b was structure and
+# not luck.
+#
+# THE TWO BUGS, both mine, both one line, both caught by running the thing:
+#   1. gx_core: "Cannot modify unmodifiable map" at CompilerOptions.deriveOptions.
+#      environment keeps its const {} default unless set; deriveOptions writes to
+#      it. The comment directly above my parse() call has QUOTED the CLI's
+#      ..environment cascade since spike 4 -- I copied the reference and did not
+#      follow it. Reading is not the same as doing.
+#   2. gx_ref: Undefined name OutputType. memory_compiler re-exports
+#      output_collector but its compiler_api import is "show CompilationResult,
+#      CompilerDiagnostics, CompilerOutput, Diagnostic" -- OutputType is not in it.
+#
+# WHAT SPIKE 7 ALSO SETTLED
+#   - The SIGPIPE fix worked: pub exited 0, RESOLVED, 97 packages, with compiler,
+#     front_end, kernel, shell_arg_splitter, dart2wasm and dev_compiler all in
+#     the package_config. Seven rounds to get a resolvable tree, five of those
+#     lost to my own scaffolding.
+#   - Attempt A is dead twice over: third_party/pkg/dap AND
+#     third_party/pkg/language_server_protocol, both gclient-only.
+#
+# WHY THIS MATTERS AGAINST dart-live
+#   dart-live proves a Dart toolchain runs in a browser, via the VM built with
+#   emcc for linux_simarm: 36.5 MB raw / 11.2 MB gzipped. This route needs no VM,
+#   no emcc, no gclient and no embedder, and its output runs as native JS instead
+#   of through a simulated ARM. Section 6b measures the rest of the bill.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/*.log
+            dartspike/gate2/gx_ref_out.js
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            tools/dart-spike/
