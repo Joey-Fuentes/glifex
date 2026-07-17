@@ -1,0 +1,115 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 22. THE PREVIOUS FIX WAS WRONG. This is the real one, end to end.
+#
+# The upstream chat found the actual bug, and it is not what spike 21 shipped.
+# pkg/kernel/lib/binary/ast_from_binary.dart, BinaryBuilder.readName:
+#
+#     nameCacheIndex = stringReference | ((libraryReferenceIndex) << 30);
+#
+# _nameCache is a Map<int, Name?>, not a List -- the key never needed packing.
+# And BOTH bitwise operators are 32-BIT ON WEB TARGETS, so "<< 30" keeps only
+# libraryReferenceIndex & 3 and "|" truncates to int32. Two libraries congruent
+# mod 4 collide and the cache returns the Name built for whichever was read
+# first. Verified independently against the real dill:
+#     dart:_rti        strIdx 5036 libIdx 9035  &3=3  key(web,32) -1073736788
+#     dart:js_interop  strIdx 5036 libIdx 37275 &3=3  key(web,32) -1073736788
+#     key(vm,64): 9701257384876 vs 40023726494636 -- distinct.
+# Latent since e3d4fbec80c (2022, "[kernel] Deduplicate Names when loading
+# dill") -- a well-measured optimisation with an unstated 64-bit precondition,
+# in code that had only ever run on the VM.
+#
+# SO TWO THINGS SPIKE 21 SHIPPED ARE FALSE:
+#   "dart2js miscompiles kernel" -- no. dart2js is faithful; it compiled a
+#   64-bit assumption to correct 32-bit web semantics. THE DEFECT IS KERNEL'S.
+#   "zero members dropped, so it loosens nothing" -- no. The VM legitimately
+#   drops 90 real cross-library private names, which the guard is SUPPOSED to
+#   skip. The workaround took 90 to 0. It OVERSHOOTS, on every platform. I
+#   measured "0 dropped", saw zero, and called it good -- never comparing
+#   against the VM's skip set. The happy path, declared as victory. Exactly the
+#   error this series has spent twenty rounds calling out.
+#
+# THIS ROUND: swap library_index.dart's enclosingLibrary workaround for the four
+# record-key edits in ast_from_binary.dart, and re-prove end to end.
+#   7a5  applies the four edits, each anchor asserted unique. Anchor 4 is a
+#        prefix hazard -- "nameCacheIndex = stringReference" without the
+#        semicolon matches the packed line too (verified: 2 matches). With the
+#        semicolon it is unique even before edit 3 lands.
+#   7a6  asserts library_index.dart is PRISTINE. Two fixes at once proves
+#        neither.
+#
+# EXPECTED, and it is the whole point: the same numbers spike 21 got with the
+# workaround -- 622 elements, 10538 types, 275 methods, 107,044 chars,
+# solve(10)=55 -- from both the node gate and real Chromium. If they match, the
+# record key is proven end to end and the docs can be corrected. If they do not,
+# the upstream handoff is wrong and we say so.
+#
+# NOT changed: 7a2, the crash-reporter defuse. front_end/crash.dart:94 builds an
+# HttpClient whose constructor throws Platform._version under dart2js, one line
+# before the try that would have rethrown the original. Unrelated to this bug,
+# still required, still what unmasks any NEW crash.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/*.log
+            dartspike/gate2/gx_ref_out.js
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            dartspike/ctrl/*.js
+            dartspike/export/*
+            dartspike/browser-gate.log
+            tools/dart-spike/

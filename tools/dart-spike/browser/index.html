@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Bx-13 -- a Dart compiler in the browser</title>
+<pre id="log">booting...</pre>
+<script>
+  // THE WHOLE POINT: the Dart compiler's platform inputs arrive over the
+  // network and are handed to it as bytes. There is no filesystem here. There
+  // is no server doing the compiling. gx_web.js IS dart2js, as JavaScript.
+  const log = (s) => { document.getElementById('log').textContent += "\n" + s;
+                       (window.__gxlog = window.__gxlog || []).push(s); };
+  window.gxMark = (stage) => log("[mark] " + stage);
+  window.gxDone = (outJs) => {
+    log("produced   : " + outJs.length + " chars of JS");
+    // Run the JS the browser-hosted compiler just emitted. Compiling is not the
+    // demo. This is the demo.
+    let printed = [];
+    const realLog = console.log;
+    console.log = (s) => printed.push(String(s));
+    try { (0, eval)(outJs); } finally { console.log = realLog; }
+    const out = printed.join("\n");
+    log("output ran : " + out);
+    window.__gxresult = out;
+  };
+  (async () => {
+    try {
+      log("self is the global here -- this is a browser, not node");
+      const dill = new Uint8Array(await (await fetch('dart2js_platform.dill')).arrayBuffer());
+      const spec = await (await fetch('libraries.json')).text();
+      log("fetched    : dill " + dill.length + " bytes, libraries.json " + spec.length + " chars");
+      window.gxGetDill = () => dill;
+      window.gxGetLibrariesSpec = () => spec;
+      const t0 = performance.now();
+      await import('./gx_web.js').catch(() => new Promise((res, rej) => {
+        const s = document.createElement('script'); s.src = 'gx_web.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      }));
+      log("compiler   : loaded in " + Math.round(performance.now() - t0) + "ms");
+    } catch (e) {
+      log("BOOT FAILED: " + e);
+      window.__gxresult = "BOOT FAILED: " + e;
+    }
+  })();
+</script>
