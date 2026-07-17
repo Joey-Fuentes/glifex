@@ -1,0 +1,204 @@
+name: tmp-dart2js-probe
+# TEMPORARY. Throwaway. Do not merge to main; delete the branch when done.
+#
+# Minimises the defect found while proving dart2js can self-host to JS:
+# dart2js, compiled to JavaScript by dart2js, misattributes a private
+# member's Name.library to a DIFFERENT library that declares a same-named
+# private member and was read earlier. The Dart VM, on the same bytes,
+# does not. Upstream will not act on "build a 16 MB self-hosted dart2js",
+# so this is the small version: two libraries, one private name, two
+# runtimes, ten lines of output.
+#
+# Shape (per the handoff's section 6):
+#   1. lib/a.dart and lib/b.dart each declare a top-level _probe.
+#   2. a is imported first, so a is read first -- the twin condition.
+#   3. Compile to a dill.
+#   4. Load the dill, build a LibraryIndex, print name.library for each.
+#   5. Run on the VM and under dart2js. Compare.
+#
+# The dill is embedded as a const byte list, so the reader touches no
+# dart:io and the VM and dart2js runs execute IDENTICAL source. Only the
+# compiler differs. That is the whole point of the experiment.
+
+on:
+  push:
+    branches: [chore/tmp-dart2js-probe-20260717]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Versions
+        run: |
+          dart --version
+          node --version
+
+      - name: Sparse-clone pkg/kernel at the pinned tag
+        # package:kernel from pub may not match 3.12.2's binary format.
+        # The tag does, by construction. blob:none + sparse keeps it small.
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP"
+          git clone --depth 1 --branch 3.12.2 --filter=blob:none --sparse \
+            https://github.com/dart-lang/sdk.git sdk
+          cd sdk
+          git sparse-checkout set pkg/kernel
+          ls -l pkg/kernel/lib/library_index.dart
+
+      - name: Write the probe package
+        run: |
+          set -eux
+          P="$RUNNER_TEMP/probe"
+          mkdir -p "$P/lib" "$P/bin"
+
+          cat > "$P/pubspec.yaml" <<'EOF'
+          name: probe
+          publish_to: none
+          environment:
+            sdk: ">=3.12.0 <4.0.0"
+          dependencies:
+            kernel:
+              path: ../sdk/pkg/kernel
+          EOF
+
+          cat > "$P/lib/a.dart" <<'EOF'
+          int _probe() => 1;
+          int callProbe() => _probe();
+          EOF
+
+          cat > "$P/lib/b.dart" <<'EOF'
+          int _probe() => 2;
+          int callProbe() => _probe();
+          EOF
+
+          # a first, so a's _probe is read first. b's is the one at risk.
+          cat > "$P/bin/target.dart" <<'EOF'
+          import 'package:probe/a.dart' as a;
+          import 'package:probe/b.dart' as b;
+
+          void main() {
+            print(a.callProbe());
+            print(b.callProbe());
+          }
+          EOF
+
+          # Narrow imports on purpose: package:kernel/kernel.dart pulls in
+          # dart:io (loadComponentFromBinary), which dart2js cannot compile.
+          cat > "$P/bin/read.dart" <<'EOF'
+          import 'dart:typed_data';
+
+          import 'package:kernel/ast.dart';
+          import 'package:kernel/binary/ast_from_binary.dart';
+          import 'package:kernel/library_index.dart';
+          import 'package:probe/dill_bytes.dart';
+
+          void main() {
+            final component = Component();
+            BinaryBuilder(Uint8List.fromList(dillBytes)).readComponent(component);
+
+            final lines = <String>[];
+
+            for (final lib in component.libraries) {
+              for (final p in lib.procedures) {
+                if (p.name.text != '_probe') continue;
+                final nameLib = p.name.library;
+                lines.add('member _probe declared in ' +
+                    lib.importUri.toString() +
+                    ' | name.library=' +
+                    (nameLib == null ? 'null' : nameLib.importUri.toString()) +
+                    ' | enclosingLibrary=' +
+                    p.enclosingLibrary.importUri.toString());
+              }
+            }
+
+            final index = LibraryIndex.all(component);
+            for (final lib in component.libraries) {
+              if (lib.importUri.scheme != 'package') continue;
+              if (!lib.procedures.any((p) => p.name.text == '_probe')) continue;
+              var verdict = 'FOUND';
+              try {
+                index.getProcedure(lib.importUri.toString(), '::', '_probe');
+              } catch (_) {
+                verdict = 'NOT-FOUND';
+              }
+              lines.add('LibraryIndex lookup _probe in ' +
+                  lib.importUri.toString() + ' -> ' + verdict);
+            }
+
+            lines.sort();
+            for (final l in lines) {
+              print(l);
+            }
+          }
+          EOF
+
+      - name: Compile the two libraries to a dill and embed it
+        run: |
+          set -eux
+          P="$RUNNER_TEMP/probe"
+          cd "$P"
+          dart pub get
+          dart compile kernel bin/target.dart -o "$P/probe.dill"
+          ls -l "$P/probe.dill"
+          node -e 'const fs = require("fs"); const b = fs.readFileSync(process.argv[1]); fs.writeFileSync(process.argv[2], "const List<int> dillBytes = <int>[" + Array.from(b).join(",") + "];\n");' "$P/probe.dill" "$P/lib/dill_bytes.dart"
+          wc -c "$P/lib/dill_bytes.dart"
+
+      - name: Run the probe on the VM
+        run: |
+          set -eux
+          mkdir -p "$GITHUB_WORKSPACE/probe-out"
+          cd "$RUNNER_TEMP/probe"
+          dart run bin/read.dart | tee "$GITHUB_WORKSPACE/probe-out/vm.txt"
+
+      - name: Run the probe compiled by dart2js
+        # globalThis.self is mandatory: dart2js reaches its global through
+        # self, node CommonJS has none, and without the shim the first await
+        # never resumes -- sync code runs, then silence, then exit 0.
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP/probe"
+          dart compile js -o "$RUNNER_TEMP/read.js" bin/read.dart
+          node -e 'globalThis.self = globalThis; require(process.argv[1]);' "$RUNNER_TEMP/read.js" | tee "$GITHUB_WORKSPACE/probe-out/js.txt"
+
+      - name: Compare
+        run: |
+          set -eu
+          O="$GITHUB_WORKSPACE/probe-out"
+          echo "======== VM ========"
+          cat "$O/vm.txt"
+          echo "======== dart2js ========"
+          cat "$O/js.txt"
+          echo "======== diff ========"
+          if diff -u "$O/vm.txt" "$O/js.txt" > "$O/diff.txt"; then
+            echo "VERDICT -- AGREE. The minimal shape does not reproduce."
+            echo "The trigger is narrower than two same-named private members."
+            echo "Vary it next: patch files merged into a library, dart: scheme"
+            echo "libraries, read order, LibraryIndex.coreLibraries vs .all."
+          else
+            cat "$O/diff.txt"
+            echo "VERDICT -- DISAGREE. This is the repro. Same source, same"
+            echo "bytes, two values for Name.library. File it."
+          fi
+
+      - name: Upload the probe output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart2js-probe
+          path: probe-out
+          if-no-files-found: warn
