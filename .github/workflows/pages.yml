@@ -197,6 +197,24 @@ jobs:
           # and compiles nothing, dying in _js_interop_checks before any work.
           # Only running it catches that.
           node tools/dart-toolchain/verify-dart.mjs web/vendor/dart
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "25" }   # pins.env TEAVM_JAVAC_JDK.
+                                                              # NOT the README's 21: settings.gradle
+                                                              # sets VERSION_25 and :javac compiles
+                                                              # jdk25u source. build-teavm-javac.sh
+                                                              # refuses if these disagree.
+      - name: Vendor Java toolchain (teavm-javac built from pinned source)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          . tools/java-toolchain/pins.env
+          mkdir -p web/vendor/java
+          bash tools/java-toolchain/build-teavm-javac.sh "$PWD/web/vendor/java"
+          ls -la web/vendor/java
+          # Size proves the build emitted bytes. It does NOT prove the compiler
+          # works -- that is what took Java four rounds to establish. Only
+          # compiling a kata and running the output catches a compiler that
+          # builds to exactly the right size and compiles nothing.
+          node tools/java-toolchain/verify-java.mjs web/vendor/java
       - name: Mark vendor complete (cached for future runs)
         run: touch web/vendor/.vendor-complete
       - run: node web/build.mjs
