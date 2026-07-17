@@ -1,0 +1,281 @@
+# GX-BX8B-SPIKE-R3
+# Bx-8b round 3: the build works. Do the artifacts? Verify ours, and run the
+# SAME verify against production's as a control.
+#
+# THROWAWAY. Auto-runs on push to spike/bx8b-** so the loop is: edit, push, read.
+# It never runs on main and it is never merged -- same shape as the dart2js
+# spikes (chore/export-dart-spike-*) and csharp-runtime-validate.yml.
+#
+# Round 1 is mostly RECONNAISSANCE, on purpose. docs/dart2js-self-hosted.md paid
+# twenty-one rounds to learn this and wrote it down:
+#   "Run the control first. Every hypothesis reasoned to in this series was
+#    wrong; every two-second control was right."
+#   "Print the reference; do not summarise it."
+#   "Log what was asked for, not what failed."
+#   "Export the artifact. It should have been exported at round 2."
+# So this prints the build files verbatim, exports everything, and treats the
+# build attempt as one more observation rather than the point.
+#
+# ROUND 2 SAID: BUILD SUCCESSFUL in 1m39s on JDK 25, all four artifacts, all
+# within a few percent of production's sizes. And the runtime.js we built has
+# teavmAsync / notifyHeapResized / teavm.imports; production's has NONE of them.
+# teavmAsync IS the WasmGC coroutine support TeaVM 0.13 introduced -- so the blob
+# on teavm.org predates the very commit (7e4a44cf, "Update teavm version to
+# 0.13.1") that is master. Production is running a hand-uploaded artifact from an
+# older, unknown commit. That is measured, not inferred.
+#
+# WHICH IS WHY ROUND 3 EXISTS. Our four artifacts differ from the shipped ones in
+# KIND, not just in bytes, and web/java-worker.js was written against the old
+# ones. "It built" is not "it works", and Java has no e2e smoke test to catch the
+# difference. So: run the verify on ours, and run the identical verify on the
+# live blob as a CONTROL. Both pass -> the swap is safe. Ours fails, live passes
+# -> the upgrade is the problem. Both fail -> the harness is the problem. Any of
+# those three is worth more than a green tick.
+#
+# ROUND 1 SAID: master is 7e4a44cf (2026-03-21, teavm 0.13.1), :compiler:build is
+# the right task and produces all four artifacts, and the build died at
+# :javac:compileJava because we gave it JDK 21 -- the README's number. The build's
+# own number is 25: settings.gradle sets source/targetCompatibility to
+# JavaVersion.VERSION_25, and :javac compiles openjdk/jdk25u source that uses
+# unnamed variables (_), final in Java 22 and preview-only in 21. The README is
+# stale. Believing it over the build is the same error dart2js spikes 3 and 4
+# made, and round 1 made it again.
+#
+# THE SOURCE IS konsoletyper/teavm-javac, NOT konsoletyper/teavm. The latter is
+# the AOT compiler (its 0.15.0 assets are Maven artifacts -- no compiler.wasm in
+# sight). teavm-javac is "Java compiler in the browser" and it publishes NO
+# releases and NO tags: its README offers "the latest WebAssembly module", a
+# rolling pointer at the maintainer's own web server. That is why a commit SHA
+# is the only pin available, and why this job exists.
+name: spike-teavm-javac
+on:
+  push:
+    branches: ["spike/bx8b-**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "25" }
+
+      - name: "Prove the JDK matches the pin before anything else runs"
+        run: |
+          set -euo pipefail
+          . tools/java-toolchain/pins.env
+          HAVE="$(java -version 2>&1 | head -1 | sed -E 's/.*version "([0-9]+).*/\1/')"
+          echo "## java is $HAVE, pins.env asks for $TEAVM_JAVAC_JDK"
+          java -version
+          if [ "$HAVE" != "$TEAVM_JAVAC_JDK" ]; then
+            echo "REFUSE: setup-java installed $HAVE, pins.env says $TEAVM_JAVAC_JDK."
+            echo "  A pin the workflow does not honour is a comment. Round 1 built on 21"
+            echo "  because the README says 21; the build asks for 25 and said so itself."
+            exit 1
+          fi
+
+      - name: "Resolve the pin, and say exactly what we are on"
+        run: |
+          set -euo pipefail
+          mkdir -p spike-out
+          . tools/java-toolchain/pins.env
+          echo "## repo: $TEAVM_JAVAC_REPO"
+          case "$TEAVM_JAVAC_REPO" in
+            *teavm-javac*) ;;
+            *) echo "REFUSE: that is not teavm-javac. konsoletyper/teavm is the AOT"
+               echo "  compiler and has no compiler.wasm. Wrong repo, wrong artifact."; exit 1 ;;
+          esac
+          # FULL clone, not --depth 1: an arbitrary pinned SHA has to be
+          # reachable, and the provenance step below walks history by date.
+          git clone "$TEAVM_JAVAC_REPO" src > spike-out/clone.log 2>&1
+          if [ -n "${TEAVM_JAVAC_COMMIT:-}" ]; then
+            git -C src checkout -q "$TEAVM_JAVAC_COMMIT" || { echo "REFUSE: no such commit $TEAVM_JAVAC_COMMIT"; exit 1; }
+            LANDED="$(git -C src rev-parse HEAD)"
+            [ "$LANDED" = "$TEAVM_JAVAC_COMMIT" ] || { echo "REFUSE: asked for $TEAVM_JAVAC_COMMIT, landed on $LANDED"; exit 1; }
+            echo "## PINNED to $TEAVM_JAVAC_COMMIT -- and HEAD confirms it"
+            echo "## master is now: $(git -C src rev-parse origin/master) (drift is information, not a problem)"
+          else
+            echo "## UNPINNED -- pins.env leaves TEAVM_JAVAC_COMMIT blank."
+            echo "## This round exists to resolve it. Put the SHA below into pins.env."
+          fi
+          SHA="$(git -C src rev-parse HEAD)"
+          echo "## BUILDING teavm-javac AT: $SHA"
+          git -C src log -1 --format='## date : %cI%n## subj : %s' HEAD
+          echo "## total commits on master: $(git -C src rev-list --count HEAD)"
+          echo "$SHA" > spike-out/source-sha.txt
+          git -C src log -1 --format='%H %cI %s' HEAD > spike-out/source-commit.txt
+
+      - name: "Provenance: what is production actually running, and when did it come from upstream"
+        run: |
+          # Evidence, NOT a version. Nothing here proves which commit built the
+          # bytes on the site -- upstream ships no version, so that link is
+          # unknowable by construction. What it DOES give is a date bound, and a
+          # candidate commit to diff against. Labelled as such wherever it lands.
+          set +e; set -u
+          BASE="https://glifex.dev/vendor/java"
+          : > spike-out/live-sizes.txt
+          curl -sS -o spike-out/live-manifest.json "$BASE/manifest.json" || echo "## no live manifest (Pages down, or Java never deployed)"
+          if [ -f spike-out/live-manifest.json ]; then
+            echo "## live manifest:"; cat spike-out/live-manifest.json
+            FETCHED="$(python3 -c 'import json;print(json.load(open("spike-out/live-manifest.json")).get("fetchedAt",""))' 2>/dev/null || echo "")"
+            if [ -n "$FETCHED" ]; then
+              echo "## production last pulled from teavm.org at: $FETCHED"
+              echo "## => the shipped artifact was built at or before that instant."
+              echo "## most recent teavm-javac commit at that time (EVIDENCE, NOT PROOF --"
+              echo "##  the maintainer uploads by hand, so the artifact may lag its commit):"
+              git -C src log --until="$FETCHED" -1 --format='##   %H %cI %s' || true
+              git -C src log --until="$FETCHED" -1 --format='%H' > spike-out/candidate-sha.txt || true
+            fi
+          fi
+          echo "## sha256 + size of what production serves today:"
+          for f in compiler.wasm compiler.wasm-runtime.js compile-classlib-teavm.bin runtime-classlib-teavm.bin; do
+            if curl -sS -f -o "spike-out/live-$f" "$BASE/$f"; then
+              printf '%s %s\n' "$(stat -c%s "spike-out/live-$f")" "$f" >> spike-out/live-sizes.txt
+              printf '##   %12s  %s  %s\n' "$(stat -c%s "spike-out/live-$f")" "$(sha256sum "spike-out/live-$f" | cut -d' ' -f1)" "$f"
+            else
+              echo "##   MISSING from the live site: $f"
+            fi
+          done
+          sha256sum spike-out/live-* > spike-out/live-digests.txt 2>/dev/null || true
+          # Round 2 deleted these after sizing them. Round 3 keeps them: they are
+          # the control. Still not shipped anywhere -- their provenance is the
+          # whole question -- but a control you threw away is not a control.
+          mkdir -p spike-out/live
+          for f in compiler.wasm compiler.wasm-runtime.js compile-classlib-teavm.bin runtime-classlib-teavm.bin; do
+            [ -f "spike-out/live-$f" ] && mv "spike-out/live-$f" "spike-out/live/$f"
+          done
+          ls -la spike-out/live || true
+
+      - name: "Recon: print the build, do not summarise it"
+        run: |
+          set +e; set -u
+          {
+            echo "===== settings.gradle"; cat src/settings.gradle 2>/dev/null
+            echo; echo "===== gradle.properties"; cat src/gradle.properties 2>/dev/null
+            echo; echo "===== gradle/wrapper/gradle-wrapper.properties"; cat src/gradle/wrapper/gradle-wrapper.properties 2>/dev/null
+            echo; echo "===== every build script in the tree"
+            find src \( -name '*.gradle' -o -name '*.gradle.kts' -o -name '*.toml' -o -name 'gradle.properties' \) \
+              -not -path '*/build/*' -not -path '*/.git/*' | sort | while read -r f; do
+              echo; echo "----- $f"; cat "$f"
+            done
+            echo; echo "===== who mentions the classlib archives"
+            echo "-- the README says these are 'generated with special tool'. Find the tool."
+            grep -rn "classlib-teavm\|compile-classlib\|runtime-classlib\|setSdk\|setTeaVMClasslib" src \
+              --include='*.gradle' --include='*.java' --include='*.js' --include='*.html' --include='*.properties' \
+              2>/dev/null | sed -n '1,80p'
+            echo; echo "===== module layout"
+            find src -maxdepth 2 -type d -not -path '*/.git*' | sort
+          } > spike-out/recon.txt 2>&1
+          cat spike-out/recon.txt
+
+      - name: "List the tasks the build actually offers"
+        run: |
+          set +e; set -u
+          chmod +x src/gradlew || true
+          # tee, never head: a SIGPIPE killed dart pub get mid-success in an
+          # earlier spike and cost a round to understand.
+          ( cd src && ./gradlew tasks --all --no-daemon --console=plain ) > spike-out/tasks.txt 2>&1
+          echo "## gradlew tasks exit=$? -- printing whatever we got:"
+          sed -n '1,200p' spike-out/tasks.txt
+
+      - name: "Attempt the build"
+        run: |
+          set +e; set -u
+          T0=$(date +%s)
+          ( cd src && ./gradlew :compiler:build --no-daemon --stacktrace --console=plain ) > spike-out/build.log 2>&1
+          RC=$?
+          T1=$(date +%s)
+          echo "## :compiler:build exit=$RC in $((T1-T0))s"
+          echo "$RC" > spike-out/build-rc.txt
+          # The tail is where a gradle failure says why. The head is where it
+          # says what it resolved. Print both, cut nothing in between silently.
+          echo "===== first 60 lines"; sed -n '1,60p' spike-out/build.log
+          echo "===== last 120 lines"; tail -120 spike-out/build.log
+          exit 0
+
+      - name: "Inventory whatever came out, and size it against production"
+        run: |
+          set +e; set -u
+          echo "## every candidate artifact under any build/ dir:"
+          find src -path '*/build/*' \( -name '*.wasm' -o -name '*.bin' -o -name '*.zip' -o -name '*.war' -o -name '*runtime.js' \) \
+            -printf '##   %10s  %p\n' 2>/dev/null | sort -k2 || true
+          DIST=src/compiler/build/distributions/dist.zip
+          if [ -f "$DIST" ]; then
+            echo "## dist.zip contents (the README says the library lands here):"
+            unzip -l "$DIST"
+            mkdir -p spike-out/dist && cp "$DIST" spike-out/dist/
+          else
+            echo "## no dist.zip -- either the build failed or the output shape is not what the README says."
+          fi
+          # The comparison that matters: did we build the same KIND of thing?
+          # Byte-equality is not expected (nobody claims this build is
+          # reproducible), so sizes in the same ballpark are the signal.
+          echo "## ours vs production, by size:"
+          for f in compiler.wasm compiler.wasm-runtime.js compile-classlib-teavm.bin runtime-classlib-teavm.bin; do
+            OURS="$(find src -path '*/build/*' -name "$f" -printf '%s' -quit 2>/dev/null || true)"
+            LIVE="$(awk -v n="$f" '$2 == n {print $1}' spike-out/live-sizes.txt 2>/dev/null)"
+            printf '##   %-32s ours=%-12s live=%s\n' "$f" "${OURS:-absent}" "${LIVE:-unknown}"
+          done
+          # ONLY the declared outputs. Round 1 vacuumed up every .bin under any
+          # build/ dir and carried the JDK's own test fixtures out of CI.
+          mkdir -p spike-out/built
+          for p in src/compiler/build/generated/teavm/wasm-gc/compiler.wasm \
+                   src/compiler/build/generated/teavm/wasm-gc/compiler.wasm-runtime.js \
+                   src/compiler/build/classlib/compile-classlib-teavm.bin \
+                   src/compiler/build/classlib/runtime-classlib-teavm.bin; do
+            [ -f "$p" ] && cp "$p" spike-out/built/ && echo "## carried out: $p"
+          done
+          echo "## sha256 of what we built:"
+          sha256sum spike-out/built/* 2>/dev/null | sed 's/^/##   /' || echo "##   nothing built"
+          sha256sum spike-out/built/* > spike-out/built-digests.txt 2>/dev/null || true
+          ls -la spike-out spike-out/built
+
+      - name: "CONTROL: does production's own blob pass the verify"
+        run: |
+          set +e; set -u
+          # First, because it is the control. If this fails, nothing the next
+          # step says about our build means anything.
+          node tools/java-toolchain/verify-java.mjs spike-out/live "live-blob" 2>&1 | tee spike-out/verify-live.log
+          echo "${PIPESTATUS[0]}" > spike-out/verify-live-rc.txt
+          echo "## control exit: $(cat spike-out/verify-live-rc.txt)"
+
+      - name: "Do the artifacts we built actually compile and run Java"
+        run: |
+          set +e; set -u
+          node tools/java-toolchain/verify-java.mjs spike-out/built "built-7e4a44cf" 2>&1 | tee spike-out/verify-built.log
+          echo "${PIPESTATUS[0]}" > spike-out/verify-built-rc.txt
+          echo "## built exit: $(cat spike-out/verify-built-rc.txt)"
+          echo
+          echo "## READ THIS AS A 2x2, not as a pass/fail:"
+          echo "##   live=0 built=0  -> the swap is safe; the artifact upgrade is inert"
+          echo "##   live=0 built!=0 -> the upgrade breaks something. That is the finding."
+          echo "##   live!=0 built=0 -> the shipped blob is worse than what we build. Also a finding."
+          echo "##   live!=0 built!=0 -> the harness is wrong, not the artifacts. Fix this file."
+
+      - name: "Export everything -- round 1 is the round to do it"
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bx8b-teavm-javac-spike
+          path: spike-out
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: "Summary"
+        if: always()
+        run: |
+          set +e; set -u
+          {
+            echo "### Bx-8b round 1"
+            echo
+            echo "- source: $(cat spike-out/source-commit.txt 2>/dev/null || echo unknown)"
+            echo "- :compiler:build exit: $(cat spike-out/build-rc.txt 2>/dev/null || echo 'did not run')"
+            echo "- candidate commit behind production: $(cat spike-out/candidate-sha.txt 2>/dev/null || echo unknown) (evidence, not proof)"
+            echo "- verify, OURS : $(cat spike-out/verify-built-rc.txt 2>/dev/null || echo 'did not run')"
+            echo "- verify, LIVE : $(cat spike-out/verify-live-rc.txt 2>/dev/null || echo 'did not run')  (control)"
+          } >> "$GITHUB_STEP_SUMMARY"
