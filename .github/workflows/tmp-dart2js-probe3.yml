@@ -1,0 +1,271 @@
+name: tmp-dart2js-probe3
+# TEMPORARY. Throwaway. Do not merge to main; delete the branch when done.
+#
+# v2 established the repro from the SDK's own dart2js_platform.dill:
+#   VM       _isJSObject in dart:js_interop -> name.library=dart:js_interop
+#   dart2js  _isJSObject in dart:js_interop -> name.library=dart:_rti
+#   guard would skip: VM 90, dart2js 2987 (dart2js is a strict superset)
+# One dill, one BinaryBuilder pass, no front_end, no two-stage linking.
+# The name text, the owning library and enclosingLibrary are all correct on
+# both sides. Only the library reference INSIDE the Name is wrong.
+#
+# v3 finds where. Two independent signals:
+#
+#   A. Print the actual reader source at tag 3.12.2 -- readName,
+#      readCanonicalNameReference, readLibraryReference, readUInt30. This
+#      always runs, so even a total failure of B leaves us with the exact
+#      code to write B against next time.
+#
+#   B. Subclass BinaryBuilder (no patching of kernel -- Dart dispatch is
+#      virtual, so overrides are called from inside the reader) and record,
+#      for every private name in file order:
+#          seq | text | canonical-name index | resolved library
+#      on the VM and under dart2js, then diff. The FIRST divergence is the
+#      answer:
+#        - indices identical, resolution differs -> the canonical name table
+#        - indices differ                        -> the read path itself
+#      B is continue-on-error: its override signatures are written blind
+#      against a version of kernel this job has not seen, so a compile error
+#      is an expected outcome, not a wasted run. A is the insurance.
+
+on:
+  push:
+    branches: [chore/tmp-dart2js-probe3-20260717]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Versions
+        run: |
+          dart --version
+          node --version
+
+      - name: Sparse-clone pkg/kernel at the pinned tag
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP"
+          git clone --depth 1 --branch 3.12.2 --filter=blob:none --sparse \
+            https://github.com/dart-lang/sdk.git sdk
+          cd sdk
+          git sparse-checkout set pkg/kernel
+          ls -l pkg/kernel/lib/binary/ast_from_binary.dart
+
+      - name: SIGNAL A -- dump the reader source
+        # The insurance. Whatever else happens, this run tells us exactly
+        # what these methods look like at 3.12.2, so the next probe is not
+        # written blind.
+        run: |
+          set -eu
+          mkdir -p "$GITHUB_WORKSPACE/probe-out"
+          S="$RUNNER_TEMP/sdk/pkg/kernel/lib/binary/ast_from_binary.dart"
+          {
+            echo "======== ast_from_binary.dart -- method signatures ========"
+            grep -n -E "^  [A-Za-z<>?, ]+ read(Name|CanonicalNameReference|LibraryReference|UInt30|StringReference)\b" "$S" || true
+            echo
+            echo "======== readName ========"
+            grep -n -A 12 "Name readName()" "$S" || true
+            echo
+            echo "======== readCanonicalNameReference ========"
+            grep -n -A 14 "readCanonicalNameReference()" "$S" || true
+            echo
+            echo "======== readLibraryReference ========"
+            grep -n -A 8 "readLibraryReference()" "$S" || true
+            echo
+            echo "======== readUInt30 ========"
+            grep -n -A 14 "int readUInt30()" "$S" || true
+            echo
+            echo "======== library_index guard, for the record ========"
+            grep -n -B 2 -A 10 "_addMember" "$RUNNER_TEMP/sdk/pkg/kernel/lib/library_index.dart" || true
+          } | tee "$GITHUB_WORKSPACE/probe-out/reader-source.txt"
+
+      - name: Write the probe package
+        run: |
+          set -eux
+          P="$RUNNER_TEMP/probe"
+          mkdir -p "$P/lib" "$P/bin"
+
+          cat > "$P/pubspec.yaml" <<'EOF'
+          name: probe
+          publish_to: none
+          environment:
+            sdk: ">=3.12.0 <4.0.0"
+          dependencies:
+            kernel:
+              path: ../sdk/pkg/kernel
+          EOF
+
+          # Narrow imports: package:kernel/kernel.dart pulls dart:io.
+          cat > "$P/bin/trace.dart" <<'EOF'
+          import 'dart:typed_data';
+
+          import 'package:kernel/ast.dart';
+          import 'package:kernel/binary/ast_from_binary.dart';
+          import 'package:probe/dill_bytes.dart';
+
+          // No patching of kernel. Dart dispatch is virtual, so these
+          // overrides are called from inside the reader's own code paths.
+          class DiagBuilder extends BinaryBuilder {
+            DiagBuilder(Uint8List bytes) : super(bytes);
+
+            int lastUint = -1;
+            int lastIndex = -1;
+            int seq = 0;
+            final List<String> trace = <String>[];
+
+            @override
+            int readUInt30() {
+              final int v = super.readUInt30();
+              lastUint = v;
+              return v;
+            }
+
+            @override
+            CanonicalName? readCanonicalNameReference() {
+              final CanonicalName? cn = super.readCanonicalNameReference();
+              // super consumed exactly one UInt30 -- the link-table index.
+              lastIndex = lastUint;
+              return cn;
+            }
+
+            @override
+            Name readName() {
+              final Name n = super.readName();
+              if (n.isPrivate) {
+                final Library? lib = n.library;
+                trace.add(seq.toString() +
+                    '|' + n.text +
+                    '|' + lastIndex.toString() +
+                    '|' + (lib == null ? 'null' : lib.importUri.toString()));
+                seq++;
+              }
+              return n;
+            }
+          }
+
+          void main() {
+            final component = Component();
+            final b = DiagBuilder(Uint8List.fromList(dillBytes));
+            b.readComponent(component);
+            for (final l in b.trace) {
+              print(l);
+            }
+          }
+          EOF
+
+      - name: Embed the platform dill
+        run: |
+          set -eux
+          P="$RUNNER_TEMP/probe"
+          cd "$P"
+          dart pub get
+          D="$DART_HOME/lib/_internal/dart2js_platform.dill"
+          ls -l "$D"
+          node -e 'const fs = require("fs"); const b = fs.readFileSync(process.argv[1]); fs.writeFileSync(process.argv[2], "const List<int> dillBytes = <int>[" + Array.from(b).join(",") + "];\n");' "$D" "$P/lib/dill_bytes.dart"
+          wc -c "$P/lib/dill_bytes.dart"
+
+      - name: SIGNAL B -- trace on the VM
+        id: vm
+        continue-on-error: true
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP/probe"
+          dart run bin/trace.dart > "$GITHUB_WORKSPACE/probe-out/vm-trace.txt"
+          wc -l "$GITHUB_WORKSPACE/probe-out/vm-trace.txt"
+          head -5 "$GITHUB_WORKSPACE/probe-out/vm-trace.txt"
+
+      - name: SIGNAL B -- trace under dart2js
+        id: js
+        continue-on-error: true
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP/probe"
+          dart compile js -o "$RUNNER_TEMP/trace.js" bin/trace.dart
+          node --max-old-space-size=6144 -e 'globalThis.self = globalThis; require(process.argv[1]);' "$RUNNER_TEMP/trace.js" > "$GITHUB_WORKSPACE/probe-out/js-trace.txt"
+          wc -l "$GITHUB_WORKSPACE/probe-out/js-trace.txt"
+          head -5 "$GITHUB_WORKSPACE/probe-out/js-trace.txt"
+
+      - name: SIGNAL B -- first divergence
+        continue-on-error: true
+        run: |
+          set -eu
+          O="$GITHUB_WORKSPACE/probe-out"
+          if [ ! -s "$O/vm-trace.txt" ] || [ ! -s "$O/js-trace.txt" ]; then
+            echo "SIGNAL B did not produce traces. Read reader-source.txt in the"
+            echo "artifact and rewrite the overrides against the real signatures."
+            exit 0
+          fi
+          echo "VM lines:      $(wc -l < "$O/vm-trace.txt")"
+          echo "dart2js lines: $(wc -l < "$O/js-trace.txt")"
+          python3 - "$O/vm-trace.txt" "$O/js-trace.txt" <<'PY'
+          import sys
+          vm = open(sys.argv[1]).read().split("\n")
+          js = open(sys.argv[2]).read().split("\n")
+          n = min(len(vm), len(js))
+          first = None
+          idx_diff = 0
+          lib_diff = 0
+          both = 0
+          for i in range(n):
+              if not vm[i] or not js[i]:
+                  continue
+              both += 1
+              if vm[i] == js[i]:
+                  continue
+              if first is None:
+                  first = i
+              a = vm[i].split("|")
+              b = js[i].split("|")
+              if len(a) == 4 and len(b) == 4:
+                  if a[2] != b[2]:
+                      idx_diff += 1
+                  elif a[3] != b[3]:
+                      lib_diff += 1
+          print("compared:", both)
+          print("index differs:", idx_diff)
+          print("index same but resolved library differs:", lib_diff)
+          print()
+          if first is None:
+              print("VERDICT -- traces identical. The divergence is not in readName's")
+              print("own inputs. Look at Name construction or later mutation.")
+          else:
+              print("FIRST DIVERGENCE at trace line", first)
+              lo = max(0, first - 3)
+              for i in range(lo, min(n, first + 6)):
+                  mark = " <<<<" if i == first else ""
+                  print("  vm : " + vm[i] + mark)
+                  print("  js : " + js[i] + mark)
+              print()
+              if idx_diff and not lib_diff:
+                  print("VERDICT -- the INDEX differs. The read path is off:")
+                  print("readCanonicalNameReference is consuming a different value.")
+              elif lib_diff and not idx_diff:
+                  print("VERDICT -- same index, different library. The canonical")
+                  print("name link table is built or resolved differently.")
+              else:
+                  print("VERDICT -- mixed. Read the first divergence above; it is")
+                  print("the earliest fact and everything after it is downstream.")
+          PY
+
+      - name: Upload the probe output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart2js-probe3
+          path: probe-out
+          if-no-files-found: warn
