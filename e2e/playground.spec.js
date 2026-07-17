@@ -97,22 +97,29 @@ test("a typed draft survives a full page reload", async ({ page }) => {
   await expect(page.locator("#editor-label")).toContainText("draft restored");
 });
 
-test("non-vendored language degrades gracefully with CLI guidance", async ({ page }) => {
-  // This selected Go back when Go had no browser runtime. Bx-12 gave it one, and
-  // Go was the last BAKED language without one -- so no selectable language is
-  // left to point this at. (Kotlin, Swift, Dart and Zig are still CLI-only, but
-  // web/build.mjs's ext map never bakes them, so they are not in the dropdown
-  // and selectOption would fail on them.)
-  //
-  // web/app.js still renders .needs-runtime, and the next language added without
-  // a runtime needs that path to work, so the test simulates the condition
-  // instead of depending on one being held back. vendored(lang) is exactly a
-  // fetch of vendor/<lang>/manifest.json returning r.ok, so a routed 404 on that
-  // one request is an unvendored runtime as far as the loader is concerned.
-  await page.route("**/vendor/go/manifest.json", (route) =>
-    route.fulfill({ status: 404, contentType: "text/plain", body: "" }));
-  await page.goto("/");
-  await page.locator("#lang-select").selectOption("go");
-  await page.locator("#run-btn").click();
-  await expect(page.locator(".needs-runtime")).toContainText("glifex test");
+// Scoped to this test on purpose: the rest of playground.spec.js covers the
+// service worker's own behaviour (offline replay), and a file-level test.use
+// would switch it off for those too.
+test.describe("non-vendored language", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("degrades gracefully with CLI guidance", async ({ page }) => {
+    // This selected Go back when Go had no browser runtime. Bx-12 gave it one, and
+    // Go was the last BAKED language without one -- so no selectable language is
+    // left to point this at. (Kotlin, Swift, Dart and Zig are still CLI-only, but
+    // web/build.mjs's ext map never bakes them, so they are not in the dropdown
+    // and selectOption would fail on them.)
+    //
+    // web/app.js still renders .needs-runtime, and the next language added without
+    // a runtime needs that path to work, so the test simulates the condition
+    // instead of depending on one being held back. vendored(lang) is exactly a
+    // fetch of vendor/<lang>/manifest.json returning r.ok, so a routed 404 on that
+    // one request is an unvendored runtime as far as the loader is concerned.
+    await page.route("**/vendor/go/manifest.json", (route) =>
+      route.fulfill({ status: 404, contentType: "text/plain", body: "" }));
+    await page.goto("/");
+    await page.locator("#lang-select").selectOption("go");
+    await page.locator("#run-btn").click();
+    await expect(page.locator(".needs-runtime")).toContainText("glifex test");
+  });
 });
