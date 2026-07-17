@@ -1,0 +1,376 @@
+name: tmp-dart2js-probe5
+# TEMPORARY. Throwaway. Do not merge to main; delete the branch when done.
+#
+# THE FINDING, for the record. pkg/kernel/lib/binary/ast_from_binary.dart,
+# in readName, added by e3d4fbec80c (Jens Johansen, 2022-11-01,
+# "[kernel] Deduplicate Names when loading dill"):
+#
+#     nameCacheIndex = stringReference | ((libraryReferenceIndex) << 30);
+#     final Name? cached = _nameCache[nameCacheIndex];
+#     if (cached != null) return cached;
+#
+# On 64-bit targets that key is exact. On web targets BOTH bitwise
+# operators are 32-bit, so the key retains only libraryReferenceIndex & 3.
+# Two libraries congruent mod 4 collide and the cache returns the Name
+# built for whichever was read first. Measured on dart2js_platform.dill:
+# _isJSObject in dart:js_interop (libIdx 37275) receives the dart:_rti
+# Name (libIdx 9035); 9035 & 3 == 37275 & 3 == 3.
+#
+# THE FIX UNDER TEST. _nameCache is declared at line 142 as
+# Map<int, Name?> -- a Map, not a List. The key never needed to be a
+# packed int; the packing exists only to get one int out of two. A record
+# key is exact on every platform and does no arithmetic at all.
+# Rejected alternative: swapping << for * looks web-safe and passes at
+# these sizes, but stringReference is only asserted < 2^30 and
+# libraryReferenceIndex is a UInt30, so at declared ranges the product
+# needs 60 bits, past 2^53, and fails SILENTLY BY ROUNDING.
+#
+# THE EXPERIMENT. Two SDK legs x 2x2. The control is not optional: if
+# unpatched dart2js does not diverge, this harness is not measuring the
+# bug and the patched cell proves nothing.
+#
+#                unpatched              patched
+#   VM           baseline               == baseline  (neutrality: the CL
+#                                                     must cost Jens's
+#                                                     dedup nothing)
+#   dart2js      != VM  (control)       == VM        (the fix)
+
+on:
+  push:
+    branches: [chore/tmp-dart2js-probe5-20260717]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12.2 keeps continuity with every measurement so far. main is
+        # where the CL lands, and is the leg that actually matters.
+        sdk: ["3.12.2", "main"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: ${{ matrix.sdk }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Versions and the kernel revision to match
+        # package:kernel and the dill MUST come from the same revision or
+        # the reader rejects the binary format version -- a failure that
+        # looks like a bug and is not. A tag pins both. For the main
+        # channel the SDK ships its own revision, so pin the clone to that
+        # rather than to whatever main happens to be right now.
+        run: |
+          set -eux
+          dart --version
+          node --version
+          if [ "${{ matrix.sdk }}" = "3.12.2" ]; then
+            KREF="3.12.2"
+          elif [ -f "$DART_HOME/revision" ]; then
+            KREF="$(cat "$DART_HOME/revision")"
+          else
+            echo "NOTE -- no revision file in the SDK; falling back to main."
+            echo "If the reader rejects the dill, that is drift, not the bug."
+            KREF="main"
+          fi
+          echo "KREF=$KREF" >> "$GITHUB_ENV"
+          echo "kernel will be taken from: $KREF"
+
+      - name: Sparse-clone pkg/kernel at that revision
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP"
+          mkdir -p k && cd k
+          git init -q
+          git remote add origin https://github.com/dart-lang/sdk.git
+          git fetch -q --depth 1 --filter=blob:none origin "$KREF"
+          git sparse-checkout init --cone
+          git sparse-checkout set pkg/kernel
+          git checkout -q FETCH_HEAD
+          git rev-parse HEAD
+          cp -r "$RUNNER_TEMP/k/pkg/kernel" "$RUNNER_TEMP/kernel-pristine"
+          cp -r "$RUNNER_TEMP/k/pkg/kernel" "$RUNNER_TEMP/kernel-patched"
+
+      - name: Apply the candidate fix to the patched copy
+        run: |
+          set -eu
+          mkdir -p "$GITHUB_WORKSPACE/probe-out"
+          python3 - "$RUNNER_TEMP/kernel-patched/lib/binary/ast_from_binary.dart" <<'PY'
+          import sys
+          p = sys.argv[1]
+          src = open(p, encoding="utf-8").read()
+
+          # Four exact edits. Each asserted unique -- a silently-missed
+          # anchor would leave the packed key in place and the run would
+          # "prove" a fix that was never applied.
+          edits = [
+            ("late Map<int, Name?> _nameCache;",
+             "late Map<(int, int), Name?> _nameCache;"),
+            ("    final int nameCacheIndex;",
+             "    final (int, int) nameCacheIndex;"),
+            ("      nameCacheIndex = stringReference | ((libraryReferenceIndex) << 30);",
+             "      nameCacheIndex = (stringReference, libraryReferenceIndex);"),
+            ("      nameCacheIndex = stringReference;",
+             "      nameCacheIndex = (stringReference, 0);"),
+          ]
+          for old, new in edits:
+              n = src.count(old)
+              if n != 1:
+                  sys.stderr.write("ANCHOR NOT UNIQUE (" + str(n) + "): " + old + "\n")
+                  sys.exit(1)
+              src = src.replace(old, new)
+
+          open(p, "w", encoding="utf-8").write(src)
+          print("patch applied: 4 edits, each unique")
+          PY
+          echo "======== patched readName ========" | tee "$GITHUB_WORKSPACE/probe-out/patch.txt"
+          grep -n -A 30 "  Name readName() {" "$RUNNER_TEMP/kernel-patched/lib/binary/ast_from_binary.dart" | head -34 | tee -a "$GITHUB_WORKSPACE/probe-out/patch.txt"
+          echo "======== the diff that would become the CL ========" | tee -a "$GITHUB_WORKSPACE/probe-out/patch.txt"
+          diff -u "$RUNNER_TEMP/kernel-pristine/lib/binary/ast_from_binary.dart" \
+                  "$RUNNER_TEMP/kernel-patched/lib/binary/ast_from_binary.dart" \
+            | tee -a "$GITHUB_WORKSPACE/probe-out/patch.txt" || true
+
+      - name: Write the probe packages
+        run: |
+          set -eux
+          for V in pristine patched; do
+            P="$RUNNER_TEMP/probe-$V"
+            mkdir -p "$P/lib" "$P/bin"
+            cat > "$P/pubspec.yaml" <<EOF
+          name: probe
+          publish_to: none
+          environment:
+            sdk: ">=3.0.0 <5.0.0"
+          dependencies:
+            kernel:
+              path: ../kernel-$V
+          EOF
+          done
+
+          # One source, both packages. Identical code on all four runs --
+          # only the compiler and the kernel copy differ.
+          cat > "$RUNNER_TEMP/trace.dart" <<'EOF'
+          import 'dart:collection';
+          import 'dart:typed_data';
+
+          import 'package:kernel/ast.dart';
+          import 'package:kernel/binary/ast_from_binary.dart';
+          import 'package:kernel/library_index.dart';
+          import 'package:probe/dill_bytes.dart';
+
+          // v4 counted identityHashCode values and called them identities.
+          // A hash is not identity -- hashes collide, and the VM's own
+          // numbers showed 4 "shared" identities on a runtime where the key
+          // is exact. Use identical(), which is exact by definition.
+          Set<Name> identitySet() => LinkedHashSet<Name>(
+              equals: identical, hashCode: identityHashCode);
+
+          class DiagBuilder extends BinaryBuilder {
+            DiagBuilder(Uint8List bytes) : super(bytes);
+
+            final List<Name> names = <Name>[];
+
+            @override
+            Name readName() {
+              final Name n = super.readName();
+              if (n.isPrivate) names.add(n);
+              return n;
+            }
+          }
+
+          bool wouldBeSkipped(Member m, Library owner) {
+            if (!m.name.isPrivate) return false;
+            return m.name.library != owner;
+          }
+
+          Iterable<Member> membersOf(Library lib) sync* {
+            yield* lib.procedures;
+            yield* lib.fields;
+            for (final c in lib.classes) {
+              yield* c.procedures;
+              yield* c.fields;
+              yield* c.constructors;
+            }
+          }
+
+          String libOf(Library? l) => l == null ? 'null' : l.importUri.toString();
+
+          void main() {
+            final component = Component();
+            final b = DiagBuilder(Uint8List.fromList(dillBytes));
+            b.readComponent(component);
+
+            // --- identity, by identical() ---
+            final texts = <String>{};
+            final pairs = <String>{};
+            final all = identitySet();
+            final byText = <String, List<Name>>{};
+            final libsByText = <String, Set<String>>{};
+
+            for (final n in b.names) {
+              final lib = libOf(n.library);
+              texts.add(n.text);
+              pairs.add(n.text + '@' + lib);
+              all.add(n);
+              (byText[n.text] ??= <Name>[]).add(n);
+              (libsByText[n.text] ??= <String>{}).add(lib);
+            }
+
+            int multi = 0;
+            int shared = 0;
+            for (final t in libsByText.keys) {
+              if (libsByText[t]!.length <= 1) continue;
+              multi++;
+              final objs = identitySet()..addAll(byText[t]!);
+              if (objs.length < libsByText[t]!.length) shared++;
+            }
+
+            print('private name reads:              ' + b.names.length.toString());
+            print('distinct texts:                  ' + texts.length.toString());
+            print('distinct (text, library) pairs:  ' + pairs.length.toString());
+            print('distinct Name objects:           ' + all.length.toString());
+            print('texts in >1 library:             ' + multi.toString());
+            print('  sharing an object across libs: ' + shared.toString());
+
+            final iso = byText['_isJSObject'] ?? <Name>[];
+            final isoObjs = identitySet()..addAll(iso);
+            final isoLibs = <String>{};
+            for (final n in iso) {
+              isoLibs.add(libOf(n.library));
+            }
+            final sortedLibs = isoLibs.toList()..sort();
+            print('_isJSObject reads:               ' + iso.length.toString());
+            print('_isJSObject distinct objects:    ' + isoObjs.length.toString());
+            print('_isJSObject libraries:           ' + sortedLibs.join(', '));
+
+            // --- the end to end acceptance, same as probe v2 ---
+            final decl = <String>[];
+            for (final lib in component.libraries) {
+              for (final m in membersOf(lib)) {
+                if (m.name.text != '_isJSObject') continue;
+                decl.add('  declared-in=' + lib.importUri.toString() +
+                    ' name.library=' + libOf(m.name.library));
+              }
+            }
+            decl.sort();
+            print('');
+            print('_isJSObject members:');
+            for (final d in decl) {
+              print(d);
+            }
+
+            int skipped = 0;
+            for (final lib in component.libraries) {
+              for (final m in membersOf(lib)) {
+                if (wouldBeSkipped(m, lib)) skipped++;
+              }
+            }
+            print('guard would skip:                ' + skipped.toString());
+
+            final index = LibraryIndex(component, ['dart:js_interop', 'dart:_rti']);
+            for (final uri in ['dart:js_interop', 'dart:_rti']) {
+              var verdict = 'FOUND';
+              try {
+                index.getProcedure(uri, '::', '_isJSObject');
+              } catch (_) {
+                verdict = 'NOT-FOUND';
+              }
+              print('getProcedure _isJSObject in ' + uri + ': ' + verdict);
+            }
+          }
+          EOF
+
+          # Embed the dill once, share it.
+          D="$DART_HOME/lib/_internal/dart2js_platform.dill"
+          ls -l "$D"
+          node -e 'const fs = require("fs"); const b = fs.readFileSync(process.argv[1]); fs.writeFileSync(process.argv[2], "const List<int> dillBytes = <int>[" + Array.from(b).join(",") + "];\n");' "$D" "$RUNNER_TEMP/dill_bytes.dart"
+
+          for V in pristine patched; do
+            cp "$RUNNER_TEMP/trace.dart" "$RUNNER_TEMP/probe-$V/bin/trace.dart"
+            cp "$RUNNER_TEMP/dill_bytes.dart" "$RUNNER_TEMP/probe-$V/lib/dill_bytes.dart"
+            (cd "$RUNNER_TEMP/probe-$V" && dart pub get)
+          done
+
+      - name: Run the 2x2
+        continue-on-error: true
+        run: |
+          set -eux
+          O="$GITHUB_WORKSPACE/probe-out"
+          for V in pristine patched; do
+            cd "$RUNNER_TEMP/probe-$V"
+            dart run bin/trace.dart > "$O/$V-vm.txt" 2>&1 || echo "VM $V FAILED" >> "$O/$V-vm.txt"
+            dart compile js -o "$RUNNER_TEMP/$V.js" bin/trace.dart
+            node --max-old-space-size=6144 -e 'globalThis.self = globalThis; require(process.argv[1]);' "$RUNNER_TEMP/$V.js" > "$O/$V-js.txt" 2>&1 || echo "JS $V FAILED" >> "$O/$V-js.txt"
+          done
+          wc -l "$O"/*.txt
+
+      - name: Verdict
+        continue-on-error: true
+        run: |
+          set -eu
+          O="$GITHUB_WORKSPACE/probe-out"
+          for f in pristine-vm pristine-js patched-vm patched-js; do
+            echo "======== $f ========"
+            cat "$O/$f.txt" || echo "(missing)"
+            echo
+          done
+
+          echo "======== the three assertions ========"
+          RC=0
+
+          if diff -q "$O/pristine-vm.txt" "$O/pristine-js.txt" >/dev/null 2>&1; then
+            echo "CONTROL   FAIL -- unpatched dart2js agrees with the VM."
+            echo "          The harness is not measuring the bug. Everything"
+            echo "          below is meaningless. Do not report this run."
+            RC=1
+          else
+            echo "CONTROL   ok   -- unpatched dart2js diverges from the VM."
+          fi
+
+          if diff -q "$O/pristine-vm.txt" "$O/patched-vm.txt" >/dev/null 2>&1; then
+            echo "NEUTRAL   ok   -- the patch changes nothing on the VM."
+            echo "          This is the number the CL needs: the record key"
+            echo "          costs the existing dedup nothing where it works."
+          else
+            echo "NEUTRAL   FAIL -- the patch changed VM behaviour. Not"
+            echo "          shippable as-is; the dedup regressed."
+            diff -u "$O/pristine-vm.txt" "$O/patched-vm.txt" || true
+            RC=1
+          fi
+
+          if diff -q "$O/patched-vm.txt" "$O/patched-js.txt" >/dev/null 2>&1; then
+            echo "FIX       ok   -- patched dart2js now matches the VM exactly."
+          else
+            echo "FIX       FAIL -- patched dart2js still differs from the VM."
+            diff -u "$O/patched-vm.txt" "$O/patched-js.txt" || true
+            RC=1
+          fi
+
+          echo
+          if [ "$RC" = "0" ]; then
+            echo "VERDICT -- all three hold on SDK ${{ matrix.sdk }}. The record"
+            echo "key fixes it, costs the VM nothing, and the control proves"
+            echo "the harness sees the bug when it is present."
+          else
+            echo "VERDICT -- at least one assertion failed on SDK ${{ matrix.sdk }}."
+            echo "Read them in order: control first. A failed control means"
+            echo "the rest of the run says nothing."
+          fi
+
+      - name: Upload the probe output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart2js-probe5-${{ matrix.sdk }}
+          path: probe-out
+          if-no-files-found: warn
