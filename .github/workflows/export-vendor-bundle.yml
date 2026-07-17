@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: "10.0.x" }
 
+      - uses: actions/setup-go@v6
+        with: { go-version: "1.25" }
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres/WAT/customasm + CodeMirror)
         run: |
           ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; echo "fetch-runtimes attempt $i failed; retry 20s"; sleep 20; done; [ "$ok" = 1 ]
@@ -111,6 +113,8 @@ jobs:
           rm -f web/vendor/asm-riscv64/*.log
           ls -la web/vendor/asm-riscv64
 
+      - name: Vendor Go toolchain (gc self-hosted to wasip1/wasm)
+        run: bash tools/go-vendor.sh web/vendor/go
       - name: Vendor x86-64 toolchain (robalb/x86-64-playground, pinned)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi

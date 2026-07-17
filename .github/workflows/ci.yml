@@ -163,6 +163,8 @@ jobs:
           npm init -y >/dev/null
           npm install -D @playwright/test
           npx playwright install --with-deps chromium firefox
+      - uses: actions/setup-go@v6
+        with: { go-version: "1.25" }
       - name: Restore vendored runtimes cache (e2e flavor, no CodeMirror)
         uses: actions/cache@v6
         with:
@@ -232,6 +234,11 @@ jobs:
           echo '{"runtime":"rust","via":"miri-wasm (rubri/bjorn3)","rust":"1.78.0-dev","edition":"2021"}' > web/vendor/rust/manifest.json
           test "$(stat -c%s web/vendor/rust/wasm-rustc/bin/miri.wasm)" -gt 1000000 || { echo "miri.wasm too small"; exit 1; }
           N=$(find web/vendor/rust/wasm-rustc -type f | wc -l); echo "rust vendor files: $N"; test "$N" -eq 24
+      - name: Vendor Go toolchain (gc self-hosted to wasip1/wasm)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          bash tools/go-vendor.sh web/vendor/go
+          du -sh web/vendor | sed 's/^/all vendored runtimes: /'
       - name: Vendor x86-64 toolchain (robalb/x86-64-playground, pinned)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi

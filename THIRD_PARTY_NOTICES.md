@@ -25,6 +25,8 @@ enabled via `node web/fetch-runtimes.mjs`.
 | Miri (rust-lang/miri, wasm build) | ~1.78.0-dev nightly | Rust MIR interpreter compiled to wasm; runs the Rust track (Bx-6) in-browser, vendored at web/vendor/rust/ | MIT OR Apache-2.0 |
 | rubri (LyonSyonII/rubri) | 1.78-dev | Miri-in-browser wrapper + prebuilt miri.wasm + sysroot rlibs that glifex's rust-worker vendors/adapts | MIT |
 | browser_wasi_shim (bjorn3) | bundled | JS WASI implementation + virtual FS used by the Rust worker; bundled into web/rust-worker.js | MIT OR Apache-2.0 |
+| Go toolchain (golang/go: cmd/compile, cmd/link) | 1.25.x | the gc compiler and linker built for wasip1/wasm; runs the Go track (Bx-12) in-browser, vendored at web/vendor/go/bin/ | BSD-3-Clause |
+| Go standard library (export data) | 1.25.x | precompiled std .a archives the in-browser gc compiler compiles against, vendored at web/vendor/go/pkg/ (the set is tools/go-vendor-imports.txt) | BSD-3-Clause |
 | Rust standard library (sysroot rlibs) | ~1.78.0-dev | precompiled std/core/alloc + deps Miri interprets against, vendored at web/vendor/rust/wasm-rustc/ | MIT OR Apache-2.0 |
 | teavm-javac (OpenJDK javac + TeaVM, WASM) | playground snapshot | in-browser Java compile-and-run for the Java track (Bx-8), vendored at web/vendor/java/ | GPL-2.0 WITH Classpath-exception-2.0 (OpenJDK javac) + Apache-2.0 (TeaVM) |
 

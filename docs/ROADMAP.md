@@ -351,8 +351,12 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       `browser_wasi_shim` Bx-6 already bundles, which covers every WASI call the toolchain asks
       for (34/36 wanted, 46 provided, zero missing). No `cmd/go` in the browser: it builds by
       forking, and `os/exec` is absent under `wasip1`, so JS orchestrates compile -> link over
-      one virtual FS and std export data is precomputed at vendor time (64 packages, 24.2MB,
-      measured on the real harness). **77.2MB vendored against Rust's shipped 122MB**;
+      one virtual FS and std export data is precomputed at vendor time. **79.4MB vendored
+      against Rust's shipped 122MB and C's 106MB clang.webc** -- the lightest compiled track.
+      The vendored std set is a reviewable allowlist (`tools/go-vendor-imports.txt`, 103
+      packages / 30.3MB): the harness's own closure is 64 packages and omits `sort`, and all
+      of std would be 339 packages / 123.4MB, so the list saves 93MB and is gated on a kata
+      that imports `sort` and `container/heap`.
       ~2.9s warm compile+link against Miri's ~2s/run; output byte-identical across `node:wasi`,
       wasmtime and the shim. Go's linker needs no mmap and *is* the toolchain -- the reason
       self-hosting works here and did not for `rustc` (Bx-6).
@@ -361,8 +365,9 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       40.3MB to js/wasm) stays filed as the interpreter-shaped retreat if payload ever blocks.
       **Track not built.** Its vendor step must BUILD the payload -- there is no release to
       download, so it is the arm64/riscv64 "pinned sources at deploy" pattern, not the Rust
-      "fetch someone's artifact" one. Nothing is measured on a phone yet; that is the risk
-      that could still kill it.
+      "fetch someone's artifact" one. Nothing is measured on a phone yet -- worth doing,
+      but not a blocker: C ships a heavier 106MB clang.webc that needs a Chromium heap flag
+      Go does not.
 - [ ] **Bx-13. Dart** -- **likely the easiest remaining track, not the hardest.** The note below
       was right that *dart2wasm* is a host build-time tool -- but the client-side path is not
       unproven, it **shipped**: Google's `try.dartlang.org` (2013) compiled Dart to JS **in the
