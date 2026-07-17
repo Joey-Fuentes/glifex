@@ -169,7 +169,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: web/vendor
-          key: vendor-v7-ci-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', '.github/workflows/ci.yml') }}
+          key: vendor-v8-ci-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', '.github/workflows/ci.yml') }}
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
@@ -313,6 +313,22 @@ jobs:
           # A size check proves the fetch worked, not that the runtime is CORRECT.
           # RISCV_EXT_C=OFF fails at ELF LOAD, so only running something catches it.
           node tools/riscv-toolchain/verify-riscv.mjs web/vendor/asm-riscv64
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.12.2"   # pins.env DART_SDK_VERSION. NOT "stable" -- a pin that
+                          # drifts is a cache key that lies. See tools/dart-toolchain/pins.env.
+      - name: Vendor Dart toolchain (dart2js self-hosted to JS, pinned + patched)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          . tools/dart-toolchain/pins.env
+          mkdir -p web/vendor/dart
+          bash tools/dart-toolchain/build-dart2js.sh "$PWD/web/vendor/dart"
+          ls -la web/vendor/dart
+          # Size proves the build emitted bytes. It does NOT prove the compiler
+          # works: without the kernel patch gx_web.js is exactly the right size
+          # and compiles nothing, dying in _js_interop_checks before any work.
+          # Only running it catches that.
+          node tools/dart-toolchain/verify-dart.mjs web/vendor/dart
       - name: Mark vendor complete (cached for future runs)
         run: touch web/vendor/.vendor-complete
       - name: Build corpus & run E2E (incl. offline-mode test)
