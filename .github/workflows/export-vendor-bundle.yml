@@ -115,6 +115,17 @@ jobs:
 
       - name: Vendor Go toolchain (gc self-hosted to wasip1/wasm)
         run: bash tools/go-vendor.sh web/vendor/go
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.12.2"   # pins.env DART_SDK_VERSION. NOT "stable" -- a pin that
+                          # drifts is a cache key that lies. See tools/dart-toolchain/pins.env.
+      - name: Vendor Dart toolchain (dart2js self-hosted to JS, pinned + patched)
+        run: |
+          . tools/dart-toolchain/pins.env
+          mkdir -p web/vendor/dart
+          bash tools/dart-toolchain/build-dart2js.sh "$PWD/web/vendor/dart"
+          ls -la web/vendor/dart
+          node tools/dart-toolchain/verify-dart.mjs web/vendor/dart
       - name: Vendor x86-64 toolchain (robalb/x86-64-playground, pinned)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
