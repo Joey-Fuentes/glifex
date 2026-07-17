@@ -1,0 +1,270 @@
+name: tmp-dart2js-probe4
+# TEMPORARY. Throwaway. Do not merge to main; delete the branch when done.
+#
+# Established so far, all measured, one dill, one BinaryBuilder pass:
+#   VM       _isJSObject in dart:js_interop -> name.library=dart:js_interop
+#   dart2js  _isJSObject in dart:js_interop -> name.library=dart:_rti
+#   guard would skip: VM 90, dart2js 2987 (dart2js a strict superset)
+#   text, owner and enclosingLibrary correct on both sides
+#   readName at ast_from_binary.dart:1197 has a nameCacheIndex
+#
+# v4 asks one question: is the wrong library arriving because a cache
+# handed back a Name object that belongs to a different library?
+#
+# The test needs no internals. A cache returns a SHARED OBJECT. So if the
+# cache is keyed too loosely, the js_interop _isJSObject Name and the _rti
+# _isJSObject Name are literally the same instance under dart2js, and two
+# instances on the VM. identityHashCode answers that from public API.
+#
+# Decisive counts, printed by identical code on both runtimes:
+#   distinct (text, library) pairs   -- what SHOULD have distinct Names
+#   distinct Name identities         -- what actually got distinct Names
+#   distinct texts                   -- what a text-only key would collapse to
+# On the VM expect identities to track pairs. If under dart2js identities
+# track TEXTS instead, the key is text alone and the mechanism is found.
+#
+# Only readName and readUInt30 are overridden. Both exist at 3.12.2 (lines
+# 1197 and 222), and kernel's own BinaryBuilderWithMetadata at 4812
+# overrides readName and calls super, so the pattern is supported.
+# readName reads its own UInt30s -- string index first, then, if private,
+# the library reference index -- so overriding readUInt30 recovers both
+# indices without touching kernel.
+
+on:
+  push:
+    branches: [chore/tmp-dart2js-probe4-20260717]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Versions
+        run: |
+          dart --version
+          node --version
+
+      - name: Sparse-clone pkg/kernel at the pinned tag
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP"
+          git clone --depth 1 --branch 3.12.2 --filter=blob:none --sparse \
+            https://github.com/dart-lang/sdk.git sdk
+          cd sdk
+          git sparse-checkout set pkg/kernel
+
+      - name: SIGNAL A -- readName whole, and the cache
+        # v3 cut this off at line 1209 and the key computation was below the
+        # cut. Print the region outright this time.
+        run: |
+          set -eu
+          mkdir -p "$GITHUB_WORKSPACE/probe-out"
+          S="$RUNNER_TEMP/sdk/pkg/kernel/lib/binary/ast_from_binary.dart"
+          A="$RUNNER_TEMP/sdk/pkg/kernel/lib/ast.dart"
+          {
+            echo "======== ast_from_binary.dart 1190-1300 (readName, verbatim) ========"
+            sed -n '1190,1300p' "$S" | cat -n | sed 's/^/     /'
+            echo
+            echo "======== every nameCache mention in ast_from_binary.dart ========"
+            grep -n -i "namecache" "$S" || echo "(none)"
+            echo
+            echo "======== the cache declaration and its neighbours ========"
+            grep -n -i -B 6 -A 20 "_nameCache\|nameCache =" "$S" | head -120 || true
+            echo
+            echo "======== class Name in ast.dart ========"
+            grep -n -A 60 "^class Name extends Node" "$A" || true
+            echo
+            echo "======== Name factories / byReference / hashCode ========"
+            grep -n -B 2 -A 18 "Name.byReference\|_computeHashCode\|int get hashCode" "$A" | head -140 || true
+          } | tee "$GITHUB_WORKSPACE/probe-out/readName-source.txt"
+
+      - name: Write the probe package
+        run: |
+          set -eux
+          P="$RUNNER_TEMP/probe"
+          mkdir -p "$P/lib" "$P/bin"
+
+          cat > "$P/pubspec.yaml" <<'EOF'
+          name: probe
+          publish_to: none
+          environment:
+            sdk: ">=3.12.0 <4.0.0"
+          dependencies:
+            kernel:
+              path: ../sdk/pkg/kernel
+          EOF
+
+          # Narrow imports: package:kernel/kernel.dart pulls dart:io.
+          cat > "$P/bin/trace.dart" <<'EOF'
+          import 'dart:typed_data';
+
+          import 'package:kernel/ast.dart';
+          import 'package:kernel/binary/ast_from_binary.dart';
+          import 'package:probe/dill_bytes.dart';
+
+          // No patching of kernel. readName and readUInt30 both exist at
+          // 3.12.2 and dispatch is virtual, so the reader calls these.
+          class DiagBuilder extends BinaryBuilder {
+            DiagBuilder(Uint8List bytes) : super(bytes);
+
+            int _u1 = -1;
+            int _u2 = -1;
+            int _uCount = 0;
+            int seq = 0;
+            final List<String> trace = <String>[];
+
+            @override
+            int readUInt30() {
+              final int v = super.readUInt30();
+              _u2 = _u1;
+              _u1 = v;
+              _uCount++;
+              return v;
+            }
+
+            @override
+            Name readName() {
+              final int before = _uCount;
+              final Name n = super.readName();
+              final int consumed = _uCount - before;
+              if (n.isPrivate) {
+                // readName reads the string index, then the library
+                // reference index. Two UInt30s for a private name.
+                final int strIdx = consumed >= 2 ? _u2 : _u1;
+                final int libIdx = consumed >= 2 ? _u1 : -1;
+                final Library? lib = n.library;
+                trace.add(seq.toString() +
+                    '|' + n.text +
+                    '|' + strIdx.toString() +
+                    '|' + libIdx.toString() +
+                    '|' + identityHashCode(n).toString() +
+                    '|' + (lib == null ? 'null' : lib.importUri.toString()));
+                seq++;
+              }
+              return n;
+            }
+          }
+
+          void main() {
+            final component = Component();
+            final b = DiagBuilder(Uint8List.fromList(dillBytes));
+            b.readComponent(component);
+
+            final pairs = <String>{};
+            final texts = <String>{};
+            final ids = <int>{};
+            final libsByText = <String, Set<String>>{};
+            final idsByText = <String, Set<int>>{};
+            final detail = <String>[];
+
+            for (final line in b.trace) {
+              final p = line.split('|');
+              final text = p[1];
+              final id = int.parse(p[4]);
+              final lib = p[5];
+              pairs.add(text + '@' + lib);
+              texts.add(text);
+              ids.add(id);
+              (libsByText[text] ??= <String>{}).add(lib);
+              (idsByText[text] ??= <int>{}).add(id);
+              if (text == '_isJSObject') {
+                detail.add('  _isJSObject strIdx=' + p[2] +
+                    ' libIdx=' + p[3] + ' identity=' + p[4] + ' lib=' + lib);
+              }
+            }
+
+            int multiLibTexts = 0;
+            int collapsed = 0;
+            for (final t in libsByText.keys) {
+              if (libsByText[t]!.length > 1) {
+                multiLibTexts++;
+                if (idsByText[t]!.length < libsByText[t]!.length) collapsed++;
+              }
+            }
+
+            print('private name reads:            ' + b.trace.length.toString());
+            print('distinct texts:                ' + texts.length.toString());
+            print('distinct (text, library) pairs:' + pairs.length.toString());
+            print('distinct Name identities:      ' + ids.length.toString());
+            print('texts seen in >1 library:      ' + multiLibTexts.toString());
+            print('  of those, sharing identities:' + collapsed.toString());
+            print('');
+            print('_isJSObject occurrences:');
+            for (final d in detail) {
+              print(d);
+            }
+          }
+          EOF
+
+      - name: Embed the platform dill
+        run: |
+          set -eux
+          P="$RUNNER_TEMP/probe"
+          cd "$P"
+          dart pub get
+          D="$DART_HOME/lib/_internal/dart2js_platform.dill"
+          ls -l "$D"
+          node -e 'const fs = require("fs"); const b = fs.readFileSync(process.argv[1]); fs.writeFileSync(process.argv[2], "const List<int> dillBytes = <int>[" + Array.from(b).join(",") + "];\n");' "$D" "$P/lib/dill_bytes.dart"
+          wc -c "$P/lib/dill_bytes.dart"
+
+      - name: SIGNAL B -- identities on the VM
+        continue-on-error: true
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP/probe"
+          dart run bin/trace.dart | tee "$GITHUB_WORKSPACE/probe-out/vm-ids.txt"
+
+      - name: SIGNAL B -- identities under dart2js
+        continue-on-error: true
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP/probe"
+          dart compile js -o "$RUNNER_TEMP/trace.js" bin/trace.dart
+          node --max-old-space-size=6144 -e 'globalThis.self = globalThis; require(process.argv[1]);' "$RUNNER_TEMP/trace.js" | tee "$GITHUB_WORKSPACE/probe-out/js-ids.txt"
+
+      - name: Verdict
+        continue-on-error: true
+        run: |
+          set -eu
+          O="$GITHUB_WORKSPACE/probe-out"
+          if [ ! -s "$O/vm-ids.txt" ] || [ ! -s "$O/js-ids.txt" ]; then
+            echo "SIGNAL B produced nothing. readName-source.txt in the artifact"
+            echo "has the real code -- write the next probe against it."
+            exit 0
+          fi
+          echo "======== VM ========"
+          cat "$O/vm-ids.txt"
+          echo "======== dart2js ========"
+          cat "$O/js-ids.txt"
+          echo "======== diff ========"
+          if diff -u "$O/vm-ids.txt" "$O/js-ids.txt"; then
+            echo "VERDICT -- identical. A shared-object cache is NOT the"
+            echo "mechanism. Read readName-source.txt and pick the next fact."
+          else
+            echo "VERDICT -- they differ. Compare distinct identities against"
+            echo "distinct pairs and distinct texts on each side. If dart2js"
+            echo "identities track TEXTS while VM identities track PAIRS, the"
+            echo "cache key is the defect and readName is the line."
+          fi
+
+      - name: Upload the probe output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart2js-probe4
+          path: probe-out
+          if-no-files-found: warn
