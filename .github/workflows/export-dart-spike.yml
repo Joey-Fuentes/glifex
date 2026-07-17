@@ -1,0 +1,114 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 18. Two things: defuse the crash reporter, and STOP PAYING A CI
+# ROUND PER HYPOTHESIS.
+#
+# THE EXPORT (S8b) is the important one.
+#   gx_web.js is SELF-CONTAINED JAVASCRIPT. Running it needs node and two data
+#   files -- not a Dart SDK, not a network. Seventeen rounds have each cost a
+#   full CI cycle to test one idea about it, and the only reason is that the
+#   artifact carried the compiler's OUTPUT (gx_web_out.js) and never the
+#   compiler. So S8b exports gx_web.js.gz (2.4 MB), dart2js_platform.dill.gz
+#   (3.3 MB), libraries.json, the driver and a README. One upload, and every
+#   later question about the JS host, the crash reporter or the emitted code
+#   gets answered in seconds against the real bytes.
+#   Same instinct as the request log and the stage marks: the job's purpose is
+#   to hand back enough to think with, not to be the only place thinking can
+#   happen.
+#
+# THE CRASH REPORTER (S7a, S7a2).
+#   Spike 16's grep found the HttpClient, and not where I predicted -- I said
+#   source_file_provider.dart, because that is the one that reads http: sources.
+#   0 for 15 on theories in this series. It is:
+#       pkg/front_end/lib/src/base/crash.dart:94
+#           HttpClient client = new HttpClient();
+#       const String defaultServerAddress = "http://127.0.0.1:59410/";
+#       data["error"] = safeToString(error);        <- line 91
+#   front_end's CRASH REPORTER, phoning home. The compile crashed for some OTHER
+#   reason, reportCrash fired, and new HttpClient() threw Platform.version before
+#   it could say what the real error was. Three rounds chasing the reporter
+#   instead of the crash; the error we need is in data["error"], computed three
+#   lines above the thing that destroys it.
+#   It is a MASK, not the bug: gate 2a-GX runs the same gx_core over the same
+#   seven inputs on the VM and succeeds in 3.4s. The crash is JS-only.
+#   S7a dumps crash.dart verbatim -- I have seen only lines 1-16 and 84-103.
+#   S7a2 patches the scratch checkout with the file's OWN rethrow, hoisted above
+#   the HttpClient line: return new Future<T>.error(error, trace). Every
+#   identifier is one spike 16 PRINTED -- error at 91, trace at 92,
+#   Future<T>.error( at 103. My first draft threw a SocketException instead,
+#   reasoning the file already catches those; testing it against the real text
+#   showed the throw lands BEFORE the try, where the handler never sees it. One
+#   mask swapped for another. Test the fix; do not reason about it.
+#   The patch is a diagnostic and lives only in this job's scratch clone. It is
+#   also a real Bx-13 finding: front_end's crash reporter is browser-hostile.
+#
+# GREEN AND UNMOVED FOR SIX ROUNDS
+#   GATE 2a-REF  the SDK's own runCompiler, in memory      -> solve(10)=55
+#   GATE 2a-GX   MY providers, no filesystem in the compile -> solve(10)=55
+#   GATE 2b      2.37 MB gzipped, reads all SEVEN inputs -- byte for byte the
+#                list the VM reads -- then dies in the crash reporter.
+# Bx-13's question is answered: a Dart compiler runs with NO filesystem.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/*.log
+            dartspike/gate2/gx_ref_out.js
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            dartspike/ctrl/*.js
+            dartspike/export/*
+            tools/dart-spike/
