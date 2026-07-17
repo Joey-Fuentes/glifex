@@ -1,0 +1,109 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 20. The member EXISTS. The lookup is wrong.
+#
+# Spike 19's dill dump settled the question local could not reach:
+#   80108: library from "dart:js_interop" as js_ {
+#   80825:   static method _isJSObject(core::Object? any) -> core::bool
+#   80828:   static method _isNullableJSObject(core::Object? any) -> core::bool
+#   80829:     return any == null || js_::_isJSObject(any{core::Object});
+# _isJSObject IS in the dill, in dart:js_interop, and _isNullableJSObject's
+# COMPILED body still calls it. It was never removed. So this is not an SDK
+# packaging problem and not a transformation eating it -- the member is there and
+# the LOOKUP fails. Which means dart2js is miscompiling something in the thing
+# that does the looking.
+#
+# THAT ALSO KILLS MY SECOND THEORY. First prefer-inline (nine functions, same
+# pragma, eight resolve). Now removal (it is right there in the dump). 0 for 17.
+#
+# 7a-1 named the caller: pkg/_js_interop_checks/lib/src/transformations/
+# shared_interop_transformer.dart resolves ~20 members EAGERLY in its
+# constructor, unguarded. One missing member kills the whole transformer.
+#
+# THE ONE ASYMMETRY WORTH ANYTHING: there are TWO private _isJSObject in the
+# dill -- rti::_isJSObject (dart:_rti, line 23278) and js_::_isJSObject
+# (dart:js_interop, line 80825). _isNullableJSObject has no namesake. Every
+# member that DOES resolve is unique by text across the component. If
+# LibraryIndex keys members by name text and handles private names by text
+# alone, that is the bug, and it would explain why exactly one member of twenty
+# fails.
+#
+# So 7a-4 prints pkg/kernel/lib/library_index.dart WHOLE. ~150 lines I have
+# never read. Every time in this series I guessed at unseen code I was wrong;
+# every time I printed it, the answer was in it.
+#
+# AND MY OWN BUG: spike 19 gzipped the dump into $OUT/export, which section 8b
+# does not create until later. The 7.1 MB dump never left CI and I read 25 grep
+# lines of it. mkdir first, and print the two slices inline as well.
+#
+# NONE OF THIS BLOCKS THE FINDING. GATE 2b PASSES:
+#   substituting any procedure for _isJSObject -> ok true, out.js 107,044 chars,
+#   output prints solve(10)=55, and it is byte-identical to the VM: 622 elements,
+#   10538 types, 275 methods. ~9.5s as JS against the VM's 3.3s.
+#   A Dart compiler runs as JavaScript with NO filesystem and compiles Dart
+#   correctly. Bx-13's question is answered.
+#   Bill: 25.3 MB raw / ~5.7 MB gz, against dart-live's 36.5 / 11.2.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/*.log
+            dartspike/gate2/gx_ref_out.js
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            dartspike/ctrl/*.js
+            dartspike/export/*
+            tools/dart-spike/
