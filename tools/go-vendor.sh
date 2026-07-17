@@ -59,6 +59,50 @@ while read -r ip ex; do
   echo "packagefile ${ip}=/pkg/${safe}.a" >> "${OUT}/importcfg.txt"
 done < "${TMP}/deps.txt"
 
+# --- the WASI shim, sliced out of the committed Rust worker bundle.
+# web/rust-worker.js is an unminified esbuild bundle whose module comments are
+# intact; everything before the rust-worker.ts marker is rustbuild/wasi/*, which
+# is self-contained and references no worker globals. Slicing beats re-cloning
+# rubri: no network, no second pinned ref, no second source of truth for a shim
+# that is already shipping and already proven to drive this exact toolchain.
+node - "$(pwd)/web/rust-worker.js" "${OUT}/wasi-shim.mjs" <<'NODE_EOF'
+import { readFileSync, writeFileSync } from "node:fs";
+const [src, dst] = process.argv.slice(2);
+const s = readFileSync(src, "utf8");
+const MARK = "\n// rustbuild/rust-worker.ts\n";
+const i = s.indexOf(MARK);
+if (i < 0) {
+  console.error("go-vendor: no rust-worker.ts marker in " + src + ".");
+  console.error("go-vendor: the bundle was re-emitted in a shape this slice does not know.");
+  process.exit(1);
+}
+const shim = s.slice(0, i) +
+  "\nexport { WASI, Fd, Inode, OpenFile, PreopenDirectory, File, Directory };\n";
+if (/\bself\.|addEventListener|postMessage/.test(shim)) {
+  console.error("go-vendor: the sliced shim references worker globals -- the split moved.");
+  process.exit(1);
+}
+writeFileSync(dst, shim);
+console.log("go-vendor: shim sliced, " + shim.length + " bytes");
+NODE_EOF
+
+# It must actually import, and export what the worker will destructure. A shim
+# that merely got written is not a shim that works.
+node --input-type=module -e "
+  const m = await import('file://${OUT}/wasi-shim.mjs');
+  const need = ['WASI','Fd','Inode','OpenFile','PreopenDirectory','File','Directory'];
+  const missing = need.filter((n) => !(n in m));
+  if (missing.length) { console.error('go-vendor: shim missing exports: ' + missing); process.exit(1); }
+  // The trap: WASI(args, env, fds, options = {}) calls debug.enable(options.debug),
+  // and enable() reads 'enabled === void 0 ? true : enabled'. Omitting options
+  // turns logging ON. Prove { debug: false } silences it, because B3b depends on it.
+  const orig = console.log; let noise = 0; console.log = () => { noise++; };
+  new m.WASI([], [], [], { debug: false });
+  console.log = orig;
+  if (noise) { console.error('go-vendor: shim logs even with debug:false'); process.exit(1); }
+  console.log('go-vendor: shim imports, exports ' + need.length + ' names, silent with debug:false');
+"
+
 CSZ="$(stat -c%s "${OUT}/bin/compile.wasm")"
 LSZ="$(stat -c%s "${OUT}/bin/link.wasm")"
 
