@@ -1,0 +1,108 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 12. Spike 11 turned the VM gate fully green.
+#
+#   GATE 2a-GX: ok true, outputs [out.js, out.js.map], 107,044 chars in 3.5s
+#               [KATA] gx ok solve(10)=55
+# My own in-memory providers -- no filesystem in the compile path -- compiled
+# Dart to JavaScript, and that JavaScript computed the right answer. Both fixes
+# landed: real SourceFile types from src/io/source_file.dart, and a package
+# config served at the Uri the request log had named.
+#
+# GATE 2b IS THE ONLY THING LEFT, and its failure is a strange one:
+#   [verbose info]  Compiling org-dartlang-gx:///main.dart
+#   GATE FAILED -- gxDone never fired
+# It printed the compiler's FIRST diagnostic and stopped. No throw -- main
+# catches and would have said so. No completion marker -- main prints one. No
+# unhandled rejection -- the driver listens for those. On the VM the very next
+# line is "Kernel load complete". So it dies inside kernel load, in silence.
+#
+# Stopping with no error AND no result is the signature of the host giving up on
+# the work, not of the work failing. Nothing else in that process keeps node
+# alive once require() returns, and an async Dart main is exactly the thing that
+# needs it. So this round isolates ONE variable: the driver now holds the event
+# loop open. If the compile then finishes, node was exiting on an empty loop and
+# the compile was never the problem.
+#
+# And if it is not that, the round still has to pay. Three instruments, all of
+# which report on a stall rather than leaving another silent exit:
+#   - gxMark: stage marks from inside the Dart, so a stall is located.
+#   - gxDump: the host can ask, from outside, which inputs were read. The
+#     request log has named every fault in this series so far.
+#   - runZonedGuarded: catches anything escaping the zone that try/catch cannot.
+#   - a watchdog that prints the last mark and the inputs read, then fails.
+#
+# SETTLED, AND NOT CHANGING
+#   dart:ffi enters pkg/compiler through exactly ONE file, src/io/mapped_file.
+#   dart, imported by exactly ONE file, src/dart2js.dart -- the CLI. Gate 1
+#   failing while gate 2b compiles is structure, not luck.
+#
+#   THE WIRE BILL, all measured:
+#     gx_web.js              16,227,034 raw   2,371,285 gz
+#     dart2js_platform.dill  10,292,168 raw   3,284,296 gz
+#     libraries.json             22,874 raw       2,135 gz
+#     total                                  ~5.7 MB gz  (25.3 MB raw)
+#   dart-live's VM route: 36.5 MB / 11.2 MB gz. Less than half the wire, with no
+#   VM, no emcc, no gclient, no embedder, and output that runs as native JS.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/*.log
+            dartspike/gate2/gx_ref_out.js
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            tools/dart-spike/
