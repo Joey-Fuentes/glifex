@@ -4,6 +4,12 @@
 measured — in CI (`chore/export-dart-spike-*`, throwaway, never merged), then
 reproduced by hand against real headless Chromium. Nothing here is reasoned.
 
+> **Corrected 2026-07-18.** §4 previously named the wrong bug and the wrong fix,
+> and claimed a workaround "loosened nothing" when it changed `LibraryIndex`
+> semantics on every platform. The real defect is a 32-bit cache key in
+> `package:kernel`'s dill reader; it is kernel's, not dart2js's. See §4 and
+> `docs/UPSTREAM-NOTES.md` items 4-7.
+
 Dart was on the roadmap as *"likely the easiest remaining track, not the
 hardest"*, on the strength of `try.dartlang.org` (2013) having compiled Dart to
 JS in the browser by running dart2js on itself. **That steer was right.** The
@@ -147,19 +153,71 @@ writes to it; a const map is unmodifiable.
 
 ---
 
-## 4. The one real bug — and the one-line fix
+## 4. The one real bug — and the fix
 
-An unpatched `gx_web.js` **never compiles anything**. It dies on every compile:
+An unpatched `gx_web.js` **never compiles anything** on SDK 3.12.2. It dies on
+every compile:
 
 ```
 A member with disambiguated name '_isJSObject' was not found in
 top-level of library 'dart:js_interop'
 ```
 
-### Root cause
+### Root cause — a 32-bit cache key in kernel's dill reader
 
-`js_::_isJSObject`'s `Name.library` points at **`dart:_rti`**, not
-`dart:js_interop`. So `pkg/kernel/lib/library_index.dart:329` silently drops it:
+"Kernel" here is **Dart's intermediate representation** — the typed AST every
+Dart backend consumes, and what a `.dill` file contains. `package:kernel`
+defines it and (de)serialises it. The bug is in the reader.
+
+`pkg/kernel/lib/binary/ast_from_binary.dart`, `BinaryBuilder.readName` (line
+1213 at tag 3.12.2, 1261 on main — the code is byte-identical, only the line
+moved):
+
+```dart
+if (isPrivate) {
+  libraryReferenceIndex = readUInt30();
+  // Check cache using the upper bits for the library reference.
+  nameCacheIndex = stringReference | ((libraryReferenceIndex) << 30);
+} else {
+  nameCacheIndex = stringReference;
+}
+
+final Name? cached = _nameCache[nameCacheIndex];
+if (cached != null) {
+  return cached;          // <- hands back the OTHER library's Name
+}
+```
+
+`_nameCache` is a `Map<int, Name?>`, not a `List` — the key never needed to be a
+packed int. The packing exists only to get one int out of two.
+
+**Both bitwise operators are 32-bit on web targets.** `x << 30` keeps only the
+low two bits of `x`, and `|` truncates to int32, so the key retains
+`libraryReferenceIndex & 3`. **Two libraries congruent mod 4 collide**, and the
+cache returns the `Name` built for whichever was **read first**.
+
+Measured on the real `dart2js_platform.dill`, for `_isJSObject`:
+
+| | strIdx | libIdx | libIdx & 3 | key (VM, 64-bit) | key (web, 32-bit) |
+|---|---|---|---|---|---|
+| `dart:_rti` | 5036 | 9035 | 3 | 9701257384876 | -1073736788 |
+| `dart:js_interop` | 5036 | 37275 | 3 | 40023726494636 | **-1073736788** |
+
+Distinct on the VM. Identical on the web. `dart:_rti` is read first, so
+`dart:js_interop`'s `_isJSObject` is handed the `_rti` object. Proven by
+`identical()`, not by hash: under dart2js the two `Name`s are **the same
+object**; on the VM they are two.
+
+**This is kernel's bug, not dart2js's.** dart2js is faithful — it compiled a
+64-bit assumption to correct 32-bit web semantics. Latent since `e3d4fbec80c`
+(2022-11-01, *"[kernel] Deduplicate Names when loading dill"*) — a real,
+well-measured optimisation, ~100 MB saved loading a large app, in code that had
+only ever run on the VM.
+
+### Where it surfaces
+
+`pkg/kernel/lib/library_index.dart:329` silently drops any private member whose
+`Name.library` is not the library being indexed:
 
 ```dart
 void _addMember(Member member, String memberIndexName) {
@@ -172,66 +230,87 @@ void _addMember(Member member, String memberIndexName) {
 }
 ```
 
-Instrumenting the emitted JS at that guard:
+`pkg/_js_interop_checks` then resolves ~40 members **eagerly and unguarded** —
+across `shared_interop_transformer.dart`, `js_util_optimizer.dart` and
+`js_interop_checks.dart` — so one wrong `Name` takes down the whole transformer,
+with an error 20 members away from the cause.
 
-```
-==== members SKIPPED by the private-name guard: 1 ====
-  _isJSObject
-      name.library   = rti
-      parent.library = library dart:js_interop
-```
+**Scale:** component-wide, the guard skips **2987** members under dart2js on
+3.12.2 against the VM's **90**. `_isJSObject` is simply the one that got looked
+up. A same-text twin is *necessary* — the key starts from `stringReference`, and
+the string table stores each text once — but the discriminator is the mod-4
+congruence, not the twin.
 
-**Exactly one member of the whole component**, and it is the one
-`pkg/_js_interop_checks/.../shared_interop_transformer.dart` needs — a class
-that resolves ~20 members **eagerly in its constructor, unguarded**, so one
-missing member kills the whole transformer.
+### The fix — four edits, no arithmetic
 
-It bites *that* member because `_isJSObject` is the **only** one in that table
-with a same-named **private twin in another library**: `rti::_isJSObject`, which
-the reader sees first. Every member that resolves is unique by text across the
-component.
-
-The member is genuinely present — `pkg/kernel/bin/dump.dart` on the dill:
-
-```
-80108: library from "dart:js_interop" as js_ {
-80825:   static method _isJSObject(core::Object? any) → core::bool
-80828:   static method _isNullableJSObject(core::Object? any) → core::bool
-80829:     return any == null || js_::_isJSObject(any{core::Object});
-```
-
-It is there, and its sibling's compiled body still calls it. **The member exists;
-the lookup is wrong.**
-
-Closed by contradiction: the **VM** compiles the same kata from the **same dill
-bytes** and succeeds — and the transformer resolves `_isJSObject` eagerly and
-unguarded, so on the VM that member *is* in the index, so on the VM
-`Name.library` *must* be `dart:js_interop`. Same input, two answers.
-
-> **dart2js, compiled by dart2js, misattributes a private name to a same-named
-> private name from an earlier library.** Worth reporting upstream. There is no
-> dart2js self-host test in `tools/bots/test_matrix.json` — only a DDC one.
-
-### The fix
+All in `pkg/kernel/lib/binary/ast_from_binary.dart`. Anchors byte-exact and
+unique at both 3.12.2 and main:
 
 ```diff
-- if (member.name.isPrivate && member.name.library != library)
-+ if (member.name.isPrivate && member.enclosingLibrary != library)
+-  late Map<int, Name?> _nameCache;
++  late Map<(int, int), Name?> _nameCache;
+
+-    final int nameCacheIndex;
++    final (int, int) nameCacheIndex;
+
+-      nameCacheIndex = stringReference | ((libraryReferenceIndex) << 30);
++      nameCacheIndex = (stringReference, libraryReferenceIndex);
+
+-      nameCacheIndex = stringReference;
++      nameCacheIndex = (stringReference, 0);
 ```
 
-Ask the member **where it is declared**, not what its `Name` claims.
-`_isJSObject` *is* declared in `dart:js_interop` — the dill says so — and
-`Name.library` is precisely the thing dart2js gets wrong.
+Records give structural equality and `hashCode`, exact on every platform, with no
+arithmetic at all. `(stringReference, 0)` cannot collide with a private key:
+privacy is decided by the **text** (`text[0] == '_'`), and the string table
+stores each text once, so a given `stringReference` is *always* private or
+*always* public.
 
-One line, in a pinned SDK checkout, applied **before `dart compile js`**. It
-patches the **compiler, not the dill** — the same discipline this repo already
-applies to riscv64 (built from pinned sources at deploy) and to binutils/emsdk
-(pinned by hash). **Zero members dropped component-wide**, so it loosens nothing.
+The fourth anchor is a prefix hazard — `nameCacheIndex = stringReference`
+**without** the semicolon also matches the packed line. With it, unique. Assert
+count == 1 on every edit; a silently-missed anchor leaves the packed key in place
+and the run "proves" a fix that was never applied.
 
-Dropping the guard entirely also works but keeps nine members kernel meant to
-exclude. Narrow beats broad.
+**Do not "fix" this with multiplication.** `stringReference * 1073741824 +
+libraryReferenceIndex` looks web-safe and passes at these sizes, but both are
+UInt30 — at declared ranges the product needs **60 bits**, past 2^53, and it
+fails **silently by rounding**.
 
----
+Measured end to end with these four edits and `library_index.dart` left pristine:
+**622 elements, 10538 types, 275 methods, 107,044 chars, `solve(10)=55`**, browser
+gate passed in 4.4s. Identical to the VM, and identical to what the workaround
+produced — without changing `LibraryIndex` semantics.
+
+### The workaround that was wrong
+
+An earlier version of this document recorded a one-line change to
+`library_index.dart:329`, comparing `member.enclosingLibrary` instead of
+`member.name.library`. Self-host compiled, so it was written up as proven. It was
+not.
+
+The VM legitimately drops **90** real cross-library private names — e.g.
+`_closeGap owner=dart:html name.library=dart:collection` — and the guard is
+*supposed* to skip those. The workaround takes 90 to 0. It **overshoots, on every
+platform including the VM**, changing `LibraryIndex` semantics for everyone.
+
+The measurement that hid it: "0 dropped", read as good. The meaningful comparison
+was against the **VM's skip set**, which was never taken. The happy path,
+declared as victory — the same error this series spent twenty rounds calling out.
+
+### The main-channel trap
+
+**Unpatched dart2js does not crash on main** (3.14.0-edge). All 41 eager members
+resolve — and **1651 members are still misattributed** against the VM's 91.
+Different dill, different library indices, different mod-4 parities, different
+victims. Nothing was fixed; the dice landed differently.
+
+So **"just upgrade the SDK" is not a fix.** It is a lottery ticket, redrawn every
+time a dill is regenerated. A compiler running with 1,560 wrong `Name`s is a
+silent-miscompilation risk, where a crash is at least honest.
+
+**If Bx-13a pins main and skips the patch, it will appear to work.** That is the
+worst available outcome, and it is the single most important line in this
+document.
 
 ## 5. Measured cost
 
