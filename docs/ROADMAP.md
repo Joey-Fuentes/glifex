@@ -344,12 +344,25 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       the spike in favour of a gcc/kotlinc ladder that isolates the cost. Note `zig1.wasm` exists in
       Zig's own bootstrap chain -- a wasm build of the compiler -- which is worth a look before any
       emulated route.
-- [ ] **Bx-12. Go** -- gc toolchain in wasm (faithful over light). *Spike first:* heavy +
-      unpackaged for offline client-side; prove the path before committing.
-      *Langbox (ON HOLD, docs/langbox.md)* would run the real `go` toolchain but at ~300x with a
-      ~400MB SDK on top of a ~400MB substrate, and Go compiles are one-shot (no daemon to amortise
-      startup, unlike the JVM). The `gc` compiler is written in Go and Go targets `wasip1`, so
-      **self-hosting is the path to check first** -- same argument that makes Bx-13 tractable.
+- [ ] **Bx-12. Go** -- **spike PASSED (2026-07-16): the gc toolchain self-hosts.** Full record,
+      numbers and dead ends: `docs/go-self-hosted.md`. `cmd/compile` (41.9MB) and `cmd/link`
+      (11.1MB) built for `GOOS=wasip1 GOARCH=wasm` compile and link the real glifex harness
+      **in headless Chromium** -- 7/7, no COI, no heap flag -- driven from JS over the
+      `browser_wasi_shim` Bx-6 already bundles, which covers every WASI call the toolchain asks
+      for (34/36 wanted, 46 provided, zero missing). No `cmd/go` in the browser: it builds by
+      forking, and `os/exec` is absent under `wasip1`, so JS orchestrates compile -> link over
+      one virtual FS and std export data is precomputed at vendor time (64 packages, 24.2MB,
+      measured on the real harness). **77.2MB vendored against Rust's shipped 122MB**;
+      ~2.9s warm compile+link against Miri's ~2s/run; output byte-identical across `node:wasi`,
+      wasmtime and the shim. Go's linker needs no mmap and *is* the toolchain -- the reason
+      self-hosting works here and did not for `rustc` (Bx-6).
+      *Langbox (ON HOLD, docs/langbox.md) is moot:* nothing to amortise at ~1s, and its
+      ~400MB SDK on a ~400MB substrate at ~300x loses to 77.2MB at ~1x. *yaegi* (Apache-2.0,
+      40.3MB to js/wasm) stays filed as the interpreter-shaped retreat if payload ever blocks.
+      **Track not built.** Its vendor step must BUILD the payload -- there is no release to
+      download, so it is the arm64/riscv64 "pinned sources at deploy" pattern, not the Rust
+      "fetch someone's artifact" one. Nothing is measured on a phone yet; that is the risk
+      that could still kill it.
 - [ ] **Bx-13. Dart** -- **likely the easiest remaining track, not the hardest.** The note below
       was right that *dart2wasm* is a host build-time tool -- but the client-side path is not
       unproven, it **shipped**: Google's `try.dartlang.org` (2013) compiled Dart to JS **in the
