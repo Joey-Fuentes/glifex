@@ -1,0 +1,233 @@
+name: tmp-dart2js-probe2
+# TEMPORARY. Throwaway. Do not merge to main; delete the branch when done.
+#
+# Probe v1 said AGREE: two package: libraries each declaring a top-level
+# _probe, the first read first, produce identical Name.library on the VM
+# and under dart2js. So the trigger is narrower than a same-named private
+# twin, and a text-keyed Name cache is not the mechanism.
+#
+# v2 stops synthesising. The real failing input is a file the SDK already
+# ships: lib/_internal/dart2js_platform.dill (10,292,168 bytes at 3.12.2).
+# It already contains BOTH _isJSObject members -- dart:_rti's at dump line
+# 23278, read first, and dart:js_interop's at 80825, declared in the patch
+# file js_shared/lib/js_interop_patch.dart. That is every remaining axis at
+# once: patch-file provenance, dart: scheme, real read order, real twin.
+#
+# The measurement reproduces LibraryIndex._addMember's guard WITHOUT
+# patching kernel: evaluate its own predicate --
+#   member.name.isPrivate && member.name.library != library
+# -- over every member of the component and print what it would skip.
+# On the VM the expected answer is zero. If dart2js prints one, and that
+# one is _isJSObject with name.library=dart:_rti, that is the handoff's
+# section 3b log reproduced from a 40-line program, no self-host needed.
+#
+# The dill is embedded as a const byte list so the reader touches no
+# dart:io and both runs execute IDENTICAL source. Only the compiler differs.
+
+on:
+  push:
+    branches: [chore/tmp-dart2js-probe2-20260717]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Versions
+        run: |
+          dart --version
+          node --version
+
+      - name: Locate the real dart2js platform dill
+        # Not a synthesised lookalike -- the exact bytes the handoff pins.
+        run: |
+          set -eux
+          D="$DART_HOME/lib/_internal/dart2js_platform.dill"
+          ls -l "$D"
+          SZ=$(stat -c %s "$D")
+          echo "dart2js_platform.dill bytes: $SZ"
+          if [ "$SZ" != "10292168" ]; then
+            echo "NOTE -- size differs from the handoff's 10292168. Not fatal;"
+            echo "the probe still reads whatever this SDK ships. Record it."
+          fi
+
+      - name: Sparse-clone pkg/kernel at the pinned tag
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP"
+          git clone --depth 1 --branch 3.12.2 --filter=blob:none --sparse \
+            https://github.com/dart-lang/sdk.git sdk
+          cd sdk
+          git sparse-checkout set pkg/kernel
+          ls -l pkg/kernel/lib/library_index.dart
+
+      - name: Write the probe package
+        run: |
+          set -eux
+          P="$RUNNER_TEMP/probe"
+          mkdir -p "$P/lib" "$P/bin"
+
+          cat > "$P/pubspec.yaml" <<'EOF'
+          name: probe
+          publish_to: none
+          environment:
+            sdk: ">=3.12.0 <4.0.0"
+          dependencies:
+            kernel:
+              path: ../sdk/pkg/kernel
+          EOF
+
+          # Narrow imports on purpose: package:kernel/kernel.dart pulls in
+          # dart:io via loadComponentFromBinary, which dart2js cannot compile.
+          cat > "$P/bin/read.dart" <<'EOF'
+          import 'dart:typed_data';
+
+          import 'package:kernel/ast.dart';
+          import 'package:kernel/binary/ast_from_binary.dart';
+          import 'package:kernel/library_index.dart';
+          import 'package:probe/dill_bytes.dart';
+
+          // LibraryIndex._addMember's own predicate, evaluated here instead of
+          // inside kernel. A member this returns true for is silently dropped
+          // from the index -- no log, no error.
+          bool wouldBeSkipped(Member m, Library owner) {
+            final name = m.name;
+            if (!name.isPrivate) return false;
+            return name.library != owner;
+          }
+
+          Iterable<Member> membersOf(Library lib) sync* {
+            yield* lib.procedures;
+            yield* lib.fields;
+            for (final c in lib.classes) {
+              yield* c.procedures;
+              yield* c.fields;
+              yield* c.constructors;
+            }
+          }
+
+          String libOf(Library? l) => l == null ? 'null' : l.importUri.toString();
+
+          void main() {
+            final component = Component();
+            BinaryBuilder(Uint8List.fromList(dillBytes)).readComponent(component);
+
+            final lines = <String>[];
+
+            lines.add('component libraries: ' +
+                component.libraries.length.toString());
+
+            // 1. Every member named _isJSObject, wherever it lives.
+            for (final lib in component.libraries) {
+              for (final m in membersOf(lib)) {
+                if (m.name.text != '_isJSObject') continue;
+                lines.add('ISJSOBJECT declared-in=' +
+                    lib.importUri.toString() +
+                    ' name.library=' + libOf(m.name.library) +
+                    ' enclosingLibrary=' + m.enclosingLibrary.importUri.toString() +
+                    ' fileUri=' + m.fileUri.pathSegments.last);
+              }
+            }
+
+            // 2. The guard, component-wide. Section 3b measured exactly one.
+            final skipped = <String>[];
+            for (final lib in component.libraries) {
+              for (final m in membersOf(lib)) {
+                if (!wouldBeSkipped(m, lib)) continue;
+                skipped.add('SKIPPED ' + m.name.text +
+                    ' owner=' + lib.importUri.toString() +
+                    ' name.library=' + libOf(m.name.library));
+              }
+            }
+            skipped.sort();
+            lines.add('guard would skip: ' + skipped.length.toString());
+            lines.addAll(skipped);
+
+            // 3. What the transformer actually asks for.
+            final index = LibraryIndex(component,
+                ['dart:js_interop', 'dart:_rti']);
+            for (final uri in ['dart:js_interop', 'dart:_rti']) {
+              var verdict = 'FOUND';
+              try {
+                index.getProcedure(uri, '::', '_isJSObject');
+              } catch (_) {
+                verdict = 'NOT-FOUND';
+              }
+              lines.add('LibraryIndex getProcedure _isJSObject in ' + uri +
+                  ' -> ' + verdict);
+            }
+
+            for (final l in lines) {
+              print(l);
+            }
+          }
+          EOF
+
+      - name: Embed the platform dill
+        run: |
+          set -eux
+          P="$RUNNER_TEMP/probe"
+          cd "$P"
+          dart pub get
+          node -e 'const fs = require("fs"); const b = fs.readFileSync(process.argv[1]); fs.writeFileSync(process.argv[2], "const List<int> dillBytes = <int>[" + Array.from(b).join(",") + "];\n");' "$DART_HOME/lib/_internal/dart2js_platform.dill" "$P/lib/dill_bytes.dart"
+          wc -c "$P/lib/dill_bytes.dart"
+
+      - name: Run the probe on the VM
+        run: |
+          set -eux
+          mkdir -p "$GITHUB_WORKSPACE/probe-out"
+          cd "$RUNNER_TEMP/probe"
+          dart run bin/read.dart | tee "$GITHUB_WORKSPACE/probe-out/vm.txt"
+
+      - name: Run the probe compiled by dart2js
+        # globalThis.self is mandatory: dart2js reaches its global through
+        # self, node CommonJS has none, and without the shim the first await
+        # never resumes -- sync code runs, then silence, then exit 0.
+        run: |
+          set -eux
+          cd "$RUNNER_TEMP/probe"
+          dart compile js -o "$RUNNER_TEMP/read.js" bin/read.dart
+          node --max-old-space-size=6144 -e 'globalThis.self = globalThis; require(process.argv[1]);' "$RUNNER_TEMP/read.js" | tee "$GITHUB_WORKSPACE/probe-out/js.txt"
+
+      - name: Compare
+        run: |
+          set -eu
+          O="$GITHUB_WORKSPACE/probe-out"
+          echo "======== VM ========"
+          cat "$O/vm.txt"
+          echo "======== dart2js ========"
+          cat "$O/js.txt"
+          echo "======== diff ========"
+          if diff -u "$O/vm.txt" "$O/js.txt" > "$O/diff.txt"; then
+            echo "VERDICT -- AGREE. Reading the real platform dill is not enough."
+            echo "So the trigger is not in BinaryBuilder over a single dill at all."
+            echo "Next axis: how the component is BUILT -- platform dill plus"
+            echo "source-built libraries, two-stage canonical name linking, which"
+            echo "is what front_end does and what this probe skips."
+          else
+            cat "$O/diff.txt"
+            echo "VERDICT -- DISAGREE. This is the repro, at its true minimum:"
+            echo "load a dill the SDK ships, read one member. No self-host."
+          fi
+
+      - name: Upload the probe output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart2js-probe2
+          path: probe-out
+          if-no-files-found: warn
