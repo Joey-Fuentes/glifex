@@ -115,6 +115,28 @@ jobs:
 
       - name: Vendor Go toolchain (gc self-hosted to wasip1/wasm)
         run: bash tools/go-vendor.sh web/vendor/go
+      - name: Vendor arm64 toolchain (VIXL wasm32 + musl binutils, pinned)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools binutils-aarch64-linux-gnu texinfo bison flex
+          . tools/arm64-toolchain/pins.env
+          if [ ! -d "$HOME/emsdk" ]; then
+            git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+            (cd "$HOME/emsdk" && ./emsdk install "$EMSDK_VERSION" && ./emsdk activate "$EMSDK_VERSION")
+          fi
+          . "$HOME/emsdk/emsdk_env.sh"
+          mkdir -p web/vendor/asm-arm64
+          bash tools/arm64-toolchain/build-binutils.sh "$PWD/web/vendor/asm-arm64"
+          bash tools/arm64-toolchain/build-vixl.sh     "$PWD/web/vendor/asm-arm64"
+          BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$BLINKENLIB_REF/webapp/src/assets"
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.js"   -o web/vendor/asm-arm64/blinkenlib.js
+          curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.wasm" -o web/vendor/asm-arm64/blinkenlib.wasm
+          echo "$BLINKENLIB_JS_SHA256  web/vendor/asm-arm64/blinkenlib.js"   | sha256sum -c -
+          echo "$BLINKENLIB_WASM_SHA256  web/vendor/asm-arm64/blinkenlib.wasm" | sha256sum -c -
+          echo "{\"runtime\":\"asm-arm64\",\"vixl\":\"$VIXL_COMMIT\",\"binutils\":\"$BINUTILS_VERSION (musl-static, GPL-3.0, guest)\",\"blink\":\"ISC\",\"vixl_license\":\"BSD-3-Clause\"}" > web/vendor/asm-arm64/manifest.json
+          rm -f web/vendor/asm-arm64/binutils-configure.log web/vendor/asm-arm64/binutils-make.log
+          ls -la web/vendor/asm-arm64
+
       - name: Vendor x86-64 toolchain (robalb/x86-64-playground, pinned)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
