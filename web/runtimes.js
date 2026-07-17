@@ -623,6 +623,42 @@ const Runtimes = (() => {
     };
   }
 
+  // -- Go: the real gc toolchain, self-hosted to wasip1/wasm (Bx-12) --
+  // compile.wasm then link.wasm over one virtual FS, then the linked output --
+  // all in the worker. There is no cmd/go in the browser: it builds by forking
+  // and os/exec does not exist under wasip1, so JS is the build driver. The std
+  // export data cannot be built on demand for the same reason and is vendored
+  // ahead of time (tools/go-vendor-imports.txt is the set). Full record and
+  // measurements: docs/go-self-hosted.md.
+  // No cycles on the results: the browser executes the linked wasm natively and
+  // nothing counts steps, so lab.js derives the WALL tier by itself. Go wants no
+  // wallByLang cap -- unlike Miri it runs at native speed after a one-time
+  // compile, so it takes the full ladder.
+  async function loadGo() {
+    if (!(await vendored("go"))) return null;
+    const goWorkerState = { worker: null };
+    // First run pays an 80MB payload fetch plus a 42MB WebAssembly.compile;
+    // measured cold end-to-end at ~6.4s in headless Chromium, but a cold cache
+    // on a slow link is the case this budget is for.
+    const GO_TIMEOUT_MS = 120000;
+    return {
+      async run(source, cases, lang) {
+        try {
+          const support = (lang && lang.support) || {};
+          const res = await window.callWorker(
+            goWorkerState, "go-worker.js", { id: "run", source, cases, support },
+            GO_TIMEOUT_MS, "Go took too long (over 120s) -- the first run fetches and compiles the toolchain (~80MB).",
+            { type: "module" });
+          if (res.id === "error") return { error: res.error };
+          const { id, ...out } = res;
+          return out;
+        } catch (e) {
+          return { error: String((e && e.message) || e) };
+        }
+      },
+    };
+  }
+
   // -- Retro assembly tracks: customasm.wasm assembles, first-party cores run --
   // One generic loader, per-ISA config (RETRO-CONTRACT: factored at n=3 cores).
   // Assemble ABI (raw wasm string-passing) proven from customasm web/main.js.
@@ -795,7 +831,7 @@ const Runtimes = (() => {
     };
   }
 
-  const LOADERS = { java: loadJava, typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, "asm-x86_64": loadAsmX86, "asm-arm64": loadAsmArm64, "asm-riscv64": loadAsmRiscv64, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
+  const LOADERS = { java: loadJava, typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, go: loadGo, "asm-x86_64": loadAsmX86, "asm-arm64": loadAsmArm64, "asm-riscv64": loadAsmRiscv64, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed
