@@ -1,0 +1,116 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 15. Spike 13's control settled the stall in half a second:
+#
+#   7b-1 bare node        [CTRL] sync part ran            <- died at first await
+#   7b-2 self = globalThis [CTRL] sync part ran
+#                          [CTRL] resumed after a zero-duration await
+#                          [CTRL] resumed after a real timer
+#                          [CTRL] async ok                <- passed
+#
+# 'self' was the lever. dart2js reaches its global through it and bare node
+# CommonJS has none, so its async scheduler never initialises and the first
+# await never resumes. Twenty lines of Dart, run BEFORE the compile it explains.
+# Every hypothesis I have reasoned my way to in this series has been wrong;
+# every control has been right. That is now thirteen for thirteen.
+#
+# WITH THE SHIM IN, gate 2b went from reading ONE input to reading all SEVEN --
+# byte-for-byte the list the VM reads -- and then hit the real thing:
+#
+#   CRASH: Unsupported operation: Platform._version
+#       at Object._Platform__version (gx_web.js:10894)
+#       at Object._Platform_version  (gx_web.js:11060)
+#       at gx_web.js:349415:72        <- the caller, cut off by my own take(6)
+#
+# This is spike 1's finding arriving in person. dart2js COMPILES dart:io and
+# emits code that throws UnsupportedError when it is CALLED -- which is why the
+# compiler self-hosts at all. Something in the compile path calls
+# Platform.version, and that is a REAL Bx-13 blocker rather than a rig artifact:
+# a browser throws in exactly the same place.
+#
+# TWO INSTRUMENTS, because either alone could miss:
+#   S7a greps the resolved closure for Platform.version and prints the
+#       surrounding code. Comment matches are marked and excluded from the count
+#       -- this is a hunt, so over-reporting is safe and missing is fatal, but an
+#       unmarked comment is how I would misread my own output. Tested against a
+#       tree with a known call site and a decoy comment.
+#   S8  take(6) -> take(30) on the crash stack. The frame that names the caller
+#       was the seventh. A report that cuts off the answer is worse than no
+#       report, because it looks like a report.
+#
+# WHAT IS GREEN AND NOT MOVING
+#   GATE 2a-REF  the SDK's own runCompiler, in memory        -> solve(10)=55
+#   GATE 2a-GX   MY providers, no filesystem in the compile   -> solve(10)=55
+#                path, 3.5s, out.js + out.js.map
+#   GATE 2b      compiles to JS: 16,231,742 / 2,371,981 gzipped in 46s, and now
+#                reads all seven inputs before it throws.
+# The thing Bx-13 needs -- a Dart compiler running with NO filesystem -- works.
+# What is left is one dart:io call to find and route around.
+#
+# SETTLED
+#   dart:ffi enters pkg/compiler through exactly ONE file, src/io/mapped_file.
+#   dart, imported by exactly ONE file, src/dart2js.dart -- the CLI.
+#   Wire bill 25.3 MB raw / ~5.7 MB gz, against dart-live's 36.5 / 11.2.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/*.log
+            dartspike/gate2/gx_ref_out.js
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            dartspike/ctrl/*.js
+            tools/dart-spike/
