@@ -107,6 +107,24 @@ Bx-6's 23-rlib minimum was found empirically because reasoning about what std
 number that was a lie: `hello.go` pulls `fmt`, but the glifex harness pulls
 `encoding/json`, `os` and `reflect`, and `reflect` drags in most of the runtime.
 
+**And that number is a floor, not the payload.** It is the *harness's* closure.
+`sort` is not in it. Neither is `container/heap`, nor `math/rand` — so a kata
+whose `practice.go` writes `import "sort"`, an entirely ordinary thing to write,
+does not compile. The track must vendor every std package a user might plausibly
+import: a policy (`tools/go-vendor-imports.txt`) plus a measurement.
+
+| closure | packages | bytes |
+|---|---|---|
+| harness-only | 64 | 24,231,794 |
+| **allowlist — shipped** | **103** | **30,279,904** |
+| all of std | 339 | 123,402,568 |
+
+The allowlist costs **+6MB over the floor** — the transitive closure had already
+dragged most of the runtime in through `reflect` and `encoding/json` — and saves
+**93MB against shipping std whole**. `tools/go-vendor.sh` builds it, and gates on
+a kata that actually imports `sort` and `container/heap`: an allowlist nothing
+compiles against is a guess with a filename.
+
 Use **absolute guest paths** (`/pkg/fmt.a`) in the importcfg. Relative paths
 work only if the compiler's cwd is what you think it is, and §6 is what happens
 when it is not.
@@ -200,7 +218,7 @@ Payload, against the tracks it would sit beside:
 
 | | Bx-12 Path A | Rust (shipped) | langbox |
 |---|---|---|---|
-| payload | **77.2MB** | 122MB | ~835MB |
+| payload | **79.4MB** | 122MB | ~835MB |
 | tax | ~1x | ~1000x (Miri) | ~300x |
 | compile | ~1s | — | 5.9s (`gcc hello.c`) |
 
@@ -216,7 +234,7 @@ header work, no `web/coi-server` involvement.**
   Its Go-specific objection was that Go compiles are one-shot, so there is no
   daemon to amortise startup against the way kotlinc's ~94%-startup finding
   allows. True, and irrelevant: there is nothing to amortise at ~1s. A ~400MB
-  SDK on a ~400MB substrate at ~300x, against 77.2MB at ~1x.
+  SDK on a ~400MB substrate at ~300x, against 79.4MB at ~1x.
 - **yaegi** (`traefik/yaegi`, Apache-2.0) — the Miri-shaped "light" option: a
   pure-Go Go **interpreter**, so no linker, no export data. Built for `js/wasm`
   it is **40,297,733 bytes** — about half Path A. Rejected anyway, and *not* on
@@ -234,15 +252,16 @@ header work, no `web/coi-server` involvement.**
 
 The spike proves the toolchain. It does not prove the track.
 
-- **Nothing is measured on a phone.** A 41.9MB module + 11.1MB module + 24.2MB
-  of export data + Go's runtime heap, in one Android tab. The parked Python
-  "shows nothing" OOM is exactly this shape of risk. **This is the one that
-  could still kill it**, and it is untested.
-  *One point of reassurance, and it is only one:* desktop headless Chromium
-  needs **no** heap flag. The first browser run passed `--js-flags=--max-old-
-  space-size=3072` defensively, so it was re-run without — 7/7, 8473ms cold.
-  Slower without it, not broken. That is a desktop result and says nothing
-  certain about a Pixel, but the payload is not obviously past a default heap.
+- **Nothing is measured on a phone**, as with every other compiled track. Stated
+  plainly because an earlier draft of this file called it "the one that could
+  still kill it", which was wrong twice over. Android is not a gate: STATUS.md
+  verifies it for the *interpreted* Playground tier, and C, Rust and the asm
+  tracks never claimed it and shipped regardless. And the comparison runs the
+  other way — C ships a **106MB** `clang.webc` and *needs*
+  `--js-flags=--max-old-space-size=3072` or headless Chromium hard-crashes on
+  it, while Go's 79.4MB needs no flag at all (re-run without it: 7/7, 8473ms
+  cold — slower, not broken). Go is lighter and less demanding than a track that
+  already shipped. Worth measuring on a device eventually; not a blocker.
 - **One problem, one variant.** 001 only, via the spike's own practice/clean/
   optimized stand-ins. The repo's real blind-practice files were not touched.
 - **No error mapping.** Compile errors and panics report positions in the
@@ -256,7 +275,12 @@ The spike proves the toolchain. It does not prove the track.
   download: the payload must be **built** at deploy time (`go build cmd/compile`
   + `go list -export` for std), with `actions/setup-go` and a pinned Go version.
   That is the arm64/riscv64 "built from pinned sources" pattern, not the
-  Rust/C# "fetch someone's artifact" pattern. Cache key must move.
+  Rust/C# "fetch someone's artifact" pattern. The cache key moves by itself —
+  it hashes `tools/**` — so adding `tools/go-vendor.sh` busts the vendor cache
+  for every language exactly once. And `web/vendor-sync.test.mjs` requires
+  **three** pipelines to agree, not two: `pages.yml`, `ci.yml` and
+  `export-vendor-bundle.yml`. Bx-10 wired the first two and silently forgot the
+  third, which is why that test exists.
 - **Shim console spam** (§7) must be silenced before it ships.
 - **Larger programs untested.** Generics, `-c` concurrency, big std imports.
 
