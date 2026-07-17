@@ -1,0 +1,70 @@
+# Bx-12 Go -- the std packages the browser payload ships export data for.
+#
+# WHY A LIST AT ALL
+#   The browser has no cmd/go, so std cannot be built on demand: every package a
+#   user's practice.go might import must have its .a archive vendored ahead of
+#   time (docs/go-self-hosted.md, sections 3 and 5). Ship too little and a
+#   perfectly ordinary "import sort" fails to compile. Ship all of std and the
+#   payload carries net/http, crypto, go/parser and database/sql for no reason.
+#
+# HOW TO CHANGE IT
+#   Add the import path, re-run the vendor step, read the new number. The
+#   closure is transitive -- adding "sort" also pulls what sort needs -- so the
+#   marginal cost of a line is rarely the size of that package.
+#
+# THE RULE
+#   An algorithm kata should never hit a wall this file could have avoided.
+#   Anything a reasonable person writes while solving a problem belongs here.
+#   Anything that talks to a network, a database, a filesystem beyond the
+#   harness, or the Go toolchain itself does not.
+
+# --- the harness contract itself (languages/templates/main.go)
+encoding/json
+fmt
+os
+reflect
+
+# --- the everyday spine of an algorithm solution
+bufio
+bytes
+cmp
+errors
+io
+iter
+maps
+slices
+sort
+strconv
+strings
+
+# --- classic data structures. sort's absence from the harness closure is
+#     exactly what made B1 necessary; heap's is the same bug one step later.
+container/heap
+container/list
+container/ring
+
+# --- arithmetic. math/big matters for the big-integer katas; math/rand for
+#     anything that generates its own input.
+math
+math/big
+math/bits
+math/cmplx
+math/rand
+
+# --- text
+regexp
+unicode
+unicode/utf8
+unicode/utf16
+
+# --- hashing, for rolling-hash and memo-key techniques
+crypto/sha256
+encoding/base64
+encoding/hex
+hash
+hash/fnv
+
+# --- misc but ordinary
+path
+sync
+time

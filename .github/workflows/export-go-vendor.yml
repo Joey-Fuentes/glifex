@@ -1,0 +1,110 @@
+# THROWAWAY -- Bx-12 B1. NEVER MERGE. Push-triggered on the measure branch.
+#
+# THE QUESTION
+#   docs/go-self-hosted.md records 64 packages / 24.2MB / 77.2MB total. That is
+#   the HARNESS's closure and it is a FLOOR: sort, container/heap and math/rand
+#   are all absent from it, so an ordinary kata does not compile against it.
+#   What does the payload ACTUALLY cost, and does the allowlist cover a real
+#   kata?
+#
+# WHAT IT PRINTS
+#   three closures -- harness-only (the floor in the doc), the allowlist
+#   (tools/go-vendor-imports.txt), and all of std (the ceiling) -- and then
+#   GATES on compiling a kata that imports sort and container/heap.
+#
+# WHY NOT A PR
+#   The vendor cache key hashes tools/**, so landing tools/go-vendor.sh busts
+#   the vendor cache for every language; and ci.yml's vendor-sync test requires
+#   pages.yml and ci.yml to move together. Both are B2's job, done on purpose.
+name: export-go-vendor
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-go-vendor-*]
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: false
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Build the payload (the REAL tools/go-vendor.sh that B2 will land)
+        run: bash tools/go-vendor.sh "$GITHUB_WORKSPACE/payload"
+
+      - name: The three closures -- floor, allowlist, ceiling
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          measure() {
+            NAME="$1"; shift
+            OUT=$(GOOS=wasip1 GOARCH=wasm go list -e -deps -export \
+              -f '{{if .Export}}{{.ImportPath}} {{.Export}}{{end}}' "$@" 2>/dev/null || true)
+            N=$(printf '%s\n' "$OUT" | grep -c . || true)
+            B=0
+            while read -r _ip ex; do
+              [ -n "${ex:-}" ] || continue
+              B=$(( B + $(stat -c%s "$ex") ))
+            done <<< "$OUT"
+            printf '##   %-14s %4s packages  %12s bytes  (%s MB)\n' "$NAME" "$N" "$B" "$(( B / 1048576 ))"
+          }
+          echo "## export-data closures for wasip1/wasm:"
+          measure "harness-only" encoding/json fmt os reflect
+          # shellcheck disable=SC2046
+          measure "allowlist" $(grep -v -E '^\s*(#|$)' tools/go-vendor-imports.txt | tr '\n' ' ')
+          measure "all-of-std" std
+          echo "##"
+          echo "## The doc's 77.2MB is the harness-only row plus the toolchain. If the"
+          echo "## allowlist row is close to all-of-std, curating buys nothing and B2"
+          echo "## should just ship std. If it is far below, the allowlist earns its"
+          echo "## maintenance. That is the decision this run exists to inform."
+          C=$(stat -c%s payload/bin/compile.wasm); L=$(stat -c%s payload/bin/link.wasm)
+          P=$(du -sb payload/pkg | cut -f1)
+          echo "##"
+          echo "## SHIPPED PAYLOAD (allowlist): toolchain $(( (C+L) / 1048576 ))MB + export data $(( P / 1048576 ))MB = $(( (C+L+P) / 1048576 ))MB"
+          echo "## for scale: Rust ships 122MB, C ships a 106MB clang.webc."
+
+      - name: GATE -- compile a kata that imports sort and container/heap
+        run: |
+          set -euo pipefail
+          D="$GITHUB_WORKSPACE/payload"
+          mkdir -p "$D/work"
+          cp languages/templates/main.go              "$D/work/main.go"
+          cp tools/go-vendor-gate/practice.go         "$D/work/practice.go"
+          cp tools/go-vendor-gate/variants.go         "$D/work/variants.go"
+          cp problems/001-anagram-detection/test_cases.json "$D/test_cases.json"
+          cp "$D/importcfg.txt" "$D/work/importcfg.link"
+          echo "packagefile main=/work/main.a" >> "$D/work/importcfg.link"
+          node tools/go-vendor-gate/drive.mjs "$D"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## ---- B1 ----"
+          cat "$GITHUB_WORKSPACE/payload/manifest.json" 2>/dev/null | sed 's/^/##   /' || true
+          echo "##   If the gate is GREEN, tools/go-vendor.sh and"
+          echo "##   tools/go-vendor-imports.txt are ready for B2 to land as-is."
+          echo "##   B2 then wires pages.yml AND ci.yml together (vendor-sync.test.mjs"
+          echo "##   enforces that) and accepts the one-time vendor-cache bust."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: go-vendor-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            payload/bin/
+            payload/pkg/
+            payload/importcfg.txt
+            payload/manifest.json
