@@ -1,0 +1,116 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 4. Spike 3 finally got a real tree and immediately found two
+# things that reframe the whole track.
+#
+# ONE: THE ROADMAP'S PREMISE IS OUT OF DATE.
+#   The roadmap says DartPad "went server-side", which is the reason Bx-13 was
+#   ever framed as hard. It did not stay there. The SDK now ships:
+#     pkg/dartpad_worker -- 54 files, deps on dev_compiler / front_end / kernel /
+#       analysis_server / web, with lib/src/resource_provider/*  (a VIRTUAL
+#       FILESYSTEM), lib/src/tools/hot_reload_compiler.dart, a language_server,
+#       log_io.dart AND log_js.dart conditional variants, a MessagePort JSON-RPC
+#       channel, and bin/worker.dart.
+#     pkg/dartpad -- "Client library for launching and communicating with
+#       dartpad-worker", browser-side, with false_secrets: /web/worker.wasm.
+#     tools/bots/test_matrix.json -- a "ddc self host test" builder.
+#   Google built the thing Bx-13 wants: a Dart compiler in a browser worker with
+#   a virtual FS. It uses DDC rather than dart2js. Section 2 reads it properly
+#   before I write another line of my own.
+#
+# TWO: THE SDK ALREADY HAS THE FILE I HAND-WROTE.
+#   pkg/compiler/lib/src/util/memory_compiler.dart, plus output_collector.dart
+#   (OutputCollector implements api.CompilerOutput) and NullCompilerOutput. That
+#   is gx_core.dart, written by the people who own the compiler and kept green
+#   by their tests. I wrote a worse one for three spikes and never looked. This
+#   is the Bx-10 lesson exactly: the answer to the musl question was sitting in
+#   an upstream build script the whole time. Section 5 prints it verbatim.
+#
+# SPIKE 3'S CONFIRMATIONS
+#   - Spike 1's inference was right: source_file_provider.dart holds
+#     SourceFileProvider implements api.CompilerInput, RandomAccessFileOutput-
+#     Provider implements api.CompilerOutput, FormattingDiagnosticHandler
+#     implements api.CompilerDiagnostics. The host adapter layer, as predicted.
+#   - The real CompilerOptions.parse call site (dart2js.dart:696) takes the
+#     libraries spec and platform binaries as NAMED Uris, not as CLI flags in
+#     the options list -- which is what spike 2's gx_core did. gx_core now
+#     mirrors the CLI. That was the one guessed line; it is now evidence.
+#
+# WHY SPIKE 3 STILL TESTED NOTHING -- both failures mine, both the same shape:
+#   "No workspace packages matching runtime/tests/vm/dart"
+#     -> the workspace has members under runtime/; "set pkg tools sdk" excluded
+#        it. Now: set pkg tools sdk runtime.
+#   "Because testing requires SDK version ^3.13.0-0, version solving failed"
+#     -> setup-dart handed us STABLE 3.12.2 while I cloned SDK source at MAIN,
+#        whose root pubspec demands ^3.14.0-0. I was compiling tomorrow's source
+#        with today's compiler and reading the wreckage as if it said something
+#        about Dart. The fix is the discipline this repo already applies to
+#        binutils and emsdk: PIN IT. The clone is now --branch <installed dart
+#        version>, and section 1 ASSERTS source and compiler agree before
+#        anything downstream is allowed to mean anything.
+#
+# Three rounds have now been lost to my own scaffolding rather than to Dart.
+# Hence two asserts at the top, both tested locally in both directions, and a
+# gate ordering where gate 1 has nothing of mine in its compile path.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/gate1/*.gz
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            dartspike/clone.log
+            tools/dart-spike/
