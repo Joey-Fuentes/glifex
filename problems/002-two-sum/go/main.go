@@ -17,6 +17,14 @@ func dispatch(variant string, c map[string]any) any {
 	switch variant {
 	case "practice":
 		return practice(c)
+	case "brute-force":
+		// The file is brute-force.go, but a Go identifier cannot contain a
+		// hyphen, so the function it defines is bruteForce -- the same name
+		// web/go-worker.js's entry regex accepts. Go has no weak symbols, so
+		// this case is unconditional: every problem shipping a go/ directory
+		// must define bruteForce, exactly as main.rs's unconditional
+		// "mod brute_force" requires a brute-force.rs of every Rust problem.
+		return bruteForce(c)
 	case "clean":
 		return clean(c)
 	case "optimized":
