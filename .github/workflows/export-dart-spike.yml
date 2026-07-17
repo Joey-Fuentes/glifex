@@ -1,0 +1,123 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 21. THE FIX, AT SOURCE -- AND THE DEMO, IN A REAL BROWSER.
+#
+# ROOT CAUSE, proven in spike 20 by instrumenting the emitted JS:
+#     ==== members SKIPPED by the private-name guard: 1 ====
+#       _isJSObject
+#           name.library   = rti
+#           parent.library = library dart:js_interop
+# Exactly ONE member of the whole component is dropped, and it is the one the
+# transformer needs. js_::_isJSObject's Name.library points at dart:_rti, so
+# kernel/library_index.dart:329 silently returns.
+#
+# Closed by contradiction: the VM compiles the SAME kata from the SAME dill
+# bytes and succeeds, and shared_interop_transformer resolves _isJSObject
+# eagerly and unguarded -- so on the VM Name.library MUST be dart:js_interop.
+# Same input, two answers => dart2js miscompiles kernel's private-Name library
+# association. It bites exactly one member because _isJSObject is the ONLY one
+# in that table with a same-named PRIVATE TWIN in another library:
+# rti::_isJSObject, read BEFORE js_interop.
+#
+# THE FIX (S7a5) -- one line, in a pinned SDK checkout, before dart compile js:
+#     - if (member.name.isPrivate && member.name.library != library)
+#     + if (member.name.isPrivate && member.enclosingLibrary != library)
+# Ask the member where it is DECLARED, not what its Name claims. Validated by
+# simulating it on the emitted JS: the REAL member indexes, the compile passes,
+# output byte-identical to the VM -- 622 elements, 10538 types, 275 methods,
+# 107,044 chars, solve(10)=55 -- and ZERO members dropped component-wide, so it
+# loosens nothing. Dropping the guard entirely also works but keeps nine members
+# kernel meant to exclude; narrow beats broad.
+#
+# This patches the COMPILER, not the dill, in a pinned checkout at build time --
+# exactly what this repo already does for every vendored track. The upstream bug
+# is worth reporting; it is not a gate. So "blocked on Google" was wrong, and
+# the correction is Joe's.
+#
+# THE BROWSER GATE (S8b) is the one that is actually the product.
+#   node was never the target. Sixteen rounds went on a stall that turned out to
+#   be node lacking 'self' -- which dart2js reaches its global through, and which
+#   in a BROWSER simply IS the global. This gate runs in dart2js's native
+#   habitat and needs NO shim. The page fetch()es the dill and libraries.json,
+#   hands them over as bytes, gets JS back, RUNS it, and reads what it prints.
+#   Compiling is not the demo; computing 55 is.
+#   REHEARSED LOCALLY AGAINST REAL CHROMIUM BEFORE SHIPPING:
+#     self is the global here -- this is a browser, not node
+#     fetched    : dill 10292168 bytes, libraries.json 22874 chars
+#     produced   : 107044 chars of JS
+#     output ran : [KATA] gx ok solve(10)=55
+#     BROWSER GATE PASSED            (~6.5-11s incl. the 10 MB fetch)
+#
+# WHAT THIS ROUND MUST SHOW THAT LOCAL COULD NOT: that the SOURCE patch, applied
+# before dart compile js, produces a gx_web.js that needs no JS-level patching
+# at all. Every JS hack is gone from this probe. If gate 2b and the browser gate
+# both pass on a freshly built artifact, Bx-13 is done as a spike.
+#
+# THE BILL: 25.3 MB raw / ~5.7 MB gz, ~9.5s per compile, against dart-live's
+# VM route at 36.5 / 11.2 -- half the wire, no VM, no emcc, no gclient, no
+# embedder, output at native JS speed rather than simulated ARM.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/*.log
+            dartspike/gate2/gx_ref_out.js
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            dartspike/ctrl/*.js
+            dartspike/export/*
+            dartspike/browser-gate.log
+            tools/dart-spike/
