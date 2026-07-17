@@ -73,7 +73,12 @@ this incident months earlier, without deciding anything about mirroring.
   `ci.yml`, `export-vendor-bundle.yml`). It exists because Bx-10 taught two of
   them about arm64 and silently forgot the third.
 - `tools/arm64-toolchain/pins.env` is the pinning shape worth copying: one file,
-  hashed into the vendor cache key, so a version bump self-busts the cache. The
-  other runtimes still hardcode their pins inline in the workflows, where the key
-  does **not** see them — which is why "remember to bump the cache key" is still
-  a footgun everywhere except arm64.
+  one place to look, hashed into the vendor cache key. The other runtimes
+  hardcode their pins inline in the workflows, which is worth fixing for
+  readability -- but **not** because the key misses them. **Correction:** an
+  earlier version of this line claimed the key does not see inline pins, and that
+  "remember to bump the cache key" was a footgun everywhere except arm64. Both
+  are false. The key hashes the workflow file itself, so an inline pin change
+  busts it (measured: editing one flips the hash). Every place a pin can live --
+  `web/fetch-runtimes.mjs`, `tools/**`, the workflow -- is hashed, so the key
+  always self-bumps. See Invariant 10 in `docs/architecture.md`.

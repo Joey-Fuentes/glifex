@@ -148,10 +148,14 @@ plus an aggregate `{ results, instructions, spaceBytes, codeBytes }`.
 **runs something in the built artifact**. The step goes in `pages.yml`, `ci.yml`
 **and `export-vendor-bundle.yml`** — `vendor-sync.test.mjs` will force the third.
 
-The cache key hashes `tools/**` and the workflow, so pins self-bump. **Bump
-`vendor-vN` once** when adding a runtime: the existing cache holds
-`.vendor-complete` and every step early-exits on it, so without the bump your
-runtime silently never lands.
+The cache key hashes `web/fetch-runtimes.mjs`, `tools/**` and the workflow, so it
+**self-bumps**. Adding `tools/<lang>-toolchain/` moves the key on its own, there
+are no `restore-keys`, and a miss is a real miss -- nothing is restored, so no
+step early-exits on `.vendor-complete`.
+
+**Do not bump `vendor-vN`.** If a rebuild ever needs forcing, an input is missing
+from the key: that is a CI bug and the fix is the key, not the counter. See
+Invariant 10 in `docs/architecture.md`.
 
 ### 3g. The Lab — usually nothing
 

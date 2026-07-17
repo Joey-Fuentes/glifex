@@ -204,6 +204,19 @@ quietly break. If a diff violates one of these, it is wrong even if CI is green.
    its immediate parent, to catch this exact regression before it merges
    again.
 
+10. **The vendor cache self-bumps. A manual bump means CI is broken.** The key
+    hashes `web/fetch-runtimes.mjs`, `tools/**` and the workflow file itself --
+    every place a pin can live -- so any input change busts it by construction.
+    There are no `restore-keys`, so a miss is a real miss: nothing is restored,
+    `.vendor-complete` is absent, and every vendor step runs. Adding a runtime
+    touches `tools/**` and the workflow, so the key moves on its own; changing an
+    inline pin moves it too, because the workflow is hashed. **Never bump
+    `vendor-vN` to force a rebuild.** Wanting to force one is not a requirement,
+    it is a symptom -- it means an input is not in the key, and the fix is the
+    key. "Why do I need to force this?" is the question; the answer is a CI bug.
+    To prove the pipeline works, change a hashed input and watch the miss: that
+    tests the mechanism instead of bypassing it.
+
 ## Diagrams
 
 **Single-sourcing and the two drift gates** -- how templates and problems become
