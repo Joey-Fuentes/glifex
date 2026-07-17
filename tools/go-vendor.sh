@@ -19,6 +19,12 @@ test -f "${IMPORTS}" || { echo "go-vendor: no imports file at ${IMPORTS}"; exit 
 command -v go >/dev/null || { echo "go-vendor: no go toolchain on PATH"; exit 1; }
 
 mkdir -p "${OUT}/bin" "${OUT}/pkg"
+# Absolute from here down. Both callers pass a RELATIVE path -- pages.yml and
+# ci.yml each say "bash tools/go-vendor.sh web/vendor/go" -- and a relative path
+# concatenated into a file:// URL makes node read its first segment as the URL
+# HOST: ERR_INVALID_FILE_URL_HOST, which is exactly how this failed in e2e.
+# Canonicalise once, here, rather than remembering at every use site.
+OUT="$(cd "${OUT}" && pwd)"
 GOVER="$(go env GOVERSION)"
 echo "go-vendor: ${GOVER} -> ${OUT}"
 
@@ -89,7 +95,8 @@ NODE_EOF
 # It must actually import, and export what the worker will destructure. A shim
 # that merely got written is not a shim that works.
 node --input-type=module -e "
-  const m = await import('file://${OUT}/wasi-shim.mjs');
+  const { pathToFileURL } = await import('node:url');
+  const m = await import(pathToFileURL('${OUT}/wasi-shim.mjs').href);
   const need = ['WASI','Fd','Inode','OpenFile','PreopenDirectory','File','Directory'];
   const missing = need.filter((n) => !(n in m));
   if (missing.length) { console.error('go-vendor: shim missing exports: ' + missing); process.exit(1); }
