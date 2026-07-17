@@ -7,7 +7,7 @@ tags = ["strings", "hash-map", "sorting"]
 python      = { variants = ["practice", "clean", "optimized"] }
 javascript  = { variants = ["practice", "clean", "optimized"] }
 typescript  = { variants = ["practice", "clean", "optimized"] }
-go          = { variants = ["practice", "clean", "optimized"] }
+go          = { variants = ["practice", "brute-force", "clean", "optimized"] }
 java        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 kotlin      = { variants = ["practice", "clean", "optimized"] }
 swift       = { variants = ["practice", "clean", "optimized"] }
@@ -52,6 +52,11 @@ space = "O(1)"
 time = "O(n^2)"
 space = "O(1)"
 notes = "per-character count comparison -- the obvious baseline clean/optimized improve on"
+
+[complexity.go.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "per-char count compare -- the naive O(n^2) baseline. Ranges over the strings directly, so the rune decode allocates nothing and the O(1) is literal"
 
 [complexity.rust.brute-force]
 time = "O(n^2)"
