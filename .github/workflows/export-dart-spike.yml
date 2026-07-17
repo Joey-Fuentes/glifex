@@ -1,0 +1,119 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 19. GATE 2b PASSES. The thesis is proven.
+#
+# Spike 18 exported gx_web.js and the whole question moved off CI. Locally, in
+# seconds instead of rounds:
+#   - The crash-reporter patch worked and the real error came out:
+#       A member with disambiguated name '_isJSObject' was not found in
+#       top-level of library 'dart:js_interop'
+#   - Substituting ANY procedure for _isJSObject makes the whole compile pass:
+#       ok: true, out.js 107,044 chars, output printed [KATA] gx ok solve(10)=55
+#   - And not approximately the VM's answer -- exactly it:
+#       elements 622 vs 622 | types 10538 vs 10538 | methods 275 vs 275
+#       out.js 107,044 chars vs 107,044
+#   - ~9.5s per compile as JS against the VM's 3.3s, about 3.4x.
+#
+# So a Dart compiler, running as JavaScript, with NO filesystem anywhere in its
+# compile path, compiles Dart to JavaScript correctly. Bx-13's question is
+# answered. The blocker is ONE member, never CALLED for a kata that does not use
+# js_interop -- it is needed only to BUILD the lowering's table.
+#
+# MY prefer-inline THEORY IS DEAD, killed with the bytes:
+#   NINE functions in that family, every one @pragma('dart2js:prefer-inline').
+#   EIGHT are in the member table; only _isJSObject is not. The pragma does not
+#   discriminate. The member list is exactly source order with _isJSObject
+#   deleted, and all nine come from the same patch file,
+#   lib/_internal/js_shared/lib/js_interop_patch.dart.
+#
+# WHAT LOCAL COULD NOT REACH: _isNullableJSObject's compiled body. In source it
+#   is any == null || _isJSObject(any). If the compiled body still calls
+#   _isJSObject, the member exists and the LOOKUP is wrong. If it was inlined,
+#   something removed it. Dill bodies load lazily and dart2js tree-shook
+#   get$body out of gx_web.js, so local ends there.
+#
+# TWO CHEAP READS FINISH IT:
+#   7a-1  grep the closure for _isJSObject and print the code around it. That
+#         names the file doing the lookup -- probably _js_interop_checks -- and
+#         shows whether it guards the other eight but not this one, which would
+#         make it an upstream bug with a one-line fix.
+#   7a-2  run pkg/kernel/bin/dump.dart on the dill. That is the question local
+#         could not answer: is _isJSObject a member at all, and does
+#         _isNullableJSObject still call it? The dump is gzipped into the export.
+#   7a-3  count _isJSObject across every dill in lib/_internal. If another dill
+#         has it, this is a packaging artifact of the released
+#         dart2js_platform.dill rather than a design problem -- much cheaper to
+#         route around.
+#
+# 7a2 (the crash-reporter defusal) STAYS. It is why _isJSObject was visible at
+# all: reportCrash builds an HttpClient to phone home, which throws
+# Platform.version in JS one line before the try that would have rethrown the
+# original. Any NEW crash would be masked identically and cost three more rounds.
+#
+# THE BILL, all measured: 25.3 MB raw / ~5.7 MB gz, against dart-live's VM route
+# at 36.5 / 11.2 -- half the wire, no VM, no emcc, no gclient, no embedder, and
+# output that runs as native JS rather than through a simulated ARM.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/*.log
+            dartspike/gate2/gx_ref_out.js
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            dartspike/ctrl/*.js
+            dartspike/export/*
+            tools/dart-spike/
