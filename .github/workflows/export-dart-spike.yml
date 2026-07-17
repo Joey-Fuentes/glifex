@@ -1,0 +1,110 @@
+# THROWAWAY spike -- DELETE THIS BRANCH once Bx-13 Dart has a direction.
+# chore/export-dart-spike-* only, never merged.
+#
+# BX-13 SPIKE 10. Spike 9 got the control green and found the real bug.
+#
+# WHAT PASSED
+#   GATE 2a-REF -- the SDK's own runCompiler, in memory, on the VM:
+#     isSuccess: true, produced 107,045 chars of JS in 3.1s,
+#     and the JS it produced printed:  [KATA] ref ok solve(10)=55
+#   So an in-memory dart2js compile works in this environment, end to end,
+#   output executed. The control was worth every line it cost.
+#
+#   GATE 2b still compiles the embeddable compiler to JS:
+#     16,220,158 bytes / 2,369,663 gzipped in 40.3s.
+#
+#   THE FULL WIRE BILL, now all measured:
+#     gx_web.js              16,220,158 raw   2,369,663 gz
+#     dart2js_platform.dill  10,292,168 raw   3,284,296 gz
+#     libraries.json             22,874 raw       2,135 gz
+#     total                  26,535,200 raw   5,656,094 gz  = 25.3 MB / 5.4 MB
+#   dart-live's VM route is 36.5 MB / 11.2 MB gz. This is less than half the
+#   wire, with no VM, no emcc, no gclient and no embedder, and its output runs
+#   as native JS rather than through a simulated ARM.
+#
+# WHAT FAILED, AND WHY IT IS MY FAULT TWICE OVER
+#   gx_core passed the entry as a POSITIONAL:  CompilerOptions.parse([entry])
+#   The compiler never asked for main.dart. My provider's request log said so
+#   exactly, which is the one thing that went right:
+#     inputs the compiler ASKED FOR (1):
+#        file:///home/runner/dart-sdk-src/out.dill  [binary]
+#     #1 _loadFromKernel.read (src/phase/load_kernel.dart:216)
+#   compilationTarget had fallen back to Uri.base.resolve('out.dill'), putting
+#   dart2js in read-a-kernel mode. The entry must be a FLAG:
+#     options = [...options, '${Flags.entryUri}=$entryPoint'];
+#
+#   That line is memory_compiler.dart:181. SPIKE 4 PRINTED IT. I dumped the file
+#   verbatim on purpose, read the first forty lines -- imports and doc comment --
+#   and stopped a hundred and forty lines above the answer. Then spent spikes 5
+#   through 9 not knowing it. The Bx-10 lesson was that the answer was sitting in
+#   an upstream build script the whole time; this time it was sitting in my own
+#   job log the whole time. Printing the reference is not reading it.
+#   gx_core now uses the Flags constant rather than the literal string, for the
+#   same reason: the source is the truth, not my memory of it.
+#
+# ALSO FIXED: spike 9's web gate printed two lines and exited 0 -- no result, no
+# error, no clue. An async main whose future nobody awaits drops its error on the
+# floor. main now reports how it ended, and the node driver fails loudly if
+# gxDone never fires, because a silent success-looking exit is indistinguishable
+# from a pass.
+
+name: export-dart-spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/export-dart-spike-*]
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+
+      - name: Versions and disk
+        run: |
+          echo "## $(dart --version 2>&1)"
+          echo "## node $(node --version)"
+          df -h / | tail -1 | awk '{print "## disk free: "$4}'
+
+      - name: PROBE -- resolve the workspace, then self-host, then embed
+        continue-on-error: true
+        run: bash tools/dart-spike/probe-selfhost.sh "$GITHUB_WORKSPACE/dartspike"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## S2  pkg/dartpad_worker -- did Google already write our worker?"
+          echo "## S3  workspace resolution"
+          echo "## S4  the real CompilerOptions.parse + the CLI call site"
+          echo "## S5  GATE 1 -- self-host artifact size + compile time (the roadmap's ask)"
+          echo "## S6  GATE 2a -- embeddable API on the VM"
+          echo "## S7  GATE 2b -- compiler as JS, no filesystem, output executed"
+          ls -la "$GITHUB_WORKSPACE/dartspike" 2>/dev/null || echo "## no output dir"
+
+      # The artifacts are the point: the self-host JS is the thing a browser
+      # track would serve, and its size decides whether Bx-13 is affordable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dart-spike-selfhost
+          if-no-files-found: warn
+          # The raw self-host JS can be tens of MB; ship the gzip and the
+          # small outputs, not the uncompressed blob.
+          path: |
+            dartspike/*.log
+            dartspike/gate2/gx_ref_out.js
+            dartspike/gate2/gx_vm_out.js
+            dartspike/gate2/gx_web_out.js
+            tools/dart-spike/
