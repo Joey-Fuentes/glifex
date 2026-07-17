@@ -1,0 +1,35 @@
+From 1c430bc130989d285723de8b7aa8e3c77297a266 Mon Sep 17 00:00:00 2001
+From: Techatrix <techatrix@mailbox.org>
+Date: Thu, 28 Aug 2025 22:52:25 +0200
+Subject: [PATCH 2980/2980] make it possible compile to wasm32-wasi with
+ -Ddev=wasm
+
+---
+ src/dev.zig | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/src/dev.zig b/src/dev.zig
+index 1deb3260a..f6c8d2b2f 100644
+--- a/src/dev.zig
++++ b/src/dev.zig
+@@ -197,12 +197,14 @@ pub const Env = enum {
+                 else => Env.sema.supports(feature),
+             },
+             .wasm => switch (feature) {
+-                .stdio_listen,
+-                .incremental,
+                 .wasm_backend,
+                 .wasm_linker,
++                .build_exe_command,
++                .sema,
++                .ast_gen,
++                .legalize,
+                 => true,
+-                else => Env.sema.supports(feature),
++                else => false,
+             },
+             .@"x86_64-linux" => switch (feature) {
+                 .build_command,
+-- 
+2.54.0
+
