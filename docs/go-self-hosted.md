@@ -248,11 +248,13 @@ header work, no `web/coi-server` involvement.**
 - **TinyGo** — LLVM plus `wasm-ld` in the browser. That is precisely the problem
   Bx-6 walked away from. Not attempted, and there is no reason to.
 
-## 10. Still open — what the track must answer
+## 10. Shipped — and where the spike was wrong
 
-The spike proves the toolchain. It does not prove the track.
+The spike proved the toolchain. The track shipped on 2026-07-17: #118 the worker, #119 the
+e2e smoke, #120 the corpus at 4 variants across 001/002/003. What this section listed as
+open, and where each landed:
 
-- **Nothing is measured on a phone**, as with every other compiled track. Stated
+- **Nothing is measured on a phone** — still open, as with every other compiled track. Stated
   plainly because an earlier draft of this file called it "the one that could
   still kill it", which was wrong twice over. Android is not a gate: STATUS.md
   verifies it for the *interpreted* Playground tier, and C, Rust and the asm
@@ -262,16 +264,35 @@ The spike proves the toolchain. It does not prove the track.
   it, while Go's 79.4MB needs no flag at all (re-run without it: 7/7, 8473ms
   cold — slower, not broken). Go is lighter and less demanding than a track that
   already shipped. Worth measuring on a device eventually; not a blocker.
-- **One problem, one variant.** 001 only, via the spike's own practice/clean/
-  optimized stand-ins. The repo's real blind-practice files were not touched.
-- **No error mapping.** Compile errors and panics report positions in the
-  synthesised file. Rust needed `remapLines` for exactly this; Go will too, and
-  Go's multi-file package makes it a *file*-and-line problem, not just a line
-  one.
-- **Metrics tier undecided.** Unlike Miri's virtual clock, Go under `wasip1` has
-  a **real** clock — so Go is a wall-time tier, not a deterministic one. Heap is
-  reachable via `runtime.ReadMemStats`. Stack probably is not.
-- **The vendor step is unlike every other track's.** There is no release to
+- **One problem, one variant** — RESOLVED (#120). 001/002/003 at practice, brute-force,
+  clean and optimized: 12 of 12, validated live in the worker (9 reference variants pass,
+  3 practice stubs correctly fail) and independently through the CLI package compiled by
+  the same vendored `gc`, with identical verdicts. Go's brute-force had existed in no
+  problem at all, because `languages/templates/main.go` had no `brute-force` case to call it
+  from — a missing harness case, not a corpus oversight, which is why the gap was
+  language-wide rather than problem-specific. Go has no weak symbols, so that case is
+  unconditional: every problem shipping a `go/` directory must define `bruteForce`, the same
+  contract `main.rs`'s unconditional `mod brute_force` imposes on every Rust problem.
+- **No error mapping** — RESOLVED (#118), and this bullet's prediction was backwards. It
+  said Go's multi-file package would make errors a *file*-and-line problem rather than
+  just a line one. The opposite is true: because Go compiles a multi-file package in one
+  invocation, the harness lives *beside* the user's code instead of being spliced into it,
+  so `user.go` is the user's file **verbatim** — their imports survive and their line
+  numbers are already correct. Rust must splice and then remap; Go only rewrites the path
+  prefix (`remapPaths`). Multi-file made it simpler, not harder.
+- **Metrics tier undecided** — RESOLVED, and the reasoning here was wrong twice. It said
+  Go is a wall tier because, unlike Miri's virtual clock, Go under `wasip1` has a real
+  clock. The clock is irrelevant to the tier: `web/lab.js` keys on `cycles != null`, and
+  nothing single-steps the linked wasm, so Go falls to wall by derivation — there is no
+  flag. **And Rust is not deterministic either**: `rust-worker.js` never reports `cycles`;
+  Rust is wall-tier with a narrowed ladder (`wallByLang`) only because Miri cannot reach
+  n=32768. The sole det tracks are the single-stepped ones (Blink/x86-64, VIXL/arm64,
+  libriscv/riscv64, retro cycle counting). Go correctly has **no** `wallByLang` entry and
+  takes the full 64..32768 ladder — confirmed, it completes at n=32768 in ~8.6s. Heap is
+  measured via `runtime.ReadMemStats` (`TotalAlloc` delta: allocation volume, an upper
+  bound, the same model as C#; not peak). Stack is not.
+- **The vendor step is unlike every other track's** — as designed, and it shipped that
+  way. There is no release to
   download: the payload must be **built** at deploy time (`go build cmd/compile`
   + `go list -export` for std), with `actions/setup-go` and a pinned Go version.
   That is the arm64/riscv64 "built from pinned sources" pattern, not the
@@ -281,8 +302,36 @@ The spike proves the toolchain. It does not prove the track.
   **three** pipelines to agree, not two: `pages.yml`, `ci.yml` and
   `export-vendor-bundle.yml`. Bx-10 wired the first two and silently forgot the
   third, which is why that test exists.
-- **Shim console spam** (§7) must be silenced before it ships.
-- **Larger programs untested.** Generics, `-c` concurrency, big std imports.
+- **Shim console spam** (§7) — RESOLVED (#118). Every WASI construction passes
+  `{ debug: false }`; omitting it turns the shim's logging on (`options = {}` →
+  `enable(undefined)` → `void 0 ? true`), which costs ~25% and floods the console.
+- **Larger programs untested** — still open. Generics, `-c` concurrency, big std imports.
+
+### Still open
+
+- **Known issue (measured, not root-caused): the Complexity Lab's time growth signal for Go
+  is non-monotonic.** On 001/clean over the wall ladder, consecutive rungs measure e.g.
+  ×3.09, ×0.81, ×0.55, ×2.77 — time *falling* as n doubles. Three things it is not:
+  - **Not clock coarsening.** It is equally bad (worse) under cross-origin isolation, so it
+    is not `[L1-dce-known-issue]`, which root-causes to Chrome's non-COI 100us clamp. The
+    harness is built for that clamp regardless: it repeats each solve until the timed region
+    clears it by a wide margin, then divides.
+  - **Not the Lab in general.** JavaScript on the identical page, problem and ladder is
+    textbook — ×2.08 to ×2.50, every rung present.
+  - **Not the space path.** `TotalAlloc` on the same runs is clean (×1.82–2.05 against a
+    declared O(n)), which points at wall time rather than the sampler's structure.
+
+  Untested hypothesis: the adaptive-repeat inflates allocation until Go's concurrent GC
+  pauses land inside the timed region — consistent with space being unbothered, since
+  `TotalAlloc` does not care about pauses. Until this is root-caused, Go's Lab **space**
+  verdict is sound and its **time** verdict is unproven. `[Bx-12-go-lab-time-known-issue]`
+- **`go run` shifts argv on Android/Termux.** The harness reads `os.Args[1]` and gets the
+  built binary's own path instead of the variant, so every variant panics with
+  `unknown variant: /.../go-build/.../go` — clean and optimized included. `languages/go.toml`
+  sets both `test_cmd` and `run_cmd` to `go run . {variant}`, so `glifex test`/`run`/`verify`
+  for Go do not work on that host. Environmental and pre-existing: the CI matrix
+  (Linux/macOS/Windows) is unaffected, and building a binary and exec'ing it directly
+  sidesteps it.
 
 ## 11. Reproducing
 

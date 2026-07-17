@@ -22,7 +22,7 @@ what remains written-but-unrun.
 | Python      | ✅ | ✅ | ✅ | |
 | JavaScript  | ✅ | ✅ | ✅ | also runs natively in the playground |
 | TypeScript  | ✅ | ✅ | ✅ | explicit-filename compile (cmd.exe doesn't glob) |
-| Go          | ✅ | ✅ | ✅ | root `go.mod` provides module context |
+| Go          | ✅ | ✅ | ✅ | root `go.mod` provides module context; also in-browser via the real `gc` toolchain in a worker (Bx-12) |
 | Java        | ✅ | ✅ | ✅ | in-browser via teavm-javac (compile in a worker); vendored minimal JSON parser (CLI) |
 | Kotlin      | ✅ | ✅ | ✅ | explicit source list (kotlinc.bat doesn't glob) |
 | Swift       | ✅ | ✅ | ⏭ tc | harness is `main.swift` (top-level statements rule); JSONSerialization-canonical compare defeats NSNumber bool/int bridging |
@@ -246,8 +246,10 @@ Gating: the C/C++ instrumentation is wasm-build-only (`#ifdef __wasm__` plus a
 worker-only `-include`), so the native `g++`/`gcc` reference verify (`glifex verify`)
 compiles the pristine harness and is unaffected.
 
-Still display-only (declared class shown, not measured): **Go** — no in-browser
-execution path to instrument. **Java** now runs in-browser (teavm-javac worker) and
+**Go** now measures both (Bx-12) — time via an adaptive-repeat monotonic clock, space via
+`runtime.ReadMemStats` `TotalAlloc` volume (an upper bound, like C#'s). Its space signal is
+clean; its **time verdict is not yet trustworthy** — see the Go runtime section.
+**Java** now runs in-browser (teavm-javac worker) and
 measures **time** (per-case nanos, adaptive-repeat); its **space stays display-only**
 (no in-browser allocation instrumentation). **C#** now measures both (Bx-5d) —
 time via an adaptive-repeat `Stopwatch`, space via GC allocation volume — though
@@ -456,7 +458,56 @@ Corpus at 4 variants incl. 003 (brute-force uses the repo convention: file `Brut
 non-public `class BruteForce`; CLI Harness reflection PascalCases hyphen parts, mirroring C#).
 All 12 variants validated live in the worker (9 reference variants pass; 3 practice stubs don't).
 **Complexity Lab:** time measured (per-case nanos, adaptive-repeat); space display-only (no
-in-browser allocation instrumentation), like Go. CLI compiles with real javac (temurin 25 in CI).
+in-browser allocation instrumentation). CLI compiles with real javac (temurin 25 in CI).
+
+## ✅ Go runtime (Bx-12) — in-browser via the real gc toolchain, self-hosted to wasm
+
+Live edit-run for Go in the browser with the **real `gc` compiler** — not an interpreter.
+`cmd/compile` (41.9MB) and `cmd/link` (11.1MB), built for `GOOS=wasip1 GOARCH=wasm`, run in a
+Web Worker over one virtual FS: compile → link → execute the linked output. No `cmd/go` — it
+builds by forking, and `os/exec` does not exist under `wasip1` — so JS orchestrates the two
+tools and std export data is precomputed at vendor time. Shim: `vendor/go/wasi-shim.mjs`,
+sliced at vendor time out of the committed Rust bundle, so Rust and Go drive the same proven
+WASI implementation. **79.4MB vendored** — the *lightest* compiled track (Rust 122MB, C's 106MB
+`clang.webc`), and unlike C it needs no Chromium heap flag. No cross-origin isolation needed.
+~2.9s warm compile+link, ~6.4s cold. The vendored std set is a reviewable allowlist
+(`tools/go-vendor-imports.txt`, 103 packages / 30.3MB) against all-of-std's 339 / 123.4MB.
+
+**The user's file goes in verbatim.** Go compiles a multi-file package in one invocation, so the
+harness lives *beside* the user's code rather than being spliced into it: the user keeps their
+own imports and their line numbers are already correct. Rust must splice and then remap; Go only
+rewrites the path prefix (`remapPaths`). The spike predicted the opposite — that a multi-file
+package would make errors a *file*-and-line problem rather than just a line one. It made it
+simpler, not harder.
+
+Corpus at 4 variants across 001/002/003 (#120). All 12 variants validated live in the worker
+(9 reference variants pass; 3 practice stubs don't), and independently through the CLI package
+compiled by the same vendored `gc`, with identical verdicts. Go's brute-force had previously
+existed in no problem at all, because `languages/templates/main.go` had no `brute-force` case to
+call it from — a missing harness case, not a corpus oversight, which is why the gap was
+language-wide rather than problem-specific. Evidence: `go-smoke.spec.js` (real Chromium, 001 green).
+
+**Complexity Lab: wall tier by derivation, not config.** `web/lab.js` keys on `cycles != null`;
+nothing single-steps the linked wasm, so Go falls to wall — there is no flag. The *absence* of a
+`wallByLang` entry is correct here: unlike Miri, Go runs at native speed and takes the full
+64..32768 ladder. Confirmed — the ladder completes at n=32768 in ~8.6s. **Space is measured and
+clean** (`runtime.ReadMemStats` `TotalAlloc` delta — allocation volume, an upper bound, the same
+model as C#; not peak): 001/clean measures ×1.82–2.05 per rung against a declared O(n). Stack is
+not measurable. **Time is measured, but its verdict is not yet trustworthy:**
+
+  - **Known issue (measured, not root-caused): the Lab's time growth signal for Go is
+    non-monotonic.** On 001/clean over the wall ladder, consecutive rungs measure e.g. ×3.09,
+    ×0.81, ×0.55, ×2.77 — time *falling* as n doubles. It is **not** `[L1-dce-known-issue]`:
+    that root-causes to Chrome's non-COI 100us clock clamp, and Go's signal is equally bad
+    (worse) *under* cross-origin isolation — and the harness is built for the clamp anyway,
+    repeating each solve until the timed region clears it by a wide margin, then dividing. It is
+    not the Lab in general: JavaScript on the identical page, problem and ladder is textbook
+    (×2.08–2.50, every rung present). And it is not the space path, which is clean on the same
+    runs — pointing at wall time rather than the sampler's structure. Untested hypothesis: the
+    adaptive-repeat inflates allocation until Go's concurrent GC pauses land inside the timed
+    region, which would fit `TotalAlloc` being unbothered. Until root-caused, treat Go's Lab
+    **space** verdict as sound and its **time** verdict as unproven.
+    `[Bx-12-go-lab-time-known-issue]`
 
 ## Retro track: 6502 (Bx-4) + SM83 / Game Boy (Bx-5) -- live in production
 
