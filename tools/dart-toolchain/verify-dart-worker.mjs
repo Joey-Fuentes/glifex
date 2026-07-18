@@ -105,10 +105,15 @@ const check = (cond, what, actual) => {
 // Correctness first, and against the real thing: a kata proves the compiler
 // runs, not that the harness this core synthesizes agrees with the CLI one.
 for (const [id, variant] of [
+  ["001-anagram-detection", "brute-force"],
   ["001-anagram-detection", "clean"],
   ["001-anagram-detection", "optimized"],
+  ["002-two-sum", "brute-force"],
   ["002-two-sum", "clean"],
   ["002-two-sum", "optimized"],
+  ["003-nth-fibonacci", "brute-force"],
+  ["003-nth-fibonacci", "clean"],
+  ["003-nth-fibonacci", "optimized"],
 ]) {
   const cs = cases(id);
   const r = await driveProblem(read("problems/" + id + "/dart/" + variant + ".dart"), cs);

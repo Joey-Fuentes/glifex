@@ -17,7 +17,7 @@ cpp         = { variants = ["practice", "brute-force", "clean", "optimized"] }
 c           = { variants = ["practice", "brute-force", "clean", "optimized"] }
 rust        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 php         = { variants = ["practice", "brute-force", "clean", "optimized"] }
-dart        = { variants = ["practice", "clean", "optimized"] }
+dart        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 zig         = { variants = ["practice", "clean", "optimized"] }
 wat         = { variants = ["practice", "brute-force", "clean", "optimized"] }
 asm-x86_64  = { variants = ["practice", "brute-force", "clean", "optimized"] }
@@ -102,6 +102,11 @@ space = "O(1)"
 notes = "nested-loop baseline -- the pedagogical starting point clean/optimized improve on"
 
 [complexity.go.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "nested-loop over every pair -- the O(n^2) baseline; allocates nothing"
+
+[complexity.dart.brute-force]
 time = "O(n^2)"
 space = "O(1)"
 notes = "nested-loop over every pair -- the O(n^2) baseline; allocates nothing"

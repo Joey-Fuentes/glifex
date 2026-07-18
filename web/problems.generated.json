@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-18T02:53:56.315Z",
+  "generatedAt": "2026-07-18T06:55:09.165Z",
   "displayNames": {
     "asm-6502": "6502 assembly",
     "asm-riscv64": "RISC-V assembly (RV64GC)",
@@ -270,7 +270,7 @@
           "practice": "dynamic solve(Map<String, dynamic> c) {\n  final s = c['s'] as String;\n  final t = c['t'] as String;\n  // Return true if s and t are anagrams of each other, false otherwise.\n  return false;\n}\n",
           "clean": "dynamic solve(Map<String, dynamic> c) {\n  final s = (c['s'] as String).split('')..sort();\n  final t = (c['t'] as String).split('')..sort();\n  return s.join() == t.join();\n}\n",
           "optimized": "dynamic solve(Map<String, dynamic> c) {\n  final s = c['s'] as String, t = c['t'] as String;\n  if (s.length != t.length) return false;\n  final count = <int, int>{};\n  for (final u in s.codeUnits) count[u] = (count[u] ?? 0) + 1;\n  for (final u in t.codeUnits) {\n    final n = (count[u] ?? 0) - 1;\n    if (n < 0) return false;\n    count[u] = n;\n  }\n  return true;\n}\n",
-          "brute-force": null,
+          "brute-force": "// Obvious approach: for every character in s, count how many times it occurs in\n// s and in t, and demand the two counts agree. No lookup table, no sorting --\n// just the definition of an anagram applied literally. O(n^2) time.\n//\n// Iterates codeUnits rather than split(''), so nothing is allocated beyond the\n// two counters and the O(1) space the manifest declares is literal.\ndynamic solve(Map<String, dynamic> c) {\n  final s = c['s'] as String;\n  final t = c['t'] as String;\n  if (s.length != t.length) return false;\n  for (final ch in s.codeUnits) {\n    var cs = 0, ct = 0;\n    for (final x in s.codeUnits) {\n      if (x == ch) cs++;\n    }\n    for (final x in t.codeUnits) {\n      if (x == ch) ct++;\n    }\n    if (cs != ct) return false;\n  }\n  return true;\n}\n",
           "complexity": {
             "practice": {
               "upper": "O(n log n)",
@@ -289,6 +289,12 @@
               "lower": null,
               "space": "O(1)",
               "notes": "counting table; O(1) under the fixed-alphabet convention"
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "per-char count compare -- the naive O(n^2) baseline. Iterates codeUnits, so nothing is allocated and the O(1) is literal"
             }
           }
         },
@@ -833,8 +839,8 @@
         "dart": {
           "practice": "dynamic solve(Map<String, dynamic> c) {\n  final nums = (c['nums'] as List).cast<num>();\n  final target = c['target'] as num;\n  // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n  return [];\n}\n",
           "clean": "dynamic solve(Map<String, dynamic> c) {\n  final nums = (c['nums'] as List).cast<num>();\n  final target = c['target'] as num;\n  final seen = <num, int>{};\n  for (var i = 0; i < nums.length; i++) {\n    final need = target - nums[i];\n    if (seen.containsKey(need)) return [seen[need], i];\n    seen[nums[i]] = i;\n  }\n  return [];\n}\n",
-          "optimized": "dynamic solve(Map<String, dynamic> c) {\n  final nums = (c['nums'] as List).cast<num>();\n  final target = c['target'] as num;\n  final seen = <num, int>{};\n  for (var i = 0; i < nums.length; i++) {\n    final need = target - nums[i];\n    if (seen.containsKey(need)) return [seen[need], i];\n    seen[nums[i]] = i;\n  }\n  return [];\n}\n",
-          "brute-force": null,
+          "optimized": "// O(n) time is unbeatable for two-sum, so \"optimized\" is a constant-factor win\n// over clean, not a complexity one. clean does two hash probes per element --\n// containsKey, then [] to read the index. This does ONE: a single lookup whose\n// null return means \"absent\", distinguished from a real index-0 hit by the null\n// itself rather than a second probe. Readability takes the hit that null-vs-zero\n// has to be reasoned about. O(n) time, O(n) space.\ndynamic solve(Map<String, dynamic> c) {\n  final nums = (c['nums'] as List).cast<num>();\n  final target = c['target'] as num;\n  final seen = <num, int>{};\n  for (var i = 0; i < nums.length; i++) {\n    final j = seen[target - nums[i]];\n    if (j != null) return [j, i];\n    seen[nums[i]] = i;\n  }\n  return [];\n}\n",
+          "brute-force": "// Obvious approach: try every pair until one sums to the target. The first thing\n// anyone writes, and the O(n^2) baseline that clean's single-pass map exists to\n// beat. Allocates nothing, so O(1) space.\ndynamic solve(Map<String, dynamic> c) {\n  final nums = (c['nums'] as List).cast<num>();\n  final target = c['target'] as num;\n  for (var i = 0; i < nums.length; i++) {\n    for (var j = i + 1; j < nums.length; j++) {\n      if (nums[i] + nums[j] == target) return [i, j];\n    }\n  }\n  return [];\n}\n",
           "complexity": {
             "practice": {
               "upper": "O(n)",
@@ -853,6 +859,12 @@
               "lower": null,
               "space": "O(n)",
               "notes": null
+            },
+            "brute-force": {
+              "upper": "O(n^2)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "nested-loop over every pair -- the O(n^2) baseline; allocates nothing"
             }
           }
         },
@@ -1367,6 +1379,38 @@
           "support": {
             "Harness.cs": "// Generated harness — do not edit. Reads ../test_cases.json, runs the solution.\nusing System;\nusing System.IO;\nusing System.Linq;\nusing System.Reflection;\nusing System.Diagnostics;\nusing System.Text.Json;\nusing System.Collections.Generic;\n\nclass Harness {\n    // CLI entry point: the exit code signals pass/fail to the shell. The browser\n    // runtime invokes Run(...) directly instead -- Environment.Exit tears down the\n    // persistent wasm runtime, so the exit lives only here in Main. Both paths run\n    // identical logic (Run); this is the CLI-vs-embedded seam, not a second harness.\n    static void Main(string[] args) { Environment.Exit(Run(args)); }\n\n    public static int Run(string[] args) {\n        string variant = args.Length > 0 ? args[0] : \"practice\";\n        // Find the solution by INTERFACE, not by class name. Every variant exposes\n        // the same entry point (ISolution.Solve), matching the problem statement's\n        // solve(...). In the browser only ONE ISolution class is compiled (the\n        // editor / \"practice\" slot), so we run whatever it is named -- paste any\n        // variant with no rename. In the CLI all variant files compile together, so\n        // several ISolution types exist: pick the one matching the variant arg.\n        var sols = Assembly.GetExecutingAssembly().GetTypes()\n            .Where(t => typeof(ISolution).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)\n            .ToList();\n        Type chosen;\n        if (sols.Count <= 1) {\n            chosen = sols.FirstOrDefault();\n        } else {\n            string cls = string.Concat(variant.Split('-').Select(p => char.ToUpper(p[0]) + p.Substring(1)));\n            chosen = sols.FirstOrDefault(t => t.Name == cls) ?? sols[0];\n        }\n        if (chosen == null) {\n            Console.WriteLine(\"error: no class implementing ISolution found\");\n            return 1;\n        }\n        var sol = (ISolution)Activator.CreateInstance(chosen);\n        var raw = File.ReadAllText(Path.Combine(\"..\", \"test_cases.json\"));\n        var cases = JsonSerializer.Deserialize<List<JsonElement>>(raw);\n        int passed = 0;\n        for (int i = 0; i < cases.Count; i++) {\n            var input = JsonSerializer.Deserialize<Dictionary<string, object>>(cases[i].GetProperty(\"input\").GetRawText());\n            var got = sol.Solve(input);\n            var exp = JsonSerializer.Serialize(cases[i].GetProperty(\"expected\"));\n            bool ok = JsonSerializer.Serialize(got) == exp;\n            if (ok) { passed++; Console.WriteLine($\"  [PASS] case {i}\"); }\n            else Console.WriteLine($\"  [FAIL] case {i}  expected={exp} got={got}\");\n            {\n                // Always emit per-case time + space for the Complexity Lab (cheap:\n                // the Run button pays ~2ms/case, Analyze needs it). TIME: adaptively repeat the pure Solve past the clock grain\n                // (>= 2ms total), report per-call ns. Compile + startup are excluded\n                // by construction. Same model as the C harness -> \"[METRIC] case i ns=X\".\n                long reps = 1, el = 0;\n                double nsPerTick = 1e9 / Stopwatch.Frequency;\n                while (true) {\n                    long a = Stopwatch.GetTimestamp();\n                    for (long r = 0; r < reps; r++) sol.Solve(input);\n                    long b = Stopwatch.GetTimestamp();\n                    el = (long)((b - a) * nsPerTick);\n                    if (el >= 2000000L || reps >= 1048576) break;\n                    reps *= 2;\n                }\n                Console.WriteLine($\"[METRIC] case {i} ns={el / reps}\");\n                // SPACE: bytes allocated by one Solve = allocation VOLUME (an upper\n                // bound on peak; a managed GC runtime exposes no true peak-workspace\n                // counter). The Lab labels this \"allocation volume (approx)\".\n                long b0 = GC.GetTotalAllocatedBytes(true);\n                sol.Solve(input);\n                long heap = GC.GetTotalAllocatedBytes(true) - b0;\n                Console.WriteLine($\"[SPACE] case {i} heap={heap}\");\n            }\n        }\n        Console.WriteLine($\"{passed}/{cases.Count} passed\");\n        return passed == cases.Count ? 0 : 1;\n    }\n}\n",
             "ISolution.cs": "using System.Collections.Generic;\npublic interface ISolution {\n    object Solve(Dictionary<string, object> input);\n}\n"
+          }
+        },
+        "dart": {
+          "practice": "dynamic solve(Map<String, dynamic> c) {\n  final n = c['n'] as int;\n  // Return the nth Fibonacci number: fib(0)=0, fib(1)=1, fib(2)=1, ...\n  return 0;\n}\n",
+          "clean": "// The professional default: slide a two-value window up the sequence, keeping\n// only the pair the next term needs. One pass, no table, no recursion --\n// O(n) time and O(1) space.\ndynamic solve(Map<String, dynamic> c) {\n  final n = c['n'] as int;\n  var a = 0, b = 1;\n  for (var i = 0; i < n; i++) {\n    final next = a + b;\n    a = b;\n    b = next;\n  }\n  return a;\n}\n",
+          "optimized": "// Fast doubling: compute fib(n) in O(log n) steps instead of clean's O(n), using\n//   fib(2k)   = fib(k) * (2*fib(k+1) - fib(k))\n//   fib(2k+1) = fib(k)^2 + fib(k+1)^2\n// Recurse on the bits of n from the top down, carrying the pair (fib(k),\n// fib(k+1)) and doubling the index at each bit, adding one more step when the\n// bit is set. Genuinely the best here -- logarithmic time, O(1) space (the\n// recursion is bounded by the bit-length of n) -- at the cost of being far less\n// obvious than the window slide. O(log n) time, O(1) space.\nList<int> _fd(int n) {\n  if (n == 0) return [0, 1];\n  final p = _fd(n >> 1);\n  final a = p[0], b = p[1];\n  final c = a * (2 * b - a);\n  final d = a * a + b * b;\n  return (n & 1) == 0 ? [c, d] : [d, c + d];\n}\n\ndynamic solve(Map<String, dynamic> c) {\n  final n = c['n'] as int;\n  return _fd(n)[0];\n}\n",
+          "brute-force": "// _fibRec is the recurrence transcribed literally: fib(n) = fib(n-1) + fib(n-2).\n// It recomputes the same subproblems exponentially many times -- fib(n-2) is\n// evaluated once for fib(n) and again inside fib(n-1) -- which is exactly what\n// clean's single pass exists to avoid. O(phi^n) time; the call stack reaches\n// depth n, so O(n) space.\nint _fibRec(int n) => n < 2 ? n : _fibRec(n - 1) + _fibRec(n - 2);\n\ndynamic solve(Map<String, dynamic> c) {\n  final n = c['n'] as int;\n  return _fibRec(n);\n}\n",
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(log n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "fast doubling: fib(2k) and fib(2k+1) from fib(k),fib(k+1); recurse on the bits of n -- logarithmic, unlike clean's linear window slide"
+            },
+            "brute-force": {
+              "upper": "O(phi^n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "naive recursion -- the obvious definition; exponential time, linear call-stack depth"
+            }
           }
         },
         "go": {
