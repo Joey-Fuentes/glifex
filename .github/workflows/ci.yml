@@ -174,7 +174,7 @@ jobs:
           npx playwright install --with-deps chromium firefox
       - uses: actions/setup-go@v6
         with: { go-version: "1.25" }
-      - name: Restore vendored runtimes cache (e2e flavor, no CodeMirror)
+      - name: Restore vendored runtimes cache
         id: vendor
         uses: actions/cache/restore@v6
         with:
@@ -184,10 +184,6 @@ jobs:
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; rc=$?; [ "$rc" = 3 ] && { echo "fetch-runtimes: integrity failure (rc=3) -- not retrying"; break; }; echo "fetch-runtimes attempt $i failed (rc=$rc); retry 20s"; sleep 20; done; [ "$ok" = 1 ]
-          # e2e drives the plain #editor textarea directly; keep CodeMirror OUT so it
-          # doesn't wrap (and hide) the textarea. CM is a production-only UI enhancement
-          # exercised manually — the runtimes are what e2e must regression-cover.
-          rm -rf web/vendor/codemirror
       - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
