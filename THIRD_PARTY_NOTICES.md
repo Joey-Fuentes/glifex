@@ -28,7 +28,7 @@ enabled via `node web/fetch-runtimes.mjs`.
 | Go toolchain (golang/go: cmd/compile, cmd/link) | 1.25.x | the gc compiler and linker built for wasip1/wasm; runs the Go track (Bx-12) in-browser, vendored at web/vendor/go/bin/ | BSD-3-Clause |
 | Go standard library (export data) | 1.25.x | precompiled std .a archives the in-browser gc compiler compiles against, vendored at web/vendor/go/pkg/ (the set is tools/go-vendor-imports.txt) | BSD-3-Clause |
 | Rust standard library (sysroot rlibs) | ~1.78.0-dev | precompiled std/core/alloc + deps Miri interprets against, vendored at web/vendor/rust/wasm-rustc/ | MIT OR Apache-2.0 |
-| teavm-javac (OpenJDK javac + TeaVM, WASM) | playground snapshot | in-browser Java compile-and-run for the Java track (Bx-8), vendored at web/vendor/java/ | GPL-2.0 WITH Classpath-exception-2.0 (OpenJDK javac) + Apache-2.0 (TeaVM) |
+| teavm-javac (OpenJDK javac + TeaVM, WASM) | konsoletyper/teavm-javac @ 7e4a44cf (TeaVM 0.13.1, OpenJDK jdk25u @ 6c48f4ed) | in-browser Java compile-and-run for the Java track (Bx-8); BUILT FROM PINNED SOURCE at deploy by tools/java-toolchain/, not fetched -- upstream publishes no releases or tags, so the commit is the version | GPL-2.0 WITH Classpath-exception-2.0 (OpenJDK javac) + Apache-2.0 (TeaVM) |
 
 Each project's full license text ships alongside its vendored files under
 `web/vendor/<name>/` once distributed. Nothing else on glifex.dev embeds
