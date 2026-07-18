@@ -414,7 +414,7 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
         inflates allocation until Go's concurrent GC pauses land inside the timed region.
         Go's Lab space verdict is sound; its time verdict is not, yet.
         [Bx-12-go-lab-time-known-issue]
-- [x] **Bx-13. Dart** -- **feasibility PROVEN. Track not built.** Full record, every
+- [x] **Bx-13. Dart** -- **SHIPPED (Bx-13a #124, Bx-13b #128/#129/#130).** Full record, every
       number measured: `docs/dart2js-self-hosted.md`.
       The steer was right: **dart2js is written in Dart, so it self-hosts to JS and the
       browser runs the output natively.** `try.dartlang.org` (2013) really did this, and
@@ -461,8 +461,27 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       Skipping the patch there would **appear** to work, which is worse than crashing.
       Being reported upstream against `pkg/kernel`.
 
-      *Next:* Bx-13a vendoring (pinned SDK + the one patch + `dart compile js`), then the
-      worker + harness -- ordinary track work now the hard question is settled.
+      *Bx-13a -- SHIPPED (#124):* the browser toolchain vendored -- pinned SDK + the one
+      `pkg/kernel` patch + `dart compile js`, built into `web/vendor/dart/` at deploy, never
+      committed. `verify-dart.mjs` compiles a passing kata against the built compiler in CI.
+      *Bx-13b -- SHIPPED (#128 worker, #129 corpus, #130 smoke):* the browser track. The
+      worker is a thin `dart-worker.js` relay over a `dart-core.mjs` logic module (the asm
+      split shape, so a typeless `package.json` cannot resolve the entry as CommonJS); the
+      corpus is 4 variants across 001/002/003 (12 of 12, each checked by transliteration and
+      cross-checked past the case range, `optimized` distinct from `clean` everywhere); and
+      the e2e smoke is the FIRST in the repo to assert the **diagnostic** path, not just the
+      happy one. The whole development turned on one bug, and the fix was not what four
+      attempts assumed. A compile error crosses the `.toJS` bridge boxed, and CI's shape
+      report proved the Dart message does NOT survive onto the thrown object at all: the
+      rejection reason's `.error` has zero own properties and `toString`s to `[object Object]`,
+      its `.stack` is pure frames, its `.message` is the generic bridge wrapper. Reading
+      `.error` or `.stack` (the properties the wrapper names) recovers nothing. The diagnostic
+      exists in exactly one place -- what `gx_core.report` **prints to console** during the
+      compile -- so `driveProblem` captures console and keeps the reporter's own `[error]`
+      lines. No compiler change. Full record and the dead ends (a twice-attempted compiler
+      rewrite, a `.stack` read that chased frames, happy-path-only testing that never reached
+      the one path a learner lives in): `docs/dart2js-self-hosted.md`, `docs/browser-runtimes.md`,
+      and `docs/bx13b-handoff.md`.
 - [ ] **Bx-14. Swift** -- Emscripten + MiniSwift, but **the scope caveat resolved badly: MiniSwift
       (`toprakdeviren/msf`, MIT, C11, no deps, 280+ tests, has a `make wasm` target) is a FRONTEND
       ONLY** -- "Lexer -> Parser -> Sema -> typed AST. No LLVM, no codegen, no runtime." It cannot

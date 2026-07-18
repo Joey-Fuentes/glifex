@@ -32,7 +32,7 @@ what remains written-but-unrun.
 | C           | ✅ | ✅ | ✅ | `_POSIX_C_SOURCE 200809L` (Apple libc hides snprintf under 199309L) |
 | Rust        | ✅ | ✅ | ✅ | dependency-free vendored JSON parser |
 | PHP         | ✅ | ✅ | ✅ | |
-| Dart        | ✅ | ✅ | ✅ | browser feasibility **proven, not built** (Bx-13): dart2js self-hosts to JS and compiles Dart in real Chromium, 5.4 MB gz, 4.4s, byte-identical to the VM (docs/dart2js-self-hosted.md) |
+| Dart        | ✅ | ✅ | ✅ | also in-browser via dart2js self-hosted to JS in a worker (Bx-13b, #128/#129/#130): thin `dart-worker.js` relay over `dart-core.mjs`, corpus at 4 variants across 001/002/003, e2e smoke asserts both the pass path AND the compile-error diagnostic; toolchain built from pinned source at deploy (Bx-13a, #124). 5.4 MB gz, ~4.4s first compile, byte-identical to the VM (docs/dart2js-self-hosted.md, docs/browser-runtimes.md, docs/bx13b-handoff.md) |
 | Zig         | ✅ | ⏭ env | ✅ | macOS runners: zig 0.14.0 can't locate libSystem at link — runner environment, not code |
 | WAT         | ✅ | ✅ | ⏭ tc | hand-written WebAssembly Text; Node host marshals arrays into linear memory; wabt via apt/brew |
 | asm-x86_64  | ✅ | ⏭ arch | ⏭ ABI | hand-written SysV AT&T; Windows x64 ABI differs (rcx/rdx) — platform-scoped by design |
