@@ -16,6 +16,7 @@ jobs:
   # artifact, so the "multiple artifacts named github-pages" failure mode
   # from launch day is structurally impossible now.
   build:
+    timeout-minutes: 45
     # CRITICAL: previously this workflow triggered on any push to main with
     # zero knowledge of whether CI passed -- a broken change that merged
     # despite a red CI workflow (see the branch-protection gap fixed in
@@ -237,6 +238,7 @@ jobs:
         with: { path: web }
 
   deploy:
+    timeout-minutes: 10
     needs: build
     environment:
       name: github-pages

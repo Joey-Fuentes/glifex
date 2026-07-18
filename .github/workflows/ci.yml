@@ -6,12 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   # ── Stage 1: fast checks — fail in seconds, not minutes ─────────────
   lint:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -31,6 +36,7 @@ jobs:
         run: node web/stamp.test.mjs
 
   corpus:
+    timeout-minutes: 15
     name: Playground corpus is not stale
     runs-on: ubuntu-latest
     steps:
@@ -63,6 +69,7 @@ jobs:
 
   # ── Stage 2: the core promise — every problem, every language, 3 OSes ──
   matrix:
+    timeout-minutes: 40
     name: glifex test (${{ matrix.os }})
     needs: [lint, corpus]
     strategy:
@@ -127,6 +134,7 @@ jobs:
 
   # ── Stage 3: the playground engine runs the same corpus ─────────────
   playground:
+    timeout-minutes: 15
     needs: [corpus]
     runs-on: ubuntu-latest
     steps:
@@ -150,6 +158,7 @@ jobs:
 
   # ── Stage 4: E2E — real browsers, including the offline guarantee ────
   e2e:
+    timeout-minutes: 45
     needs: [playground]
     runs-on: ubuntu-latest
     steps:
@@ -394,6 +403,7 @@ jobs:
   # without permanently blocking merges. Re-disabling one means dropping it
   # from needs below in the SAME change.)
   ci-status-gate:
+    timeout-minutes: 5
     needs: [lint, corpus, matrix, security, codeql, playground, e2e]
     if: always()
     runs-on: ubuntu-latest
@@ -421,6 +431,7 @@ jobs:
 
   # ── Stage 5: security ────────────────────────────────────────────────
   security:
+    timeout-minutes: 20
     permissions:
       security-events: write   # upload the Trivy SARIF to the Security tab
       contents: read
@@ -463,6 +474,7 @@ jobs:
   # Job-level permissions grant the security-events write CodeQL needs
   # without widening the workflow-level default (contents: read).
   codeql:
+    timeout-minutes: 25
     needs: [lint, corpus]
     permissions:
       security-events: write
