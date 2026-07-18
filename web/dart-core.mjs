@@ -191,61 +191,43 @@ const PREFIX_LINES = PREFIX.split("\n").length - 1;
 // that wrapper sentence and nothing else. Every check around it passed, because
 // an error DID arrive -- it just said nothing.
 function dartErrorText(err) {
-  // A Dart exception crossing gx_web.dart's .toJS bridge comes back BOXED as a
-  // JS object, not a string and not a JS Error. String() on it -- and String()
-  // on its .error, which is itself a boxed Dart object -- gives "[object
-  // Object]". That is what reached the learner: a syntax error rendered as
-  // literally "[object Object]", while node's console.error(reason) printed the
-  // real text separately (its default inspection reaches the message; String()
-  // does not). The first cut of this did String(err.error) and shipped the
-  // garbage.
-  //
-  // The exact property/method the real bridge exposes is not visible from here
-  // -- the 16MB compiler is gitignored and unbuildable in this sandbox, so this
-  // cannot be run against a genuine boxed StateError. So try the known-good
-  // paths in order and HARD-GUARD the one thing that must never happen again:
-  // no "[object Object]", no empty string, no boxed-wrapper sentence reaches a
-  // learner. A wrong guess degrades to an ugly-but-readable message and a
-  // request to report it -- never silence. Tested against every shape the CI
-  // evidence leaves open.
-  // Primary, race-free strategy: walk the boxed value for any own string that
-  // looks like a rendered diagnostic ("[error] ...", "[warning] ...", etc). The
-  // exact property dart2js exposes the Dart message under is not observable in
-  // this sandbox, so scan rather than name it -- and never touch global console,
-  // which would race with the caller. Bounded depth; strings only.
-  const marker = /\[(?:error|warning|info|crash)\]/i;
-  const scan = (v, depth) => {
-    if (depth > 4 || v == null) return null;
-    if (typeof v === "string") return marker.test(v) ? v : null;
-    if (typeof v === "object") {
-      for (const k of Object.keys(v)) {
-        let child;
-        try { child = v[k]; } catch (_) { continue; }
-        const hit = scan(child, depth + 1);
-        if (hit) return hit;
-      }
-    }
-    return null;
-  };
-  const scanned = scan(err, 0);
-  if (scanned) {
-    return scanned.startsWith("Bad state: ") ? scanned.slice("Bad state: ".length) : scanned;
-  }
-
+  // A Dart exception crossing gx_web.dart's .toJS bridge comes back BOXED. The
+  // rejection reason's OWN toString is only the bridge's instruction:
+  //   "Dart exception thrown from converted Future. Use the properties 'error'
+  //    to fetch the boxed error and 'stack' to recover the stack trace."
+  // That instruction is the fix. Earlier cuts read .error (which is {} -- empty
+  // enumerable, un-decodable) and stopped there, MISSING '.stack'. The Dart
+  // StateError's message -- the joined diagnostics -- renders at the TOP of
+  // .stack. And .stack is NON-ENUMERABLE (like a JS Error's), which is why
+  // Object.keys never saw it and every enumerable scan came up empty. So read
+  // .stack (and .error.stack) directly, by name, exactly as the message says.
   const bad = (v) => typeof v !== "string" || !v || v === "[object Object]"
     || v === "null" || v === "undefined"
     || /Dart exception thrown from converted Future/.test(v);
   const strip = (v) => v.startsWith("Bad state: ") ? v.slice("Bad state: ".length) : v;
+  // A stack is "<message>\n    at ...": the diagnostic is the lines before the
+  // first stack frame. Keep those, drop the frames.
+  const fromStack = (st) => {
+    const lines = String(st).split("\n");
+    const head = [];
+    for (const l of lines) {
+      if (/^\s*at\s/.test(l) || /^\s+\S+@/.test(l)) break;
+      head.push(l);
+    }
+    const msg = head.join("\n").trim();
+    return bad(msg) ? null : strip(msg);
+  };
 
   if (typeof err === "string" && !bad(err)) return strip(err);
 
-  // The boxed Dart error under .error: a string, or an object whose toString()
-  // yields the message when CALLED even though String() on the wrapper did not.
+  // The two properties the bridge names, in order: 'error' then 'stack'.
   if (err && err.error != null) {
     const e = err.error;
     if (typeof e === "string" && !bad(e)) return strip(e);
     try { const t = e.toString(); if (!bad(t)) return strip(t); } catch (_) { /* keep trying */ }
+    try { if (e.stack != null) { const m = fromStack(e.stack); if (m) return m; } } catch (_) { /* keep trying */ }
   }
+  try { if (err && err.stack != null) { const m = fromStack(err.stack); if (m) return m; } } catch (_) { /* keep trying */ }
 
   // The rejection reason's own toString(), for a bridge that boxes without a
   // .error wrapper.
@@ -256,25 +238,22 @@ function dartErrorText(err) {
   // A plain JS Error's message (not the boxed-Future wrapper, which "bad" rejects).
   if (err && !bad(err.message)) return strip(err.message);
 
-  // Last resort. Never "[object Object]": name the failure, and -- because the
-  // real boxed shape is not observable in the build sandbox -- DESCRIBE it, so the
-  // first CI run that hits this prints exactly what to extract next, turning a
-  // guessing loop into one logged fact. Walk one level, naming each field's type
-  // and (for objects) its own sub-keys and toString. This is the shape report I
-  // needed and did not have.
+  // Last resort. Never "[object Object]": name the failure, and DESCRIBE the
+  // boxed shape -- now INCLUDING non-enumerable 'stack'/'message', the very
+  // properties an enumerable-only walk missed -- so any future undecodable shape
+  // reports exactly what to read next instead of hiding it.
   const describe = (v, depth) => {
     if (v === null) return "null";
     const t = typeof v;
     if (t !== "object") return t + "(" + show(v) + ")";
     if (depth <= 0) return "object";
     let ks = [];
-    try { ks = Object.keys(v); } catch (_) { ks = ["<keys threw>"]; }
+    try { ks = Array.from(new Set([...Object.keys(v), "stack", "message"])); } catch (_) { ks = ["<keys threw>"]; }
     let ts = "";
     try { const s = v.toString(); if (s !== "[object Object]") ts = " toString=" + JSON.stringify(String(s).slice(0, 120)); } catch (_) { ts = " toString=<threw>"; }
-    const inner = ks.map((k) => { let cv; try { cv = v[k]; } catch (_) { return k + ":<threw>"; } return k + ":" + describe(cv, depth - 1); }).join(", ");
+    const inner = ks.map((k) => { let cv; try { cv = v[k]; } catch (_) { return k + ":<threw>"; } if (cv === undefined) return null; return k + ":" + describe(cv, depth - 1); }).filter(Boolean).join(", ");
     return "object{" + inner + "}" + ts;
   };
-  // Local show so this function has no external dependency.
   function show(x) {
     try { const s = typeof x === "string" ? x : JSON.stringify(x); return String(s).slice(0, 80); } catch (_) { return "<unprintable>"; }
   }
@@ -382,14 +361,10 @@ export async function driveProblem(source, cases) {
   try {
     js = await compileCached(program);
   } catch (err) {
-    // The compiler's diagnostics reach here BOXED: gx_web.dart throws a
-    // StateError, which crosses .toJS as an object where String(it) and
-    // String(it.error) are both "[object Object]". An earlier attempt captured
-    // the reporter's console prints instead -- but that reassigns the global
-    // console, which RACES with the caller's own logging (the verify's check()
-    // lines were being swallowed into a later compile's buffer). So decode the
-    // boxed value in place, with no global side effects: dartErrorText scans it
-    // for the diagnostic text and never returns garbage.
+    // gx_web.dart throws with the compiler's own diagnostics, boxed across .toJS.
+    // dartErrorText reads them off the boxed error -- reading .stack, the property
+    // the bridge's own message names ("Use the properties 'error' and 'stack'").
+    // Then move the offsets back into the learner's coordinates.
     return { error: remapDiagnostics(dartErrorText(err), source) };
   }
   const parsed = parse(runProgram(js), cases);
