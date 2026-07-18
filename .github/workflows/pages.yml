@@ -42,7 +42,8 @@ jobs:
       - uses: actions/setup-go@v6
         with: { go-version: "1.25" }
       - name: Restore vendored runtimes cache (production, keeps CodeMirror)
-        uses: actions/cache@v6
+        id: vendor
+        uses: actions/cache/restore@v6
         with:
           path: web/vendor
           key: vendor-v8-pages-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', '.github/workflows/pages.yml') }}
@@ -218,6 +219,12 @@ jobs:
           node tools/java-toolchain/verify-java.mjs web/vendor/java
       - name: Mark vendor complete (cached for future runs)
         run: touch web/vendor/.vendor-complete
+      - name: Save vendored runtimes cache
+        if: always() && steps.vendor.outputs.cache-hit != 'true' && hashFiles('web/vendor/.vendor-complete') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: web/vendor
+          key: vendor-v8-pages-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', '.github/workflows/pages.yml') }}
       - run: node web/build.mjs
       - name: Stamp document version (badge reports the page it lives in)
         run: |
