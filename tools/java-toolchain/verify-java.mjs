@@ -1,4 +1,4 @@
-// GX-BX8B-JAVA-TOOLCHAIN-V1
+// GX-BX8B-JAVA-TOOLCHAIN-V2
 // verify-java.mjs <dir> [label]
 //
 // A size check proves the build produced bytes, not that the compiler WORKS.
@@ -15,8 +15,10 @@
 // live one predates that and only knows fetch(). Handing both a Uint8Array is
 // the only call that means the same thing to both.
 
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readFile, copyFile, mkdtemp } from "node:fs/promises";
+import { resolve, join, dirname, parse } from "node:path";
+import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 
 const dir = process.argv[2];
 const label = process.argv[3] || dir;
@@ -45,9 +47,41 @@ const KATA = [
 
 const bytes = async (n) => new Uint8Array(await readFile(resolve(dir, n)));
 
+// WHY THIS IS NOT A PLAIN import() OF THE .js
+//
+// compiler.wasm-runtime.js is an ES module with a .js extension. Node auto-
+// detects module syntax in a bare .js ONLY while no package.json shadows it: a
+// package.json WITHOUT a "type" field anywhere up the tree turns detection off,
+// forces CommonJS, and "export{...}" becomes SyntaxError: Unexpected token
+// 'export'. Reproduced both ways -- no package.json above: imports fine;
+// {"name":"x"} above: throws.
+//
+// That is why this passed in the spikes and failed on the real pipeline. The
+// spike ran the Java step alone against an empty web/vendor; the pipeline runs
+// every other vendor step first, and something up-tree leaves a typeless
+// package.json. A .mjs is unconditionally ESM, so importing a copy is correct on
+// every node, under any package.json, whichever step turns out to be the source.
+// The walk below records WHICH one, so the next run answers it in the log rather
+// than in someone's head.
+let d = resolve(dir);
+const fsRoot = parse(d).root;
+for (;;) {
+  const pj = join(d, "package.json");
+  try {
+    const t = JSON.parse(await readFile(pj, "utf8")).type;
+    say("note: " + pj + " has type=" + JSON.stringify(t === undefined ? null : t) +
+        (t === "module" ? "" : "   <- a typeless package.json here is what disables ESM detection for .js"));
+  } catch { /* absent or unreadable: not interesting */ }
+  if (d === fsRoot) break;
+  d = dirname(d);
+}
+
 let load;
 try {
-  ({ load } = await import(resolve(dir, "compiler.wasm-runtime.js")));
+  const tmp = await mkdtemp(join(tmpdir(), "gx-java-"));
+  const asMjs = join(tmp, "compiler.wasm-runtime.mjs");
+  await copyFile(resolve(dir, "compiler.wasm-runtime.js"), asMjs);
+  ({ load } = await import(pathToFileURL(asMjs).href));
 } catch (e) {
   fail("could not import compiler.wasm-runtime.js: " + String(e).slice(0, 300));
 }
