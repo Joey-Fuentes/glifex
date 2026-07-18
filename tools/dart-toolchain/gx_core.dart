@@ -115,8 +115,8 @@ class _Output implements api.CompilerOutput {
 
 class _Diagnostics implements api.CompilerDiagnostics {
   final List<String> messages = [];
-  /// VERBOSE_INFO only -- kept apart from [messages] so the compiler's
-  /// narration never becomes a learner's error text. See report().
+  /// The compiler's own narration only -- kept apart from [messages] so it can
+  /// never become a learner's error text. See report().
   final List<String> verbose = [];
   // Widened to dynamic on purpose: the real signature's first parameter is
   // Message? from package:compiler/src/diagnostics/messages.dart. Dart allows
@@ -136,7 +136,21 @@ class _Diagnostics implements api.CompilerDiagnostics {
     //      output channel is a contamination waiting to be parsed as a result.
     // Kept rather than dropped: the spike drivers read them, and a measurement
     // thrown away cannot be looked at later.
-    if (kind == api.Diagnostic.VERBOSE_INFO) {
+    //
+    // Matched on the RENDERED LINE, not on a Diagnostic constant. The first cut
+    // of this said api.Diagnostic.VERBOSE_INFO and the build said "Member not
+    // found" -- there is no such member on 3.12.2, and there is no Dart SDK
+    // where this file is written, so a second name would be a second guess.
+    // What IS known is measured: kind.name is already interpolated one line up,
+    // that expression compiles, and CI printed exactly "[verbose info]" from it.
+    // The space is the tell -- an enum's .name is an identifier and cannot
+    // contain one -- so kind.name is a plain String field, and this is the exact
+    // byte sequence it produces.
+    //
+    // Stringly-typed, and gated because of it: verify-dart-worker.mjs asserts
+    // that no "[verbose info]" survives into a learner's error, so if upstream
+    // ever renames it CI goes red rather than quietly narrating again.
+    if (line.startsWith('[verbose info]')) {
       verbose.add(line);
       return;
     }
