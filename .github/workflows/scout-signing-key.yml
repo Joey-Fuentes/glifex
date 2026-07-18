@@ -45,88 +45,92 @@ jobs:
           GCC_VER: ${{ inputs.gcc_version }}
           EXPECT_FPR: ${{ inputs.expected_fpr }}
         run: |
+          set +e
           set -uo pipefail
           
           RESULTS="$(mktemp)"      # tab-separated: <source>  <fpr|status>  <weight>
           FPRS="$(mktemp)"         # discovered fingerprints only (for convergence)
           record() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$RESULTS"; }
-          fp_of() { awk -F: '/^fpr:/{print $10; exit}'; }   # primary fpr from --with-colons
+          fp_of() { awk -F: '/^fpr:/{print $10; exit}'; }
           iso() { local h; h="$(mktemp -d)"; chmod 700 "$h"; printf '%s' "$h"; }
+          GKS="hkps://keys.openpgp.org"
+          KOPT="--keyserver-options timeout=30 --keyserver-options import-clean"
           
           echo "Discovering the binutils signing fingerprint from independent sources."
           echo "Signer email under test: $EMAIL   binutils: $BU_VER   gcc: ${GCC_VER:-<skip>}"
           echo
           
           # --- Source 1: keys.openpgp.org, looked up BY EMAIL (verified-address) --------
+          echo "-> Source 1: keys.openpgp.org (locate by email $EMAIL) ..."
           H="$(iso)"
-          if GNUPGHOME="$H" gpg --batch --keyserver hkps://keys.openpgp.org --locate-external-keys "$EMAIL" >/dev/null 2>&1; then
+          if GNUPGHOME="$H" gpg --batch $KOPT --keyserver "$GKS" --locate-external-keys "$EMAIL" >/dev/null 2>&1; then
             f="$(GNUPGHOME="$H" gpg --batch --with-colons --list-keys "$EMAIL" 2>/dev/null | fp_of)"
-            if [ -n "$f" ]; then record "keys.openpgp.org(by email)" "$f" "identity"; echo "$f" >> "$FPRS"
-            else record "keys.openpgp.org(by email)" "no-verified-key" "identity"; fi
+            if [ -n "$f" ]; then record "keys.openpgp.org(by email)" "$f" "identity"; echo "$f" >> "$FPRS"; echo "   found $f"
+            else record "keys.openpgp.org(by email)" "no-verified-key" "identity"; echo "   no verified key"; fi
           else
-            record "keys.openpgp.org(by email)" "unreachable/none" "identity"
+            record "keys.openpgp.org(by email)" "unreachable/none" "identity"; echo "   unreachable / no key"
           fi
           
           # --- Source 2: GNU keyring, looked up by email (curated) ----------------------
+          echo "-> Source 2: GNU keyring (gnu-keyring.gpg) ..."
           H="$(iso)"; KR="$H/gnu-keyring.gpg"
-          if curl -fsSL --retry 3 https://ftp.gnu.org/gnu/gnu-keyring.gpg -o "$KR" 2>/dev/null; then
+          if curl -fsSL --max-time 120 --retry 3 https://ftp.gnu.org/gnu/gnu-keyring.gpg -o "$KR" 2>/dev/null; then
             f="$(gpg --batch --no-default-keyring --keyring "$KR" --with-colons --list-keys "$EMAIL" 2>/dev/null | fp_of)"
-            if [ -n "$f" ]; then record "gnu-keyring.gpg" "$f" "curated"; echo "$f" >> "$FPRS"
-            else record "gnu-keyring.gpg" "not-present(sourceware, ok)" "curated"; fi
+            if [ -n "$f" ]; then record "gnu-keyring.gpg" "$f" "curated"; echo "$f" >> "$FPRS"; echo "   found $f"
+            else record "gnu-keyring.gpg" "not-present(sourceware, ok)" "curated"; echo "   email not in GNU keyring (expected for sourceware)"; fi
           else
-            record "gnu-keyring.gpg" "unreachable" "curated"
+            record "gnu-keyring.gpg" "unreachable" "curated"; echo "   unreachable"
           fi
           
           # --- Source 3: the REAL binutils release signature (release-anchored) ---------
-          # Start from the release, not from a claimed identity: read the issuer off the
-          # signature, fetch that key, and read the primary fp it verifies under.
+          echo "-> Source 3: binutils-${BU_VER} release signature (definitive) ..."
           bu_fpr=""; bu_status="unreachable"
           H="$(iso)"; d="$(mktemp -d)"
-          if curl -fsSL --retry 5 --retry-all-errors "https://ftp.gnu.org/gnu/binutils/binutils-${BU_VER}.tar.xz" -o "$d/t.xz" \
-             && curl -fsSL --retry 5 --retry-all-errors "https://ftp.gnu.org/gnu/binutils/binutils-${BU_VER}.tar.xz.sig" -o "$d/t.xz.sig"; then
+          if curl -fsSL --max-time 300 --retry 5 --retry-all-errors "https://ftp.gnu.org/gnu/binutils/binutils-${BU_VER}.tar.xz" -o "$d/t.xz" 2>/dev/null \
+             && curl -fsSL --max-time 120 --retry 5 --retry-all-errors "https://ftp.gnu.org/gnu/binutils/binutils-${BU_VER}.tar.xz.sig" -o "$d/t.xz.sig" 2>/dev/null; then
             iss="$(gpg --list-packets "$d/t.xz.sig" 2>/dev/null | grep -oE 'issuer fpr v4 [0-9A-Fa-f]+' | awk '{print $4}' | head -1)"
             [ -n "$iss" ] || iss="$(gpg --list-packets "$d/t.xz.sig" 2>/dev/null | grep -oE 'issuer key ID [0-9A-Fa-f]+' | awk '{print $4}' | head -1)"
-            if [ -n "$iss" ] && GNUPGHOME="$H" gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$iss" >/dev/null 2>&1; then
-              st="$(GNUPGHOME="$H" gpg --batch --status-fd 1 --verify "$d/t.xz.sig" "$d/t.xz" 2>/dev/null || true)"
+            if [ -n "$iss" ] && GNUPGHOME="$H" gpg --batch $KOPT --keyserver "$GKS" --recv-keys "$iss" >/dev/null 2>&1; then
+              st="$(GNUPGHOME="$H" gpg --batch --status-fd 1 --verify "$d/t.xz.sig" "$d/t.xz" 2>/dev/null)"
               if printf '%s\n' "$st" | grep -q '^\[GNUPG:\] GOODSIG' && ! printf '%s\n' "$st" | grep -qE '^\[GNUPG:\] (REVKEYSIG|EXPKEYSIG|EXPSIG)'; then
-                bu_fpr="$(printf '%s\n' "$st" | awk '/^\[GNUPG:\] VALIDSIG/{print $12; exit}')"
-                bu_status="GOOD"
-                [ -n "$bu_fpr" ] && echo "$bu_fpr" >> "$FPRS"
-              else
-                bu_status="signature-not-good"
-              fi
-            else
-              bu_status="issuer-unresolvable"
-            fi
+                bu_fpr="$(printf '%s\n' "$st" | awk '/^\[GNUPG:\] VALIDSIG/{print $12; exit}')"; bu_status="GOOD"
+                [ -n "$bu_fpr" ] && echo "$bu_fpr" >> "$FPRS"; echo "   GOOD, signed by ${bu_fpr:-?}"
+              else bu_status="signature-not-good"; echo "   signature not good"; fi
+            else bu_status="issuer-unresolvable"; echo "   could not resolve/fetch the issuer key"; fi
+          else
+            echo "   release or signature unreachable"
           fi
           record "binutils-${BU_VER} release" "${bu_fpr:-$bu_status}" "RELEASE"
           
           # --- Source 4: cross-project GCC release (same key signs another project) ------
           if [ -n "${GCC_VER:-}" ]; then
+            echo "-> Source 4: gcc-${GCC_VER} release signature (cross-project) ..."
             gcc_fpr=""; gcc_status="unreachable"
             H="$(iso)"; d="$(mktemp -d)"; base="https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VER}"
-            if curl -fsSL --retry 5 --retry-all-errors "$base/gcc-${GCC_VER}.tar.xz" -o "$d/g.xz" \
-               && curl -fsSL --retry 5 --retry-all-errors "$base/gcc-${GCC_VER}.tar.xz.sig" -o "$d/g.xz.sig"; then
+            if curl -fsSL --max-time 600 --retry 5 --retry-all-errors "$base/gcc-${GCC_VER}.tar.xz" -o "$d/g.xz" 2>/dev/null \
+               && curl -fsSL --max-time 120 --retry 5 --retry-all-errors "$base/gcc-${GCC_VER}.tar.xz.sig" -o "$d/g.xz.sig" 2>/dev/null; then
               iss="$(gpg --list-packets "$d/g.xz.sig" 2>/dev/null | grep -oE 'issuer fpr v4 [0-9A-Fa-f]+' | awk '{print $4}' | head -1)"
-              if [ -n "$iss" ] && GNUPGHOME="$H" gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$iss" >/dev/null 2>&1; then
-                st="$(GNUPGHOME="$H" gpg --batch --status-fd 1 --verify "$d/g.xz.sig" "$d/g.xz" 2>/dev/null || true)"
+              if [ -n "$iss" ] && GNUPGHOME="$H" gpg --batch $KOPT --keyserver "$GKS" --recv-keys "$iss" >/dev/null 2>&1; then
+                st="$(GNUPGHOME="$H" gpg --batch --status-fd 1 --verify "$d/g.xz.sig" "$d/g.xz" 2>/dev/null)"
                 if printf '%s\n' "$st" | grep -q '^\[GNUPG:\] GOODSIG'; then
                   gcc_fpr="$(printf '%s\n' "$st" | awk '/^\[GNUPG:\] VALIDSIG/{print $12; exit}')"; gcc_status="GOOD"
-                  [ -n "$gcc_fpr" ] && echo "$gcc_fpr" >> "$FPRS"
-                else gcc_status="signature-not-good"; fi
-              else gcc_status="issuer-unresolvable"; fi
-            fi
+                  [ -n "$gcc_fpr" ] && echo "$gcc_fpr" >> "$FPRS"; echo "   GOOD, signed by ${gcc_fpr:-?}"
+                else gcc_status="signature-not-good"; echo "   signature not good"; fi
+              else gcc_status="issuer-unresolvable"; echo "   could not resolve/fetch the issuer key"; fi
+            else echo "   release or signature unreachable"; fi
             record "gcc-${GCC_VER} release" "${gcc_fpr:-$gcc_status}" "cross-project"
           fi
           
           # --- report -------------------------------------------------------------------
+          echo
           echo "================ DISCOVERED FINGERPRINTS ================"
           printf '  %-28s %-42s %s\n' "SOURCE" "FINGERPRINT / STATUS" "WEIGHT"
           while IFS="$(printf '\t')" read -r s v w; do printf '  %-28s %-42s %s\n' "$s" "$v" "$w"; done < "$RESULTS"
           echo
           
-          uniq_fprs="$(sort -u "$FPRS" | grep -E '^[0-9A-Fa-f]{40}$' || true)"
-          n_uniq="$(printf '%s\n' "$uniq_fprs" | grep -c . || true)"
+          uniq_fprs="$(sort -u "$FPRS" | grep -E '^[0-9A-Fa-f]{40}$')"
+          n_uniq="$(printf '%s\n' "$uniq_fprs" | grep -c . 2>/dev/null)"
+          [ -z "$uniq_fprs" ] && n_uniq=0
           echo "================ VERDICT ================"
           if [ "$bu_status" != "GOOD" ]; then
             echo "::error::the binutils release did not yield a good signature -- cannot anchor. Nothing to accept."
@@ -137,22 +141,20 @@ jobs:
             echo
             echo "    $uniq_fprs"
             echo
-            echo "This is the fingerprint that (a) signs the real binutils-${BU_VER} release and"
-            echo "(b) matches the identity/curated sources above. Read the table, and if you are"
-            echo "satisfied the sources are genuinely independent, THIS is the value to commit as"
-            echo "BINUTILS_SIGNING_FPR (and the key as tools/keys/binutils-signing.asc)."
+            echo "This fingerprint (a) signs the real binutils-${BU_VER} release and (b) matches the"
+            echo "other reachable sources above. Read the table; if you are satisfied the sources are"
+            echo "genuinely independent, THIS is the value to commit as BINUTILS_SIGNING_FPR (and the"
+            echo "key as tools/keys/binutils-signing.asc). Also eyeball: the Gentoo dev keyring and the"
+            echo "binutils release announcement on the sourceware mailing list."
             if [ -n "${EXPECT_FPR:-}" ]; then
               e="$(printf '%s' "$EXPECT_FPR" | tr -d ' ' | tr '[:lower:]' '[:upper:]')"
               u="$(printf '%s' "$uniq_fprs" | tr '[:lower:]' '[:upper:]')"
               if [ "$e" = "$u" ]; then echo; echo "(matches the expected_fpr you supplied.)"
               else echo; echo "::error::converged fingerprint does NOT match the expected_fpr you supplied."; exit 1; fi
             fi
-            echo
-            echo "Not automated here -- also eyeball: Gentoo dev keyring, and the binutils"
-            echo "release announcement on the sourceware mailing list."
             exit 0
           else
-            echo "::error::SOURCES DISAGREE -- found $n_uniq distinct fingerprints:"
+            echo "::error::SOURCES DISAGREE or none converged -- distinct fingerprints found: ${n_uniq}"
             printf '%s\n' "$uniq_fprs" | sed 's/^/    /'
             echo "Do not trust any of them until this is resolved."
             exit 1
