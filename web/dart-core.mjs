@@ -179,10 +179,33 @@ function synth(source, cases) {
 //
 // Three regions, and the offset says which: our prefix, the user's source, our
 // appended harness. Only the middle one is theirs to fix.
+const PREFIX_LINES = PREFIX.split("\n").length - 1;
+
+// A Dart exception crossing a converted Future comes back BOXED. dart2js's own
+// wrapper says what to do about it -- "Use the properties 'error' to fetch the
+// boxed error and 'stack' to recover the stack trace" -- so read .error, and
+// String() it to run the Dart object's toString. gx_web.dart throws a
+// StateError, whose toString is "Bad state: <the diagnostics>".
+//
+// Measured in CI, not guessed: without this a learner's syntax error arrived as
+// that wrapper sentence and nothing else. Every check around it passed, because
+// an error DID arrive -- it just said nothing.
+function dartErrorText(err) {
+  if (err && err.error !== undefined && err.error !== null) {
+    const s = String(err.error);
+    const p = "Bad state: ";
+    return s.startsWith(p) ? s.slice(p.length) : s;
+  }
+  return String((err && err.message) || err);
+}
+
 function remapDiagnostics(text, source) {
   const shift = PREFIX.length;
   const userEnd = shift + source.length;
+  const userLines = source.split("\n").length;
   return String(text)
+    // gx_core.dart's reporter renders the position itself, as a CHARACTER
+    // OFFSET ("@begin").
     .replace(/org-dartlang-gx:\/\/\/main\.dart@(\d+)/g, (_m, off) => {
       const o = Number(off);
       if (o < shift) return "practice.dart:1:1";
@@ -191,6 +214,16 @@ function remapDiagnostics(text, source) {
       const line = before.split("\n").length;
       const col = (o - shift) - (before.lastIndexOf("\n") + 1) + 1;
       return "practice.dart:" + line + ":" + col;
+    })
+    // front_end's OWN formatted message renders "<uri>:<line>:<col>" and is
+    // carried in the diagnostic text. Both forms appear in one report, so both
+    // are handled. The prefix is exactly PREFIX_LINES lines, so this correction
+    // is subtraction rather than arithmetic on offsets.
+    .replace(/org-dartlang-gx:\/\/\/main\.dart:(\d+):(\d+)/g, (_m, l, c) => {
+      const line = Number(l) - PREFIX_LINES;
+      if (line < 1) return "practice.dart:1:1";
+      if (line > userLines) return "<glifex harness>";
+      return "practice.dart:" + line + ":" + c;
     })
     .replace(/org-dartlang-gx:\/\/\/main\.dart/g, "practice.dart");
 }
@@ -266,7 +299,7 @@ export async function driveProblem(source, cases) {
   } catch (err) {
     // The compiler's own diagnostics are the thing a learner needs to read, so
     // they are the message -- with the offsets moved back into their coordinates.
-    return { error: remapDiagnostics(String((err && err.message) || err), source) };
+    return { error: remapDiagnostics(dartErrorText(err), source) };
   }
   const parsed = parse(runProgram(js), cases);
   if (parsed.error) return { error: parsed.error };
@@ -278,4 +311,4 @@ export async function driveProblem(source, cases) {
   return { results: parsed.results, nsPerCase: 0 };
 }
 
-export { initOnce, synth, parse, remapDiagnostics, compileCached, runProgram, dartStringLiteral, PREFIX };
+export { initOnce, synth, parse, remapDiagnostics, compileCached, runProgram, dartStringLiteral, dartErrorText, PREFIX };

@@ -36,11 +36,28 @@ if (resolve(dir) !== resolve("web/vendor/dart")) {
        "  import() is relative to web/dart-core.mjs and cannot be redirected.");
 }
 
-// ---- the two things a browser provides and node does not --------------------
+// ---- the three things a browser provides and node does not ------------------
 // dart2js reaches its global through self. A browser worker has one; bare node
 // does not, and without it the first await never resumes -- sync code runs, then
 // silence. Sixteen rounds. See docs/dart2js-self-hosted.md section 7.
 globalThis.self = globalThis;
+
+// And it reaches Uri.base through self.location.href. A browser worker has a
+// WorkerLocation; bare node has nothing, so Uri.base throws
+// "Unsupported operation" -- which front_end calls while FORMATTING a
+// diagnostic, so the format of a real compile error crashed and the crash
+// replaced the error. Measured in CI: every check passed except the one syntax
+// error, which came back as "[crash] The compiler crashed", the front_end's
+// errors-mask-errors behaviour that docs/dart2js-self-hosted.md warns about.
+//
+// This is the RIG being unlike a browser, not the track being broken: a real
+// worker has location and never takes this path. It is the same shim as self
+// above, for the same reason. The scheme is deliberately not org-dartlang-gx --
+// format() relativises the diagnostic URI against Uri.base, and a different
+// scheme cannot relativise, so the diagnostic stays absolute and readable.
+// The browser path is not proved by this file; e2e/dart-smoke.spec.js is where
+// that gets proved.
+globalThis.location = { href: "https://glifex.invalid/verify/" };
 
 globalThis.fetch = async (url) => {
   const name = String(url).split("/").pop();
@@ -138,7 +155,14 @@ for (const [id, variant] of [
 {
   const r = await driveProblem("dynamic solve(Map<String, dynamic> c) {\n  return 1\n}\n", cases("001-anagram-detection"));
   check(!!r.error, "a syntax error is reported as an error, not a result");
-  check(!!r.error && /practice\.dart:\d+:\d+/.test(r.error), "diagnostics carry practice.dart:line:col, not a raw offset");
+  // An error ARRIVING proves nothing about it saying anything. dart2js boxes a
+  // Dart exception crossing a converted Future, and the first cut of this shipped
+  // the wrapper sentence to the learner while every check around it went green.
+  check(!!r.error && !/Dart exception thrown from converted Future/.test(r.error),
+        "the error is the compiler's own words, not dart2js's boxed-exception wrapper");
+  check(!!r.error && !/\[crash\]/.test(r.error),
+        "a syntax error is a diagnostic, not a compiler crash");
+  check(!!r.error && /practice\.dart:\d+:\d+/.test(r.error), "diagnostics carry practice.dart:line:col");
   check(!!r.error && !r.error.includes("org-dartlang-gx"), "the internal scheme never reaches the learner");
   check(!!r.error && !/\[verbose info\]/.test(r.error), "verbose narration is not in the learner's error");
   console.log("  --- the error a learner would see ---\n" + String(r.error).split("\n").map((l) => "  | " + l).join("\n"));
