@@ -192,19 +192,50 @@ const PREFIX_LINES = PREFIX.split("\n").length - 1;
 // an error DID arrive -- it just said nothing.
 function dartErrorText(err) {
   // A Dart exception crossing gx_web.dart's .toJS bridge comes back BOXED. The
-  // rejection reason's OWN toString is only the bridge's instruction:
-  //   "Dart exception thrown from converted Future. Use the properties 'error'
-  //    to fetch the boxed error and 'stack' to recover the stack trace."
-  // That instruction is the fix. Earlier cuts read .error (which is {} -- empty
-  // enumerable, un-decodable) and stopped there, MISSING '.stack'. The Dart
-  // StateError's message -- the joined diagnostics -- renders at the TOP of
-  // .stack. And .stack is NON-ENUMERABLE (like a JS Error's), which is why
-  // Object.keys never saw it and every enumerable scan came up empty. So read
-  // .stack (and .error.stack) directly, by name, exactly as the message says.
+  // rejection reason's OWN toString is only the bridge's instruction ("Use the
+  // properties 'error' and 'stack'..."), and the diagnostic is NOT reliably on
+  // either: measured in a real browser, .stack is pure frames ("    at
+  // Object.wrapException (gx_web.js:3049)") with no message line, .message is the
+  // wrapper sentence, and .error enumerates empty. So do not name a property and
+  // hope. Walk EVERY own property -- enumerable AND non-enumerable, via
+  // getOwnPropertyNames -- of the reason and, recursively, of a nested .error,
+  // and take the first string that looks like a rendered diagnostic. This finds
+  // the message wherever the bridge actually put it, without a fourth guess about
+  // which slot that is.
   const bad = (v) => typeof v !== "string" || !v || v === "[object Object]"
     || v === "null" || v === "undefined"
     || /Dart exception thrown from converted Future/.test(v);
   const strip = (v) => v.startsWith("Bad state: ") ? v.slice("Bad state: ".length) : v;
+  const marker = /\[(?:error|warning|info|crash)\]|Error:.*\.dart|Expected /i;
+  // A frame line is "    at fn (url:line:col)" or "url:line:col" -- never a
+  // diagnostic. Keep the non-frame lines of a candidate string.
+  const isFrame = (l) => /^\s*at\s/.test(l) || /^\s+\S+@/.test(l) || /^\s*\S+\.js:\d+:\d+/.test(l);
+  const diagLines = (s) => String(s).split("\n").filter((l) => l.trim() && !isFrame(l)).join("\n").trim();
+
+  const seen = new Set();
+  const scanOwn = (v, depth) => {
+    if (v == null || depth > 4) return null;
+    if (typeof v === "string") {
+      if (!marker.test(v)) return null;
+      const d = diagLines(v);
+      return bad(d) ? null : strip(d);
+    }
+    if (typeof v !== "object" || seen.has(v)) return null;
+    seen.add(v);
+    let names = [];
+    try { names = Object.getOwnPropertyNames(v); } catch (_) { names = []; }
+    for (const k of names) {
+      let child;
+      try { child = v[k]; } catch (_) { continue; }
+      const hit = scanOwn(child, depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const found = scanOwn(err, 0);
+  if (found) return found;
+
+
   // A stack is "<message>\n    at ...": the diagnostic is the lines before the
   // first stack frame. Keep those, drop the frames.
   const fromStack = (st) => {
@@ -248,7 +279,7 @@ function dartErrorText(err) {
     if (t !== "object") return t + "(" + show(v) + ")";
     if (depth <= 0) return "object";
     let ks = [];
-    try { ks = Array.from(new Set([...Object.keys(v), "stack", "message"])); } catch (_) { ks = ["<keys threw>"]; }
+    try { ks = Object.getOwnPropertyNames(v); } catch (_) { ks = ["<names threw>"]; }
     let ts = "";
     try { const s = v.toString(); if (s !== "[object Object]") ts = " toString=" + JSON.stringify(String(s).slice(0, 120)); } catch (_) { ts = " toString=<threw>"; }
     const inner = ks.map((k) => { let cv; try { cv = v[k]; } catch (_) { return k + ":<threw>"; } if (cv === undefined) return null; return k + ":" + describe(cv, depth - 1); }).filter(Boolean).join(", ");
@@ -358,14 +389,39 @@ export async function driveProblem(source, cases) {
   await readyPromise;
   const { program } = synth(source, cases);
   let js;
+  // The compiler's diagnostics are the thing a learner must read -- and measured
+  // in a real browser, they are NOT on the thrown object: the rejection reason's
+  // .error enumerates empty, its .stack is pure frames, its .message is only the
+  // bridge wrapper sentence. The diagnostic exists ONLY where gx_core.report
+  // print()s it: the console, during the compile. So capture console here and
+  // keep the reporter's own diagnostic lines.
+  //
+  // This is scoped and safe, not the earlier console-capture that raced. That one
+  // was reverted because it swallowed a CALLER's interleaved logging -- but this
+  // runs inside a dedicated worker (dart-worker.js) where nothing else logs during
+  // a compile, and even the node verify awaits driveProblem to completion before
+  // it logs. The capture is restored in finally before any await returns to the
+  // caller, so no caller line can be caught. Only diagnostic-marker lines are
+  // kept, so ordinary narration (already filtered upstream) cannot leak in either.
+  const capturedDiag = [];
+  const priorLog = console.log, priorErr = console.error, priorWarn = console.warn;
+  const grab = (s) => { const t = String(s); if (/\[(?:error|warning)\]/i.test(t)) capturedDiag.push(t.replace(/^\s+/, "")); };
+  console.log = (s) => { grab(s); };
+  console.error = (s) => { grab(s); };
+  console.warn = (s) => { grab(s); };
+  const restoreConsole = () => { console.log = priorLog; console.error = priorErr; console.warn = priorWarn; };
   try {
     js = await compileCached(program);
   } catch (err) {
-    // gx_web.dart throws with the compiler's own diagnostics, boxed across .toJS.
-    // dartErrorText reads them off the boxed error -- reading .stack, the property
-    // the bridge's own message names ("Use the properties 'error' and 'stack'").
-    // Then move the offsets back into the learner's coordinates.
-    return { error: remapDiagnostics(dartErrorText(err), source) };
+    restoreConsole();
+    // Prefer the reporter's printed diagnostics; the boxed error carries nothing
+    // readable, but dartErrorText stays as a fallback for any future bridge that
+    // DOES box the message, and for its loud "could not decode" shape report.
+    const printed = capturedDiag.filter((l) => !/\[verbose info\]/i.test(l)).join("\n");
+    const text = printed || dartErrorText(err);
+    return { error: remapDiagnostics(text, source) };
+  } finally {
+    restoreConsole();
   }
   const parsed = parse(runProgram(js), cases);
   if (parsed.error) return { error: parsed.error };

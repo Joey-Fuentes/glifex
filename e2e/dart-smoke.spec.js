@@ -11,10 +11,13 @@
 // ever proven the path a LEARNER lives in -- the one where the compiler rejects
 // their code and they need to read why. That path is the whole point of a
 // practice track, and it is the one that was broken through this track's entire
-// development: a compile error arrived boxed across the .toJS bridge and rendered
-// as "[object Object]" until dartErrorText learned to read the boxed error's
-// .stack. verify-dart-worker proves the core headless in node; only a real
-// browser proves the learner actually sees the diagnostic. That is this file.
+// development: a compile error arrives boxed across the .toJS bridge, and the
+// Dart message does NOT survive onto the thrown object -- its .error enumerates
+// empty and toStrings to "[object Object]", its .stack is pure frames. The
+// diagnostic exists only where gx_core.report print()s it to console during the
+// compile, so driveProblem captures console and keeps the reporter's own
+// "[error]" lines. verify-dart-worker proves that core headless in node; only a
+// real browser proves the learner actually sees the diagnostic. That is this file.
 const { test, expect } = require("@playwright/test");
 
 test.describe("Dart runtime (dart2js-in-browser)", () => {
