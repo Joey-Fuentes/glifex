@@ -115,6 +115,9 @@ class _Output implements api.CompilerOutput {
 
 class _Diagnostics implements api.CompilerDiagnostics {
   final List<String> messages = [];
+  /// VERBOSE_INFO only -- kept apart from [messages] so the compiler's
+  /// narration never becomes a learner's error text. See report().
+  final List<String> verbose = [];
   // Widened to dynamic on purpose: the real signature's first parameter is
   // Message? from package:compiler/src/diagnostics/messages.dart. Dart allows
   // widening a parameter type in an override, and this keeps the spike from
@@ -122,6 +125,21 @@ class _Diagnostics implements api.CompilerDiagnostics {
   @override
   void report(dynamic code, Uri? uri, int? begin, int? end, String text, api.Diagnostic kind) {
     final line = '[${kind.name}] ${uri ?? ""}${begin == null ? "" : "@$begin"} $text';
+    // VERBOSE_INFO is the compiler narrating itself -- "Inferred 10538
+    // types", eleven lines per compile, measured in the Bx-13b worker spike.
+    // It must not reach either place the others do:
+    //   1. messages IS the thrown message -- gx_web.dart joins diagnostics and
+    //      throws them, so a learner's syntax error would arrive buried under
+    //      narration. The diagnostics are the thing they need to read.
+    //   2. print() lands on console.log, the SAME channel the user's compiled
+    //      program prints its own output to. A compiler talking on the user's
+    //      output channel is a contamination waiting to be parsed as a result.
+    // Kept rather than dropped: the spike drivers read them, and a measurement
+    // thrown away cannot be looked at later.
+    if (kind == api.Diagnostic.VERBOSE_INFO) {
+      verbose.add(line);
+      return;
+    }
     messages.add(line);
     print('     $line');
   }

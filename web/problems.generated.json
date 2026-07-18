@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-17T05:11:28.917Z",
+  "generatedAt": "2026-07-18T02:53:56.315Z",
   "displayNames": {
     "asm-6502": "6502 assembly",
     "asm-riscv64": "RISC-V assembly (RV64GC)",
@@ -264,6 +264,32 @@
           "support": {
             "Harness.cs": "// Generated harness — do not edit. Reads ../test_cases.json, runs the solution.\nusing System;\nusing System.IO;\nusing System.Linq;\nusing System.Reflection;\nusing System.Diagnostics;\nusing System.Text.Json;\nusing System.Collections.Generic;\n\nclass Harness {\n    // CLI entry point: the exit code signals pass/fail to the shell. The browser\n    // runtime invokes Run(...) directly instead -- Environment.Exit tears down the\n    // persistent wasm runtime, so the exit lives only here in Main. Both paths run\n    // identical logic (Run); this is the CLI-vs-embedded seam, not a second harness.\n    static void Main(string[] args) { Environment.Exit(Run(args)); }\n\n    public static int Run(string[] args) {\n        string variant = args.Length > 0 ? args[0] : \"practice\";\n        // Find the solution by INTERFACE, not by class name. Every variant exposes\n        // the same entry point (ISolution.Solve), matching the problem statement's\n        // solve(...). In the browser only ONE ISolution class is compiled (the\n        // editor / \"practice\" slot), so we run whatever it is named -- paste any\n        // variant with no rename. In the CLI all variant files compile together, so\n        // several ISolution types exist: pick the one matching the variant arg.\n        var sols = Assembly.GetExecutingAssembly().GetTypes()\n            .Where(t => typeof(ISolution).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)\n            .ToList();\n        Type chosen;\n        if (sols.Count <= 1) {\n            chosen = sols.FirstOrDefault();\n        } else {\n            string cls = string.Concat(variant.Split('-').Select(p => char.ToUpper(p[0]) + p.Substring(1)));\n            chosen = sols.FirstOrDefault(t => t.Name == cls) ?? sols[0];\n        }\n        if (chosen == null) {\n            Console.WriteLine(\"error: no class implementing ISolution found\");\n            return 1;\n        }\n        var sol = (ISolution)Activator.CreateInstance(chosen);\n        var raw = File.ReadAllText(Path.Combine(\"..\", \"test_cases.json\"));\n        var cases = JsonSerializer.Deserialize<List<JsonElement>>(raw);\n        int passed = 0;\n        for (int i = 0; i < cases.Count; i++) {\n            var input = JsonSerializer.Deserialize<Dictionary<string, object>>(cases[i].GetProperty(\"input\").GetRawText());\n            var got = sol.Solve(input);\n            var exp = JsonSerializer.Serialize(cases[i].GetProperty(\"expected\"));\n            bool ok = JsonSerializer.Serialize(got) == exp;\n            if (ok) { passed++; Console.WriteLine($\"  [PASS] case {i}\"); }\n            else Console.WriteLine($\"  [FAIL] case {i}  expected={exp} got={got}\");\n            {\n                // Always emit per-case time + space for the Complexity Lab (cheap:\n                // the Run button pays ~2ms/case, Analyze needs it). TIME: adaptively repeat the pure Solve past the clock grain\n                // (>= 2ms total), report per-call ns. Compile + startup are excluded\n                // by construction. Same model as the C harness -> \"[METRIC] case i ns=X\".\n                long reps = 1, el = 0;\n                double nsPerTick = 1e9 / Stopwatch.Frequency;\n                while (true) {\n                    long a = Stopwatch.GetTimestamp();\n                    for (long r = 0; r < reps; r++) sol.Solve(input);\n                    long b = Stopwatch.GetTimestamp();\n                    el = (long)((b - a) * nsPerTick);\n                    if (el >= 2000000L || reps >= 1048576) break;\n                    reps *= 2;\n                }\n                Console.WriteLine($\"[METRIC] case {i} ns={el / reps}\");\n                // SPACE: bytes allocated by one Solve = allocation VOLUME (an upper\n                // bound on peak; a managed GC runtime exposes no true peak-workspace\n                // counter). The Lab labels this \"allocation volume (approx)\".\n                long b0 = GC.GetTotalAllocatedBytes(true);\n                sol.Solve(input);\n                long heap = GC.GetTotalAllocatedBytes(true) - b0;\n                Console.WriteLine($\"[SPACE] case {i} heap={heap}\");\n            }\n        }\n        Console.WriteLine($\"{passed}/{cases.Count} passed\");\n        return passed == cases.Count ? 0 : 1;\n    }\n}\n",
             "ISolution.cs": "using System.Collections.Generic;\npublic interface ISolution {\n    object Solve(Dictionary<string, object> input);\n}\n"
+          }
+        },
+        "dart": {
+          "practice": "dynamic solve(Map<String, dynamic> c) {\n  final s = c['s'] as String;\n  final t = c['t'] as String;\n  // Return true if s and t are anagrams of each other, false otherwise.\n  return false;\n}\n",
+          "clean": "dynamic solve(Map<String, dynamic> c) {\n  final s = (c['s'] as String).split('')..sort();\n  final t = (c['t'] as String).split('')..sort();\n  return s.join() == t.join();\n}\n",
+          "optimized": "dynamic solve(Map<String, dynamic> c) {\n  final s = c['s'] as String, t = c['t'] as String;\n  if (s.length != t.length) return false;\n  final count = <int, int>{};\n  for (final u in s.codeUnits) count[u] = (count[u] ?? 0) + 1;\n  for (final u in t.codeUnits) {\n    final n = (count[u] ?? 0) - 1;\n    if (n < 0) return false;\n    count[u] = n;\n  }\n  return true;\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "sort both strings, compare"
+            },
+            "clean": {
+              "upper": "O(n log n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(1)",
+              "notes": "counting table; O(1) under the fixed-alphabet convention"
+            }
           }
         },
         "go": {
@@ -802,6 +828,32 @@
           "support": {
             "Harness.cs": "// Generated harness — do not edit. Reads ../test_cases.json, runs the solution.\nusing System;\nusing System.IO;\nusing System.Linq;\nusing System.Reflection;\nusing System.Diagnostics;\nusing System.Text.Json;\nusing System.Collections.Generic;\n\nclass Harness {\n    // CLI entry point: the exit code signals pass/fail to the shell. The browser\n    // runtime invokes Run(...) directly instead -- Environment.Exit tears down the\n    // persistent wasm runtime, so the exit lives only here in Main. Both paths run\n    // identical logic (Run); this is the CLI-vs-embedded seam, not a second harness.\n    static void Main(string[] args) { Environment.Exit(Run(args)); }\n\n    public static int Run(string[] args) {\n        string variant = args.Length > 0 ? args[0] : \"practice\";\n        // Find the solution by INTERFACE, not by class name. Every variant exposes\n        // the same entry point (ISolution.Solve), matching the problem statement's\n        // solve(...). In the browser only ONE ISolution class is compiled (the\n        // editor / \"practice\" slot), so we run whatever it is named -- paste any\n        // variant with no rename. In the CLI all variant files compile together, so\n        // several ISolution types exist: pick the one matching the variant arg.\n        var sols = Assembly.GetExecutingAssembly().GetTypes()\n            .Where(t => typeof(ISolution).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract)\n            .ToList();\n        Type chosen;\n        if (sols.Count <= 1) {\n            chosen = sols.FirstOrDefault();\n        } else {\n            string cls = string.Concat(variant.Split('-').Select(p => char.ToUpper(p[0]) + p.Substring(1)));\n            chosen = sols.FirstOrDefault(t => t.Name == cls) ?? sols[0];\n        }\n        if (chosen == null) {\n            Console.WriteLine(\"error: no class implementing ISolution found\");\n            return 1;\n        }\n        var sol = (ISolution)Activator.CreateInstance(chosen);\n        var raw = File.ReadAllText(Path.Combine(\"..\", \"test_cases.json\"));\n        var cases = JsonSerializer.Deserialize<List<JsonElement>>(raw);\n        int passed = 0;\n        for (int i = 0; i < cases.Count; i++) {\n            var input = JsonSerializer.Deserialize<Dictionary<string, object>>(cases[i].GetProperty(\"input\").GetRawText());\n            var got = sol.Solve(input);\n            var exp = JsonSerializer.Serialize(cases[i].GetProperty(\"expected\"));\n            bool ok = JsonSerializer.Serialize(got) == exp;\n            if (ok) { passed++; Console.WriteLine($\"  [PASS] case {i}\"); }\n            else Console.WriteLine($\"  [FAIL] case {i}  expected={exp} got={got}\");\n            {\n                // Always emit per-case time + space for the Complexity Lab (cheap:\n                // the Run button pays ~2ms/case, Analyze needs it). TIME: adaptively repeat the pure Solve past the clock grain\n                // (>= 2ms total), report per-call ns. Compile + startup are excluded\n                // by construction. Same model as the C harness -> \"[METRIC] case i ns=X\".\n                long reps = 1, el = 0;\n                double nsPerTick = 1e9 / Stopwatch.Frequency;\n                while (true) {\n                    long a = Stopwatch.GetTimestamp();\n                    for (long r = 0; r < reps; r++) sol.Solve(input);\n                    long b = Stopwatch.GetTimestamp();\n                    el = (long)((b - a) * nsPerTick);\n                    if (el >= 2000000L || reps >= 1048576) break;\n                    reps *= 2;\n                }\n                Console.WriteLine($\"[METRIC] case {i} ns={el / reps}\");\n                // SPACE: bytes allocated by one Solve = allocation VOLUME (an upper\n                // bound on peak; a managed GC runtime exposes no true peak-workspace\n                // counter). The Lab labels this \"allocation volume (approx)\".\n                long b0 = GC.GetTotalAllocatedBytes(true);\n                sol.Solve(input);\n                long heap = GC.GetTotalAllocatedBytes(true) - b0;\n                Console.WriteLine($\"[SPACE] case {i} heap={heap}\");\n            }\n        }\n        Console.WriteLine($\"{passed}/{cases.Count} passed\");\n        return passed == cases.Count ? 0 : 1;\n    }\n}\n",
             "ISolution.cs": "using System.Collections.Generic;\npublic interface ISolution {\n    object Solve(Dictionary<string, object> input);\n}\n"
+          }
+        },
+        "dart": {
+          "practice": "dynamic solve(Map<String, dynamic> c) {\n  final nums = (c['nums'] as List).cast<num>();\n  final target = c['target'] as num;\n  // Return the indices [i, j] (i < j) of the two numbers in nums that add up to target.\n  return [];\n}\n",
+          "clean": "dynamic solve(Map<String, dynamic> c) {\n  final nums = (c['nums'] as List).cast<num>();\n  final target = c['target'] as num;\n  final seen = <num, int>{};\n  for (var i = 0; i < nums.length; i++) {\n    final need = target - nums[i];\n    if (seen.containsKey(need)) return [seen[need], i];\n    seen[nums[i]] = i;\n  }\n  return [];\n}\n",
+          "optimized": "dynamic solve(Map<String, dynamic> c) {\n  final nums = (c['nums'] as List).cast<num>();\n  final target = c['target'] as num;\n  final seen = <num, int>{};\n  for (var i = 0; i < nums.length; i++) {\n    final need = target - nums[i];\n    if (seen.containsKey(need)) return [seen[need], i];\n    seen[nums[i]] = i;\n  }\n  return [];\n}\n",
+          "brute-force": null,
+          "complexity": {
+            "practice": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": "single-pass hash map"
+            },
+            "clean": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            },
+            "optimized": {
+              "upper": "O(n)",
+              "lower": null,
+              "space": "O(n)",
+              "notes": null
+            }
           }
         },
         "go": {
