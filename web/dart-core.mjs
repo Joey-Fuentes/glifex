@@ -191,12 +191,53 @@ const PREFIX_LINES = PREFIX.split("\n").length - 1;
 // that wrapper sentence and nothing else. Every check around it passed, because
 // an error DID arrive -- it just said nothing.
 function dartErrorText(err) {
-  if (err && err.error !== undefined && err.error !== null) {
-    const s = String(err.error);
-    const p = "Bad state: ";
-    return s.startsWith(p) ? s.slice(p.length) : s;
+  // A Dart exception crossing gx_web.dart's .toJS bridge comes back BOXED as a
+  // JS object, not a string and not a JS Error. String() on it -- and String()
+  // on its .error, which is itself a boxed Dart object -- gives "[object
+  // Object]". That is what reached the learner: a syntax error rendered as
+  // literally "[object Object]", while node's console.error(reason) printed the
+  // real text separately (its default inspection reaches the message; String()
+  // does not). The first cut of this did String(err.error) and shipped the
+  // garbage.
+  //
+  // The exact property/method the real bridge exposes is not visible from here
+  // -- the 16MB compiler is gitignored and unbuildable in this sandbox, so this
+  // cannot be run against a genuine boxed StateError. So try the known-good
+  // paths in order and HARD-GUARD the one thing that must never happen again:
+  // no "[object Object]", no empty string, no boxed-wrapper sentence reaches a
+  // learner. A wrong guess degrades to an ugly-but-readable message and a
+  // request to report it -- never silence. Tested against every shape the CI
+  // evidence leaves open.
+  const bad = (v) => typeof v !== "string" || !v || v === "[object Object]"
+    || v === "null" || v === "undefined"
+    || /Dart exception thrown from converted Future/.test(v);
+  const strip = (v) => v.startsWith("Bad state: ") ? v.slice("Bad state: ".length) : v;
+
+  if (typeof err === "string" && !bad(err)) return strip(err);
+
+  // The boxed Dart error under .error: a string, or an object whose toString()
+  // yields the message when CALLED even though String() on the wrapper did not.
+  if (err && err.error != null) {
+    const e = err.error;
+    if (typeof e === "string" && !bad(e)) return strip(e);
+    try { const t = e.toString(); if (!bad(t)) return strip(t); } catch (_) { /* keep trying */ }
   }
-  return String((err && err.message) || err);
+
+  // The rejection reason's own toString(), for a bridge that boxes without a
+  // .error wrapper.
+  if (err != null) {
+    try { const t = err.toString(); if (!bad(t)) return strip(t); } catch (_) { /* keep trying */ }
+  }
+
+  // A plain JS Error's message (not the boxed-Future wrapper, which "bad" rejects).
+  if (err && !bad(err.message)) return strip(err.message);
+
+  // Last resort. Never "[object Object]": name the failure and hand over whatever
+  // keys exist, so this surfaces as a bug rather than as garbage in the panel.
+  let keys = "";
+  try { keys = Object.keys(err || {}).join(", "); } catch (_) { /* fine */ }
+  return "the Dart compiler reported an error this build could not decode"
+    + (keys ? " (fields: " + keys + ")" : "") + ". Please report this at the repo.";
 }
 
 function remapDiagnostics(text, source) {

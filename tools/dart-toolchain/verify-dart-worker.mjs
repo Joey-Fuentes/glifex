@@ -154,15 +154,23 @@ for (const [id, variant] of [
 // generated program's.
 {
   const r = await driveProblem("dynamic solve(Map<String, dynamic> c) {\n  return 1\n}\n", cases("001-anagram-detection"));
-  check(!!r.error, "a syntax error is reported as an error, not a result");
-  // An error ARRIVING proves nothing about it saying anything. dart2js boxes a
-  // Dart exception crossing a converted Future, and the first cut of this shipped
-  // the wrapper sentence to the learner while every check around it went green.
+  // POSITIVE assertions first. An "absent X" check passes vacuously on garbage --
+  // [object Object] passed three of the checks below until this line was added,
+  // the exact vacuous-pass trap this file was written to avoid, biting the fix
+  // for it. So first demand the diagnostic actually SAYS something: the
+  // compiler's own words, and a real remapped position.
+  check(typeof r.error === "string" && /Expected/.test(r.error),
+        "the error carries the compiler's own diagnostic text (\"Expected ...\")");
+  check(typeof r.error === "string" && /practice\.dart:\d+:\d+/.test(r.error),
+        "the error carries a real remapped position practice.dart:line:col");
+  check(typeof r.error === "string" && r.error !== "[object Object]",
+        "the error is a decoded string, never a boxed [object Object]");
+  // THEN the absence checks, which now cannot pass vacuously because the above
+  // already proved r.error is real text.
   check(!!r.error && !/Dart exception thrown from converted Future/.test(r.error),
-        "the error is the compiler's own words, not dart2js's boxed-exception wrapper");
+        "not dart2js's boxed-exception wrapper sentence");
   check(!!r.error && !/\[crash\]/.test(r.error),
         "a syntax error is a diagnostic, not a compiler crash");
-  check(!!r.error && /practice\.dart:\d+:\d+/.test(r.error), "diagnostics carry practice.dart:line:col");
   check(!!r.error && !r.error.includes("org-dartlang-gx"), "the internal scheme never reaches the learner");
   check(!!r.error && !/\[verbose info\]/.test(r.error), "verbose narration is not in the learner's error");
   console.log("  --- the error a learner would see ---\n" + String(r.error).split("\n").map((l) => "  | " + l).join("\n"));
