@@ -10,6 +10,41 @@
 #   bash tools/pin-binutils.sh 2.43 --write   # also write it into both pins.env
 set -euo pipefail
 
+# --- verify mode: prove a CANDIDATE fingerprint signs the real GNU release,
+# BEFORE anything is committed. Fetches the key BY fingerprint from a keyserver
+# (no committed key needed) and verifies the signature. All-or-nothing. The
+# IDENTITY of the fingerprint comes from the scout convergence, not this check.
+#   bash tools/pin-binutils.sh --verify <40-hex-fingerprint> <version>
+if [ "${1:-}" = "--verify" ]; then
+  FPR="$(printf '%s' "${2:?usage: --verify <fingerprint> <version>}" | tr -d ' ' | tr '[:lower:]' '[:upper:]')"
+  VER="${3:?usage: --verify <fingerprint> <version>}"
+  printf '%s' "$FPR" | grep -qE '^[0-9A-F]{40}$' || { echo "FATAL: fingerprint must be 40 hex characters."; exit 2; }
+  export GNUPGHOME="$(mktemp -d "${TMPDIR:-/tmp}/bu-verify.XXXXXX")"
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/bu-dl.XXXXXX")"
+  trap 'rm -rf "$GNUPGHOME" "$WORK"' EXIT
+  chmod 700 "$GNUPGHOME"
+  echo "fetching key $FPR by fingerprint ..."
+  gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$FPR" >/dev/null 2>&1 \
+    || gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "$FPR" >/dev/null 2>&1 \
+    || { echo "FATAL: no key with fingerprint $FPR found on keyservers."; exit 1; }
+  GOT="$(gpg --batch --with-colons --fingerprint "$FPR" 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')"
+  [ "$GOT" = "$FPR" ] || { echo "FATAL: fetched key fingerprint $GOT does not equal $FPR."; exit 1; }
+  BASE="https://ftp.gnu.org/gnu/binutils"; TAR="binutils-$VER.tar.xz"
+  for f in "$TAR" "$TAR.sig"; do
+    curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/$f" -o "$WORK/$f"
+  done
+  ST="$(gpg --batch --status-fd 1 --verify "$WORK/$TAR.sig" "$WORK/$TAR" 2>/dev/null || true)"
+  printf '%s\n' "$ST" | grep -q '^\[GNUPG:\] GOODSIG' || { echo "FATAL: not a GOOD signature."; printf '%s\n' "$ST"; exit 1; }
+  VFPR="$(printf '%s\n' "$ST" | awk '/^\[GNUPG:\] VALIDSIG/{print $12; exit}')"
+  [ "$VFPR" = "$FPR" ] || { echo "FATAL: VALIDSIG primary fingerprint $VFPR does not equal $FPR."; printf '%s\n' "$ST"; exit 1; }
+  printf '%s\n' "$ST" | grep -qE '^\[GNUPG:\] (REVKEYSIG|EXPKEYSIG|EXPSIG)' && { echo "FATAL: signature from a revoked/expired key."; printf '%s\n' "$ST"; exit 1; }
+  SHA="$(sha256sum "$WORK/$TAR" | cut -d' ' -f1)"
+  echo "GOOD: binutils-$VER is signed by $FPR"
+  echo "BINUTILS_SHA256=$SHA"
+  echo "(fingerprint IDENTITY comes from the scout cross-source convergence, not this check.)"
+  exit 0
+fi
+
 VER="${1:?usage: tools/pin-binutils.sh <version> [--write]}"
 WRITE=0
 [ "${2:-}" = "--write" ] && WRITE=1
