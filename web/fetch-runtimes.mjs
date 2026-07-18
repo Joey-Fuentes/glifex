@@ -23,18 +23,13 @@ const PHP_NPM = `${CDN}/npm/@webreflection/php`;
 const PHP_GH = `${CDN}/gh/seanmorris/php-wasm` + "@master";
 const RUNTIMES = {
 
-  // 6502 assembly: customasm (Apache-2.0) as raw wasm. The 6502 CPU core is a
-  // first-party, tested module committed at web/retro/cpu6502.mjs (not vendored).
-  "asm-6502": {
-    version: "latest", license: "Apache-2.0 (customasm)",
-    files: [
-      { url: "https://hlorenzi.github.io/customasm/web/customasm.wasm", save: "customasm.wasm", group: "casmwasm" },
-      { url: `${CDN}/gh/hlorenzi/customasm@main/web/customasm.wasm`, save: "customasm.wasm", group: "casmwasm" },
-      { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE`, save: "LICENSE-customasm", group: "casmlic" },
-      { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE.txt`, save: "LICENSE-customasm", group: "casmlic" },
-      { url: `${CDN}/gh/hlorenzi/customasm@main/LICENSE.md`, save: "LICENSE-customasm", group: "casmlic" },
-    ],
-  },
+  // asm-6502 (customasm) is NOT fetched here any more. customasm builds its
+  // browser wasm ONLY on a throwaway ghpages branch (upstream build_ghpages.yml,
+  // force-pushed, never on main / tagged / a release asset), so there was no
+  // fetchable, pinnable artifact -- the demo URL was a moving single point of
+  // failure. It is now built from pinned source at deploy like teavm-javac and
+  // dart2js: tools/customasm-toolchain/ + the ci.yml/pages.yml "Vendor asm-6502"
+  // step place web/vendor/asm-6502/{customasm.wasm,LICENSE-customasm,manifest.json}.
   codemirror: {
     version: "5.65.18", license: "MIT",
     files: [

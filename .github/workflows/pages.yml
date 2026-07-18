@@ -227,6 +227,16 @@ jobs:
           # compiling a kata and running the output catches a compiler that
           # builds to exactly the right size and compiles nothing.
           node tools/java-toolchain/verify-java.mjs web/vendor/java
+      - name: Vendor asm-6502 (customasm built from pinned source)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          . tools/customasm-toolchain/pins.env
+          mkdir -p web/vendor/asm-6502
+          bash tools/customasm-toolchain/build-customasm.sh "$PWD/web/vendor/asm-6502"
+          ls -la web/vendor/asm-6502
+          # Magic + size prove bytes; only assembling a program proves the wasm is
+          # the assembler the retro worker can actually drive.
+          node tools/customasm-toolchain/verify-customasm.mjs web/vendor/asm-6502
       - name: Mark vendor complete (cached for future runs)
         run: touch web/vendor/.vendor-complete
       - name: Save vendored runtimes cache
