@@ -17,7 +17,7 @@ cpp         = { variants = ["practice", "clean", "optimized"] }
 c           = { variants = ["practice", "clean", "optimized"] }
 rust        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 php         = { variants = ["practice", "clean", "optimized"] }
-dart        = { variants = ["practice", "clean", "optimized"] }
+dart        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 zig         = { variants = ["practice", "clean", "optimized"] }
 asm-x86_64  = { variants = ["practice", "brute-force", "clean", "optimized"] }
 asm-arm64   = { variants = ["practice", "brute-force", "clean", "optimized"] }
@@ -27,7 +27,7 @@ asm-riscv64 = { variants = ["practice", "brute-force", "clean", "optimized"] }  
 wat = "not-applicable: string inputs; WAT's contract is numeric-only"
 
 # Worst-case time+space REQUIRED per declared variant.
-# `default` covers all languages; per-language tables override.
+# the default table covers all languages; per-language tables override.
 [complexity.default.practice]
 time = "O(n log n)"
 space = "O(n)"
@@ -57,6 +57,11 @@ notes = "per-character count comparison -- the obvious baseline clean/optimized 
 time = "O(n^2)"
 space = "O(1)"
 notes = "per-char count compare -- the naive O(n^2) baseline. Ranges over the strings directly, so the rune decode allocates nothing and the O(1) is literal"
+
+[complexity.dart.brute-force]
+time = "O(n^2)"
+space = "O(1)"
+notes = "per-char count compare -- the naive O(n^2) baseline. Iterates codeUnits, so nothing is allocated and the O(1) is literal"
 
 [complexity.rust.brute-force]
 time = "O(n^2)"

@@ -18,6 +18,7 @@ java        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 ruby        = { variants = ["practice", "clean", "optimized"] }
 csharp      = { variants = ["practice", "brute-force", "clean", "optimized"] }
 rust        = { variants = ["practice", "brute-force", "clean", "optimized"] }
+dart        = { variants = ["practice", "brute-force", "clean", "optimized"] }   # dart2js self-hosted to JS in the browser (Bx-13b)
 asm-x86_64  = { variants = ["practice", "brute-force", "clean", "optimized"] }
 asm-arm64   = { variants = ["practice", "brute-force", "clean", "optimized"] }   # AAPCS64 (browser: guest as+ld under Blink, executed on VIXL)
 asm-riscv64 = { variants = ["practice", "brute-force", "clean", "optimized"] }   # RV64GC (browser: guest as+ld under Blink, executed on libriscv)
@@ -36,6 +37,16 @@ space = "O(1)"
 time = "O(phi^n)"
 space = "O(n)"
 notes = "naive recursion -- the obvious definition; exponential time, linear call-stack depth"
+
+[complexity.dart.brute-force]
+time = "O(phi^n)"
+space = "O(n)"
+notes = "naive recursion -- the obvious definition; exponential time, linear call-stack depth"
+
+[complexity.dart.optimized]
+time = "O(log n)"
+space = "O(1)"
+notes = "fast doubling: fib(2k) and fib(2k+1) from fib(k),fib(k+1); recurse on the bits of n -- logarithmic, unlike clean's linear window slide"
 
 [complexity.go.brute-force]
 time = "O(phi^n)"
