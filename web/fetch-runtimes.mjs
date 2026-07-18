@@ -10,7 +10,8 @@
 // lands. Every runtime's LICENSE is fetched alongside (see
 // THIRD_PARTY_NOTICES.md), and VERSIONS.json records exactly what shipped.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -163,8 +164,41 @@ async function fetchTo(url, destDir, saveAs) {
     throw new Error(String(res.status) + hint);
   }
   const buf = Buffer.from(await res.arrayBuffer());
+  const sha256 = createHash("sha256").update(buf).digest("hex");
   await writeFile(join(destDir, name), buf);
-  return { name, url, bytes: buf.length };
+  return { name, url, bytes: buf.length, sha256 };
+}
+
+// --- sha256 integrity (B2b) -------------------------------------------------
+// Every fetched file's sha256 is checked against web/runtime-hashes.json, which
+// a maintainer creates by running:  node web/fetch-runtimes.mjs --record
+// Tier-D deps ship no upstream signature, so a committed sha256 is the honest
+// integrity ceiling. Absent the file, checking is OFF (build unchanged). With
+// it present, any mismatch or unpinned file FAILS the build.
+const HASHES_PATH = join(dirname(fileURLToPath(import.meta.url)), "runtime-hashes.json");
+const RECORD = process.argv.includes("--record") || process.env.RECORD_HASHES === "1";
+let expected = null;
+if (!RECORD) {
+  try { expected = JSON.parse(await readFile(HASHES_PATH, "utf8")); }
+  catch { expected = null; }
+}
+if (!RECORD && !expected) {
+  console.log("  ! runtime-hashes.json absent -- integrity checking OFF (run with --record to create it)");
+}
+const recorded = {};
+let integrityFailed = false;
+function checkOrRecord(lang, r) {
+  const key = lang + "/" + r.name;
+  if (RECORD) { recorded[key] = r.sha256; return; }
+  if (!expected) return;
+  const want = expected[key];
+  if (want === undefined) {
+    console.log("  ! " + lang + ": " + r.name + " is UNPINNED (runtime-hashes.json incomplete -- re-run --record)");
+    integrityFailed = true;
+  } else if (want !== r.sha256) {
+    console.log("  x " + lang + ": " + r.name + " sha256 MISMATCH (pinned " + want.slice(0, 12) + " got " + r.sha256.slice(0, 12) + ")");
+    integrityFailed = true;
+  }
 }
 
 const summary = {};
@@ -178,6 +212,7 @@ for (const [lang, spec] of Object.entries(RUNTIMES)) {
     if (f.group && groupsSatisfied.has(f.group)) continue;   // alternate already landed
     try {
       const r = await fetchTo(f.url, dir, f.save);
+      checkOrRecord(lang, r);
       got.push(r);
       if (f.group) groupsSatisfied.add(f.group);
       console.log(`  ✓ ${lang}: ${r.name} (${(r.bytes / 1024).toFixed(0)} KB)`);
@@ -211,6 +246,7 @@ for (const [lang, spec] of Object.entries(RUNTIMES)) {
       have.add(chunk);
       try {
         const r = await fetchTo(base + chunk, dir);
+        checkOrRecord("postgres", r);
         summary.postgres.files.push(r.name);
         console.log(`  ✓ postgres: ${chunk} (${(r.bytes / 1024).toFixed(0)} KB) [auto-discovered]`);
         queue.push(chunk);
@@ -252,5 +288,11 @@ for (const [lang, spec] of Object.entries(RUNTIMES)) {
 }
 
 await writeFile(join(VENDOR, "VERSIONS.json"), JSON.stringify(summary, null, 2));
+if (RECORD) {
+  const sorted = Object.fromEntries(Object.keys(recorded).sort().map((k) => [k, recorded[k]]));
+  await writeFile(HASHES_PATH, JSON.stringify(sorted, null, 2) + "\n");
+  console.log("\nRecorded " + Object.keys(sorted).length + " sha256 hashes -> web/runtime-hashes.json. Review the diff and commit it.");
+}
+if (integrityFailed) failed = true;
 console.log(`\n${failed ? "INCOMPLETE — see ✗ lines above" : "Done"}. web/vendor/VERSIONS.json records what shipped (use it to amend THIRD_PARTY_NOTICES.md).`);
-process.exit(failed ? 1 : 0);
+process.exit(failed ? 1 : 0);  // failed now includes integrity failures
