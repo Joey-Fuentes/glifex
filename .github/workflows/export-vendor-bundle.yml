@@ -22,7 +22,7 @@ jobs:
         with: { go-version: "1.25" }
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres/WAT + CodeMirror)
         run: |
-          ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; echo "fetch-runtimes attempt $i failed; retry 20s"; sleep 20; done; [ "$ok" = 1 ]
+          ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; rc=$?; [ "$rc" = 3 ] && { echo "fetch-runtimes: integrity failure (rc=3) -- not retrying"; break; }; echo "fetch-runtimes attempt $i failed (rc=$rc); retry 20s"; sleep 20; done; [ "$ok" = 1 ]
 
       - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
         run: |
@@ -167,6 +167,8 @@ jobs:
           echo "8548fc86b738be62619889560995a127a9be6026ed4d6b21fe525c184d322206  web/vendor/asm-x86_64/gnu-ld.elf"      | sha256sum -c -
           test "$(stat -c%s web/vendor/asm-x86_64/gnu-ld.elf)" -gt 1000000 || { echo "gnu-ld.elf too small (fetch failed?)"; exit 1; }
           echo "{\"runtime\":\"asm-x86_64\",\"via\":\"robalb/x86-64-playground@$REF\",\"blink\":\"ISC\",\"binutils\":\"2.43.50 (GPL-3.0)\"}" > web/vendor/asm-x86_64/manifest.json
+      - name: Verify vendored runtime integrity
+        run: node web/fetch-runtimes.mjs --verify
       - name: Summarize bundle
         run: |
           echo "=== web/vendor per-language sizes ==="; du -sh web/vendor/* 2>/dev/null | sort -h
