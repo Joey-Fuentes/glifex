@@ -81,9 +81,24 @@ const read = (p) => readFileSync(p, "utf8");
 const cases = (id) => JSON.parse(read("problems/" + id + "/test_cases.json"));
 
 let bad = 0;
-const check = (cond, what) => {
-  if (cond) console.log("  ok   " + what);
-  else { console.log("  FAIL " + what); bad++; }
+// On failure, SHOW what was actually seen. A bare "FAIL <label>" sent a whole
+// debugging session in circles: the compiler prints its diagnostic to stderr
+// (GitHub prefixes it "Error:"), which looked like the value under test, while
+// the real r.error was something else entirely. A check that hides its actual
+// makes a correct failure look like a contradiction. So every FAIL now prints
+// the actual, quoted and truncated, right under the label.
+const show = (v) => {
+  if (v === undefined) return "undefined";
+  if (v === null) return "null";
+  const s = typeof v === "string" ? v : (() => { try { return JSON.stringify(v); } catch (_) { return String(v); } })();
+  const oneLine = s.replace(/\n/g, "\\n");
+  return oneLine.length > 300 ? oneLine.slice(0, 300) + "..." : oneLine;
+};
+const check = (cond, what, actual) => {
+  if (cond) { console.log("  ok   " + what); return; }
+  console.log("  FAIL " + what);
+  if (actual !== undefined) console.log("         actual: " + show(actual));
+  bad++;
 };
 
 // ---- 1. every corpus source that exists, against its real cases ------------
@@ -97,11 +112,18 @@ for (const [id, variant] of [
 ]) {
   const cs = cases(id);
   const r = await driveProblem(read("problems/" + id + "/dart/" + variant + ".dart"), cs);
-  if (r.error) { console.log(id + " " + variant + ":\n" + r.error); check(false, id + " " + variant + " ran"); continue; }
+  if (r.error) { check(false, id + " " + variant + " ran without a compile error", r.error); continue; }
   const passed = r.results.filter((x) => x.ok).length;
-  check(passed === cs.length, id + " " + variant + " -- " + passed + "/" + cs.length + " cases pass");
-  check(r.results.every((x) => x.tNs === null || x.tNs > 0), id + " " + variant + " -- every tNs is null or positive");
-  check(r.nsPerCase === 0, id + " " + variant + " -- reports the nsPerCase the worker relays");
+  // On a count mismatch, show the failing rows -- not just "0/7". The rows carry
+  // got/expected, so a wrong answer, a missing result, and an empty run are
+  // distinguishable at a glance instead of guessed at.
+  const failingRows = r.results.filter((x) => !x.ok).map((x) => "case " + x.i + " got=" + show(x.got) + " expected=" + show(x.expected) + (x.error ? " (" + x.error + ")" : ""));
+  check(passed === cs.length, id + " " + variant + " -- " + passed + "/" + cs.length + " cases pass",
+        passed === cs.length ? undefined : failingRows.join(" | "));
+  check(r.results.every((x) => x.tNs === null || x.tNs > 0),
+        id + " " + variant + " -- every tNs is null or positive",
+        r.results.map((x) => x.tNs));
+  check(r.nsPerCase === 0, id + " " + variant + " -- reports the nsPerCase the worker relays", r.nsPerCase);
 }
 
 // ---- 2. practice, a stub -- must RUN, not crash ----------------------------
@@ -154,26 +176,34 @@ for (const [id, variant] of [
 // generated program's.
 {
   const r = await driveProblem("dynamic solve(Map<String, dynamic> c) {\n  return 1\n}\n", cases("001-anagram-detection"));
+  // Print r.error FIRST, so the actual value under test is visible ABOVE the
+  // checks -- not buried below them. The compiler also prints its own diagnostic
+  // to stderr (GitHub prefixes it "Error:"); that is a DIFFERENT string from
+  // r.error, and confusing the two cost a long debugging detour. This banner is
+  // unambiguously the value the checks below assert on.
+  console.log("  --- r.error (the value the syntax-error checks assert on) ---");
+  console.log(String(r.error).split("\n").map((l) => "  | " + l).join("\n"));
+  console.log("  --- (any 'Error:'-prefixed line ABOVE is the compiler's own stderr, not r.error) ---");
   // POSITIVE assertions first. An "absent X" check passes vacuously on garbage --
-  // [object Object] passed three of the checks below until this line was added,
-  // the exact vacuous-pass trap this file was written to avoid, biting the fix
-  // for it. So first demand the diagnostic actually SAYS something: the
-  // compiler's own words, and a real remapped position.
+  // [object Object] passed three of the checks below until this was added, the
+  // exact vacuous-pass trap this file was written to avoid. So first demand the
+  // diagnostic actually SAYS something: the compiler's words, a real position.
+  // Each failing check now prints r.error as its actual, so a FAIL is legible on
+  // its own line rather than needing the banner to interpret it.
   check(typeof r.error === "string" && /Expected/.test(r.error),
-        "the error carries the compiler's own diagnostic text (\"Expected ...\")");
+        "the error carries the compiler's own diagnostic text (\"Expected ...\")", r.error);
   check(typeof r.error === "string" && /practice\.dart:\d+:\d+/.test(r.error),
-        "the error carries a real remapped position practice.dart:line:col");
+        "the error carries a real remapped position practice.dart:line:col", r.error);
   check(typeof r.error === "string" && r.error !== "[object Object]",
-        "the error is a decoded string, never a boxed [object Object]");
-  // THEN the absence checks, which now cannot pass vacuously because the above
-  // already proved r.error is real text.
+        "the error is a decoded string, never a boxed [object Object]", r.error);
   check(!!r.error && !/Dart exception thrown from converted Future/.test(r.error),
-        "not dart2js's boxed-exception wrapper sentence");
+        "not dart2js's boxed-exception wrapper sentence", r.error);
   check(!!r.error && !/\[crash\]/.test(r.error),
-        "a syntax error is a diagnostic, not a compiler crash");
-  check(!!r.error && !r.error.includes("org-dartlang-gx"), "the internal scheme never reaches the learner");
-  check(!!r.error && !/\[verbose info\]/.test(r.error), "verbose narration is not in the learner's error");
-  console.log("  --- the error a learner would see ---\n" + String(r.error).split("\n").map((l) => "  | " + l).join("\n"));
+        "a syntax error is a diagnostic, not a compiler crash", r.error);
+  check(!!r.error && !r.error.includes("org-dartlang-gx"),
+        "the internal scheme never reaches the learner", r.error);
+  check(!!r.error && !/\[verbose info\]/.test(r.error),
+        "verbose narration is not in the learner's error", r.error);
 }
 
 console.log(bad === 0 ? "verify-dart-worker: ok -- the real core, the real compiler, the real corpus"
