@@ -1,0 +1,404 @@
+# GX-DART-WORKER-SPIKE -- Bx-13b, questions 1 and 3. Throwaway. Never merges.
+#
+# The handoff's suggested order starts here because everything else depends on
+# the answer, and reasoning to it is what the dart2js series punished twenty-one
+# rounds for. So: measure, on real artifacts, in a real browser, in a real
+# Worker.
+#
+# Q1  Does a MODULE worker load gx_web.js via await import(), do its side
+#     effects (main -- which sets gxCompileDart and calls gxReady) actually
+#     run, and does it see globals the worker installed BEFORE the import?
+#     verify-dart.mjs proves this under node CommonJS. A module worker is not
+#     node, and importScripts() is unavailable there, so the answer decides the
+#     worker's whole shape.
+# Q1b THE CONTROL. Does a CLASSIC worker + importScripts() work? Without it, a
+#     module failure is a dead end instead of a decision. In Bx-8b every
+#     hypothesis reasoned to was wrong and every experiment was decisive.
+# Q3  Does Dart need cross-origin isolation? Expected no -- dart2js emits plain
+#     JS, no SharedArrayBuffer. Expected is not verified. Both servers, as Bx-6
+#     did for Rust.
+#
+# Push-triggered on the spike glob only, the documented pattern
+# (chore/export-dart-spike-*, csharp-runtime-validate.yml). ci.yml fires on push
+# to main and PRs to main; pages.yml chains off CI. So this costs nothing beyond
+# itself, and no PR is opened.
+name: dart-worker-spike
+on:
+  push:
+    branches: ['spike/dart-worker-load-**']
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.12.2"   # pins.env DART_SDK_VERSION. build-dart2js.sh REFUSES on a
+                          # mismatch, so this is checked, not merely written down.
+      - uses: actions/setup-node@v6
+        with: { node-version: "24" }
+
+      # A spike iterates. Paying the clone + pub get + 47s self-compile on every
+      # push would make iterating expensive, and minutes are scarce here.
+      - name: Cache the built toolchain across spike pushes
+        uses: actions/cache@v6
+        with:
+          path: web/vendor/dart
+          key: dart-spike-v1-${{ hashFiles('tools/dart-toolchain/**') }}
+
+      - name: Build the Dart browser toolchain from pinned source
+        run: |
+          if [ -f web/vendor/dart/gx_web.js ]; then echo "spike cache hit -- skipping build"; exit 0; fi
+          . tools/dart-toolchain/pins.env
+          mkdir -p web/vendor/dart
+          bash tools/dart-toolchain/build-dart2js.sh "$PWD/web/vendor/dart"
+          ls -la web/vendor/dart
+
+      # If this fails, every browser result below is noise about a broken
+      # compiler rather than a fact about workers. Fail here, loudly, first.
+      - name: Verify the compiler under node before involving a browser
+        run: node tools/dart-toolchain/verify-dart.mjs web/vendor/dart
+
+      - name: Install Chromium
+        run: |
+          npm init -y >/dev/null
+          npm install -D playwright
+          npx playwright install --with-deps chromium
+
+      - name: Stage a worker rig against the real artifacts
+        run: |
+          mkdir -p btest/vendor/dart
+          cp web/vendor/dart/gx_web.js btest/vendor/dart/
+          cp web/vendor/dart/dart2js_platform.dill btest/vendor/dart/
+          cp web/vendor/dart/libraries.json btest/vendor/dart/
+          cp web/vendor/dart/manifest.json btest/vendor/dart/
+          printf '<!doctype html><meta charset=utf-8><title>dart worker spike</title>' > btest/index.html
+
+          # ---- the probe body, shared by both worker flavors --------------
+          # Identical logic, two load paths, so a difference in the RESULT is a
+          # difference in the LOAD PATH and nothing else. That is what a control
+          # is for.
+          cat > btest/probe-body.js <<'JS'
+          // Returns a plain record. Every field is observed, not inferred.
+          // Anything that throws is caught and reported as a field -- a probe
+          // that dies tells you less than a probe that reports.
+          var KATA = [
+            "dynamic solve(Map<String, dynamic> c) {",
+            "  final n = c['n'] as int;",
+            "  var a = 0, b = 1;",
+            "  for (var i = 0; i < n; i++) { final t = a + b; a = b; b = t; }",
+            "  return a;",
+            "}",
+            "void main() { print('[KATA] solve(10)=' + solve({'n': 10}).toString()); }",
+          ].join("\n");
+
+          var BASE = "./vendor/dart/";
+
+          async function fetchBytes(p) {
+            var r = await fetch(p);
+            if (!r.ok) throw new Error("fetch " + p + " -> " + r.status);
+            return new Uint8Array(await r.arrayBuffer());
+          }
+          async function fetchText(p) {
+            var r = await fetch(p);
+            if (!r.ok) throw new Error("fetch " + p + " -> " + r.status);
+            return await r.text();
+          }
+
+          // Runs the emitted JS and captures what it printed. dart2js maps
+          // print() to console.log; a worker has one. Indirect eval so the
+          // output gets the global scope it expects. Called ONCE per probe: a
+          // second eval of a second program would test re-entrancy of the
+          // EMITTED code, a different question, and would confound this one.
+          function runEmitted(js) {
+            var printed = [];
+            var log = console.log;
+            console.log = function (s) { printed.push(String(s)); };
+            try { (0, eval)(js); }
+            finally { console.log = log; }
+            return printed.join("\n");
+          }
+
+          async function probe(flavor, load) {
+            var rec = { probe: flavor };
+            try {
+              // Facts about the host, recorded before anything can change them.
+              rec.crossOriginIsolated = self.crossOriginIsolated === true;
+              rec.selfIsGlobalThis = (self === globalThis);
+              rec.hasSharedArrayBuffer = (typeof SharedArrayBuffer === "function");
+              // typeof importScripts is NOT recorded as evidence of flavor.
+              // Measured in a sandbox Chromium: it is "function" in a module
+              // worker AND a classic one -- it merely throws when called in the
+              // former. A check that cannot fail is not a check; see Bx-8b's
+              // listOutputFiles.length. reallyAModule (set by each worker's own
+              // tail, from top-level var scoping) is the one that can fail.
+              rec.strictMode = (function () { return this === undefined; })();
+
+              var t0 = Date.now();
+              var dill = await fetchBytes(BASE + "dart2js_platform.dill");
+              var spec = await fetchText(BASE + "libraries.json");
+              rec.fetchMs = Date.now() - t0;
+              rec.dillBytes = dill.length;
+              rec.specBytes = new TextEncoder().encode(spec).length;  // BYTES. len(str) is chars.
+
+              // The globals go in BEFORE the load. Whether the loaded module
+              // sees them is exactly the question.
+              var readyResolve;
+              var readyP = new Promise(function (res) { readyResolve = res; });
+              rec.gxGetDillCalled = false;
+              rec.gxGetLibrariesSpecCalled = false;
+              rec.readyFired = false;
+              self.gxGetDill = function () { rec.gxGetDillCalled = true; return dill; };
+              self.gxGetLibrariesSpec = function () { rec.gxGetLibrariesSpecCalled = true; return spec; };
+              self.gxReady = function () { rec.readyFired = true; readyResolve(); };
+
+              var t1 = Date.now();
+              await load();
+              rec.loadResolved = true;
+              rec.loadMs = Date.now() - t1;
+
+              // Did main() run? gxReady firing is the only honest evidence.
+              // A resolved load proves the bytes arrived, not that they ran.
+              var timedOut = false;
+              await Promise.race([
+                readyP,
+                new Promise(function (res) { setTimeout(function () { timedOut = true; res(); }, 60000); }),
+              ]);
+              rec.readyTimedOut = timedOut;
+              rec.compileFnType = typeof self.gxCompileDart;
+              if (timedOut || rec.compileFnType !== "function") return rec;
+
+              var t2 = Date.now();
+              var js = await self.gxCompileDart(KATA);
+              rec.compileMs = Date.now() - t2;
+              rec.outputChars = js ? js.length : 0;
+
+              var out = runEmitted(js);
+              rec.emittedPrinted = out.slice(0, 200);
+              rec.kataCorrect = out.indexOf("solve(10)=55") !== -1;
+
+              // Second compile, same worker. Every other track reuses one
+              // worker across runs, so a compiler that only works once is a bug
+              // worth finding here rather than in the Lab. Judged by its output,
+              // not by re-running it -- see runEmitted.
+              var t3 = Date.now();
+              var js2 = await self.gxCompileDart(KATA);
+              rec.compile2Ms = Date.now() - t3;
+              rec.output2Chars = js2 ? js2.length : 0;
+              rec.deterministic = (js2 === js);
+            } catch (e) {
+              rec.threw = String((e && e.stack) || e).slice(0, 600);
+            }
+            return rec;
+          }
+          JS
+
+          # ---- module worker ---------------------------------------------
+          # await import() is the only route -- importScripts() does not exist
+          # in a module worker.
+          { cat btest/probe-body.js; cat <<'JS'
+          // Is this REALLY a module worker, or did { type: "module" } quietly
+          // fall back to classic? In an ES module a top-level var is
+          // module-scoped and never lands on the global; in a classic worker it
+          // does. Measured both ways in a sandbox Chromium before being trusted.
+          // This is also the actual RISK behind Q1: an ES module is strict and
+          // module-scoped, so if gx_web.js needs a top-level var to become
+          // global, or needs sloppy mode, the module path breaks it and the
+          // classic path does not.
+          var GX_SCOPE_MARKER = 1;
+          self.addEventListener("message", async function () {
+            var rec = await probe("module", function () { return import(BASE + "gx_web.js"); });
+            rec.reallyAModule = (self.GX_SCOPE_MARKER === undefined);
+            self.postMessage(rec);
+          });
+          JS
+          } > btest/probe-module-worker.js
+
+          # ---- classic worker -- THE CONTROL ------------------------------
+          { cat btest/probe-body.js; cat <<'JS'
+          // Same marker, opposite expectation -- the control's control. If this
+          // reports reallyAModule true, the rig is lying and every other field
+          // here is worthless.
+          var GX_SCOPE_MARKER = 1;
+          self.addEventListener("message", async function () {
+            var rec = await probe("classic", async function () { importScripts(BASE + "gx_web.js"); });
+            rec.reallyAModule = (self.GX_SCOPE_MARKER === undefined);
+            self.postMessage(rec);
+          });
+          JS
+          } > btest/probe-classic-worker.js
+
+          rm btest/probe-body.js
+          node --check btest/probe-module-worker.js
+          node --check btest/probe-classic-worker.js
+
+          # ---- COI server -- COOP/COEP, nothing else different ------------
+          # ThreadingHTTPServer, NOT HTTPServer. python3 -m http.server has used
+          # the threading one since 3.7, so the plain server is not "the same
+          # thing plus headers" -- it is serial. Measured: with HTTPServer the
+          # page and its worker fetch concurrently, stall each other, and BOTH
+          # flavors die with an empty worker error. That reads exactly like
+          # "Dart needs COI" and is entirely an artifact of the rig. The two
+          # servers must differ ONLY in the headers, or the comparison is not a
+          # comparison.
+          cat > btest/coi-server.py <<'PY'
+          import http.server, sys
+          class H(http.server.SimpleHTTPRequestHandler):
+              def end_headers(self):
+                  self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+                  self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+                  self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+                  http.server.SimpleHTTPRequestHandler.end_headers(self)
+          http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+          PY
+
+          # ---- the driver ------------------------------------------------
+          cat > btest/drive.cjs <<'JS'
+          const { chromium } = require("playwright");
+          const port = process.argv[2];
+          const label = process.argv[3];
+          (async () => {
+            let b;
+            try {
+              b = await chromium.launch({ args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"] });
+              const p = await b.newPage();
+              p.on("console", (m) => console.log("[console/" + label + "] " + m.text().slice(0, 400)));
+              p.on("pageerror", (e) => console.log("[pageerror/" + label + "] " + String(e).slice(0, 400)));
+              await p.goto("http://127.0.0.1:" + port + "/index.html", { waitUntil: "domcontentloaded", timeout: 30000 });
+              const pageCOI = await p.evaluate(() => self.crossOriginIsolated === true);
+              console.log("RESULT " + label + " " + JSON.stringify({ probe: "page", crossOriginIsolated: pageCOI }));
+              for (const kind of ["module", "classic"]) {
+                const out = await p.evaluate(async (kind) => {
+                  const file = kind === "module" ? "./probe-module-worker.js" : "./probe-classic-worker.js";
+                  const opts = kind === "module" ? { type: "module" } : {};
+                  let w;
+                  try { w = new Worker(file, opts); }
+                  catch (e) { return { probe: kind, spawnThrew: String((e && e.message) || e) }; }
+                  const r = await new Promise((res) => {
+                    const timer = setTimeout(() => res({ probe: kind, noReply: "180s" }), 180000);
+                    w.addEventListener("message", (e) => { clearTimeout(timer); res(e.data); });
+                    // An ErrorEvent's message is often empty for a load failure,
+                    // and "worker error event" as a lone string is a dead end --
+                    // it names the event, not the cause. Report every field it has.
+                    w.addEventListener("error", (e) => {
+                      clearTimeout(timer);
+                      res({ probe: kind, workerError: (e && e.message) || "(empty message)",
+                            errorFile: (e && e.filename) || null, errorLine: (e && e.lineno) || null });
+                    });
+                    w.postMessage({ id: "go" });
+                  });
+                  w.terminate();
+                  return r;
+                }, kind);
+                console.log("RESULT " + label + " " + JSON.stringify(out));
+              }
+            } catch (e) {
+              console.log("DRIVER_ERR " + label + " " + String((e && e.stack) || e).slice(0, 600));
+              process.exitCode = 1;
+            } finally { if (b) await b.close(); }
+          })();
+          JS
+          node --check btest/drive.cjs
+
+      - name: Probe module vs classic on a PLAIN server
+        continue-on-error: true
+        run: |
+          ( cd btest && setsid python3 -m http.server 8231 >/dev/null 2>&1 </dev/null & )
+          for i in $(seq 1 30); do curl -fsS "http://127.0.0.1:8231/index.html" >/dev/null 2>&1 && break; sleep 1; done
+          ( cd btest && node drive.cjs 8231 plain 2>&1 ) | tee plain.log
+
+      - name: Probe module vs classic on a COI server
+        continue-on-error: true
+        run: |
+          ( cd btest && setsid python3 coi-server.py 8232 >/dev/null 2>&1 </dev/null & )
+          for i in $(seq 1 30); do curl -fsS "http://127.0.0.1:8232/index.html" >/dev/null 2>&1 && break; sleep 1; done
+          ( cd btest && node drive.cjs 8232 coi 2>&1 ) | tee coi.log
+
+      # The verdict, computed from the logs rather than eyeballed, and the one
+      # gate -- the probe steps above continue-on-error so a half-answer still
+      # reaches here. Nothing is truncated: in Bx-8b, sed -n '1,40p' and tail -2
+      # each cut exactly the line carrying the answer and manufactured a
+      # confident wrong one.
+      - name: The verdict
+        if: always()
+        run: |
+          node - <<'JS'
+          const fs = require("node:fs");
+          const recs = [];
+          for (const label of ["plain", "coi"]) {
+            let text = "";
+            try { text = fs.readFileSync(label + ".log", "utf8"); }
+            catch { console.log("NO LOG for " + label + " -- that step produced nothing"); continue; }
+            for (const line of text.split("\n")) {
+              const m = /^RESULT (\w+) (\{.*\})$/.exec(line);
+              if (m) { try { recs.push({ label: m[1], rec: JSON.parse(m[2]) }); } catch { console.log("UNPARSEABLE: " + line); } }
+            }
+          }
+          console.log("---- every record, whole ----");
+          for (const r of recs) console.log(r.label + " " + JSON.stringify(r.rec, null, 1));
+          const find = (label, probe) => (recs.find((r) => r.label === label && r.rec.probe === probe) || {}).rec;
+          const worked = (r) => !!(r && r.loadResolved && r.readyFired && r.kataCorrect && r.output2Chars > 0);
+
+          // Before any result counts, the rig must prove the two flavors were
+          // actually different. If { type: "module" } fell back to classic,
+          // "module works" would be a measurement of nothing.
+          console.log("");
+          console.log("---- rig self-check ----");
+          const anyModule = find("plain", "module") || find("coi", "module");
+          const anyClassic = find("plain", "classic") || find("coi", "classic");
+          const rigSane = anyModule && anyClassic &&
+            anyModule.reallyAModule === true && anyClassic.reallyAModule === false &&
+            anyModule.strictMode === true && anyClassic.strictMode === false;
+          console.log("module probe really a module -> " + (anyModule ? anyModule.reallyAModule : "NO RECORD") +
+            "   (strict=" + (anyModule ? anyModule.strictMode : "?") + ")");
+          console.log("classic probe really classic -> " + (anyClassic ? anyClassic.reallyAModule === false : "NO RECORD") +
+            "   (strict=" + (anyClassic ? anyClassic.strictMode : "?") + ")");
+          if (!rigSane) {
+            console.log("");
+            console.log("RIG IS NOT SANE -- the two flavors are not distinguishable, so nothing below measures what it claims. Fix the rig before reading any verdict.");
+            process.exit(1);
+          }
+
+          console.log("");
+          console.log("---- the verdict ----");
+          for (const label of ["plain", "coi"]) {
+            for (const probe of ["module", "classic"]) {
+              const r = find(label, probe);
+              console.log(label + "/" + probe + " -> " + (worked(r) ? "WORKS" : "no") +
+                (r && r.compileMs ? " (compile " + r.compileMs + "ms, again " + r.compile2Ms + "ms, deterministic=" + r.deterministic + ")" : "") +
+                (r && r.threw ? " threw: " + r.threw.split("\n")[0] : "") +
+                (r && r.spawnThrew ? " spawn threw: " + r.spawnThrew : "") +
+                (r && r.workerError ? " worker error: " + r.workerError : "") +
+                (r && r.readyTimedOut ? " gxReady never fired" : "") +
+                (r && r.noReply ? " no reply in " + r.noReply : "") +
+                (!r ? " NO RECORD" : ""));
+            }
+          }
+          const modulePlain = worked(find("plain", "module"));
+          const classicPlain = worked(find("plain", "classic"));
+          const moduleCoi = worked(find("coi", "module"));
+          const classicCoi = worked(find("coi", "classic"));
+          console.log("");
+          console.log("Q1  module worker + await import   -> " + (modulePlain ? "VIABLE -- shape dart-worker.js as a module worker, like go-worker.js" : "NOT VIABLE on a plain server"));
+          console.log("Q1b classic worker + importScripts -> " + (classicPlain ? "VIABLE" : "NOT VIABLE on a plain server") + "   (the control)");
+          console.log("Q3  needs COI                      -> " + (modulePlain || classicPlain ? "NO -- it works without it" : ((moduleCoi || classicCoi) ? "APPARENTLY YES -- only the COI server worked, which contradicts the expectation; read the records" : "INCONCLUSIVE -- nothing worked anywhere")));
+          if (!modulePlain && !classicPlain && !moduleCoi && !classicCoi) {
+            console.log("");
+            console.log("SPIKE INCONCLUSIVE -- no load path worked anywhere. The records above ARE the finding; read them before theorising.");
+            process.exit(1);
+          }
+          JS
+
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dart-worker-spike-logs
+          path: |
+            plain.log
+            coi.log
+          if-no-files-found: warn
