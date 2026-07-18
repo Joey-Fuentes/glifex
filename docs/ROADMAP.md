@@ -173,8 +173,9 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       design).
 - [x] **Bx-8. Java** -- SHIPPED. Real `javac` in the browser via **teavm-javac** (TeaVM's
       AOT-compiled javac on the WasmGC backend), *not* the originally-planned DoppioJVM/GraalVM.
-      Vendored playground snapshot at deploy (`web/vendor/java/`, gitignored, like the other
-      runtimes). `web/java-worker.js` compiles in a Web Worker: boots teavm-javac once (cached
+      Built from pinned source at deploy (`web/vendor/java/`, gitignored, like the other
+      runtimes) -- see Bx-8b below. It originally vendored a playground snapshot; that snapshot
+      turned out to have no version at all, and to be stale. `web/java-worker.js` compiles in a Web Worker: boots teavm-javac once (cached
       per source), detects the class that `implements Solution` (any variant name --
       Practice/Clean/Optimized/BruteForce -- runs, like the other languages calling `solve`),
       strips the interface, injects a fixed timing `main`, compiles that one class, and runs it
@@ -190,6 +191,36 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       reflection PascalCases hyphen parts, mirroring C#). Complexity Lab: time measured (per-case
       nanos); space display-only (no in-browser allocation instrumentation). All 12 variants
       validated live in the worker.
+- [x] **Bx-8b. Java, built from pinned source** -- SHIPPED. Bx-8 vendored the four
+      teavm-javac files from `https://teavm.org/playground/`. That was not merely unpinned, it
+      was **unpinnable**: `konsoletyper/teavm-javac` publishes NO releases and NO tags, and its
+      README offers only "the latest WebAssembly module". Every cold re-vendor re-downloaded a
+      moving target.
+      *And it had already moved.* The blob's `compiler.wasm-runtime.js` has no `teavmAsync`, no
+      `notifyHeapResized` and no `teavm.imports`; a build from master has all three, and
+      `teavmAsync` **is** the WasmGC coroutine support TeaVM 0.13 introduced. So the shipped
+      artifact predated `7e4a44cf` ("Update teavm version to 0.13.1"), which has been master
+      since 2026-03-21. The artifact-to-commit link is unknowable by construction -- the
+      maintainer uploads by hand.
+      *Now:* `tools/java-toolchain/` builds it at deploy from a pinned SHA, like dart2js and
+      riscv64's binutils. One SHA determines everything else: `gradle.properties` pins
+      `openjdk/jdk25u` at `6c48f4ed`, `libs.versions.toml` pins TeaVM 0.13.1, the wrapper pins
+      Gradle 9.1.0. **JDK 25, not the README's 21** -- `settings.gradle` says `VERSION_25` and
+      `:javac` compiles jdk25u source using unnamed variables; the build refuses if the running
+      java disagrees with pins.env.
+      *One patch, not a fork:* `settings.gradle` listed `teavm.org/maven` FIRST, ahead of
+      mavenCentral, in both repository blocks -- 81 requests, all misses. Blackholed at DNS with
+      a cold cache, the build still succeeded with BYTE-IDENTICAL output, so it was FIRST, not
+      NECESSARY. The two lines are removed from the pinned checkout, anchor asserted at exactly 2.
+      *Measured inert, not hoped:* byte-reproducible across four independent CI runs; both
+      artifact sets pass 001/002/003 x four variants through the real `java-worker.js`, in node
+      AND a real Chromium module worker, identical row for row; both compile all ten ceiling
+      probes. `e2e/java-smoke.spec.js` is the coverage the track never had.
+      Full record, every number measured: `docs/teavm-javac-self-built.md`.
+      *Loose thread:* all ten ceiling probes compile in isolation on both sets -- including every
+      construct `java-worker.js`'s error message blames -- so that message is probably wrong and
+      the ceiling is probably cumulative. Minimal probes; a lead, not a result.
+      [Bx-8b-ceiling-message-suspect]
 - [ ] **Bx-9. Kotlin** -- BLOCKED in-browser; CLI-only. The original plan (TeaVM/Doppio) is dead,
       and the risk called out here was correct -- just understated. Every vehicle was tested, not
       guessed:

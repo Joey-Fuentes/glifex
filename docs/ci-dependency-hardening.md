@@ -16,6 +16,18 @@ Headers were added to `web/fetch-runtimes.mjs` (a bare `fetch(url)` sends none,
 and undici defaults to `user-agent: node`; a GET has no body, so a 415 is the
 server rejecting the *client*). The next run passed.
 
+**RESOLVED 2026-07-18 (Bx-8b): the caution below was right, and the later
+override of it was wrong.** The 415 recurred on 2026-07-17 *with the headers
+still in place* -- which looked like proof the header fix had never worked. It
+was not proof: a vendor run **succeeded ten minutes later** (production's
+`manifest.json` records `fetchedAt` 21:49:41Z, from `teavm.org/playground`, after
+the 21:38 failure), and a from-source build resolved against `teavm.org/maven`
+without complaint. So the 415 is **intermittent**, three retries inside sixty
+seconds is not a control, and this section's refusal to call it fixed was
+correct. Java no longer touches that server at all, so the question is now moot
+for Java -- but the reasoning error is worth keeping: a red run and a green run
+ten minutes apart is data, and reading only the red one is not.
+
 **The cause is unconfirmed and should not be recorded as fixed.** A retry loop
 was already wrapped around the fetch, and the failing log shows
 `fetch-runtimes attempt 2 failed` — so a transient upstream hiccup and the header
@@ -37,7 +49,7 @@ protects you from *change*. It does not protect you from *unavailability*.
 
 | runtime | fetched from | shape |
 |---|---|---|
-| **Java** | `teavm.org/playground/` | **a single project's own web server** |
+| ~~**Java**~~ | ~~`teavm.org/playground/`~~ **FIXED (Bx-8b)**: built from pinned source at deploy; Maven Central + the plugin portal + github.com | ~~a single project's own web server~~ the CDN class every other track already uses |
 | Python/Ruby/TS/Postgres/PHP/WAT/6502 | jsDelivr / GitHub raw, via `fetch-runtimes.mjs` | CDN |
 | C | wasmer registry (`clang/clang` webc, ~100 MB) | registry |
 | C++ | `raw.githubusercontent.com` (binji) | CDN |
@@ -52,7 +64,13 @@ pattern.
 
 ## Options, roughly in order of effort
 
-1. **Mirror the fragile assets.** Java's four files are the obvious first case.
+1. **Mirror the fragile assets.** ~~Java's four files are the obvious first case.~~
+   **Superseded for Java (Bx-8b), and the reason generalises.** Mirroring an
+   artifact you cannot attribute to a source only pins a mystery: teavm-javac
+   publishes no releases and no tags, so a digest would have frozen a
+   hand-uploaded blob of unknown provenance -- which was, measurably, stale.
+   Building from pinned source was both cheaper and stronger. **Ask first whether
+   the fragile asset can be BUILT; mirror only what cannot.**
    Either commit them (they are small) or publish a release asset and
    `gh release download` it (the pattern the handoff already documents).
 2. **A vendor-bundle release.** Build the full tree once, attach it to a release,

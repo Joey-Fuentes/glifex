@@ -1,5 +1,25 @@
 # Diagnosis and Fixes for the teavm-javac In-Browser "Maximum Call Stack Size Exceeded" Stack Overflow
 
+> **Corrected 2026-07-18 (Bx-8b).** Two things here are now wrong by implication.
+>
+> **(a) "Rebuild against current TeaVM (0.15.0)" is not a version bump.** TeaVM
+> the library is at 0.15.0 -- that part is right. But `konsoletyper/teavm-javac`,
+> which is what actually builds the playground compiler, pins **TeaVM 0.13.1** in
+> its `gradle/libs.versions.toml` and has not moved since 2026-03-21. There is no
+> 0.15.0 teavm-javac to rebuild against. Doing it means editing that pin
+> ourselves, i.e. a **fork** -- newly *possible* now that Bx-8b builds from
+> pinned source (`docs/teavm-javac-self-built.md`), but a real behaviour change
+> on a track whose only guard is one smoke test, not a free win.
+>
+> **(b) The construct list is suspect.** Bx-8b compiled ten minimal probes --
+> `HashMap`, `Arrays.sort`, `Arrays.asList`, `List.of`, recursion, streams,
+> `@FunctionalInterface`, `StringBuilder`, `TreeMap` -- on both the old playground
+> blob and the from-source build. **All ten compiled, on both.** Those are exactly
+> the constructs blamed here and in `web/java-worker.js`'s user-facing error. So
+> the ceiling is probably cumulative size/branchiness rather than those
+> constructs. **The probes are minimal, so this is a lead, not a result** -- do
+> not rewrite the error message on the strength of it. Measure first.
+
 ## TL;DR
 - **This is a known, long-standing, and essentially *inherent* limitation of running javac in the browser via TeaVM, not a misconfiguration of your assets.** The "RangeError: Maximum call stack size exceeded" is javac's deep compile-time recursion exhausting the browser's small, fixed JavaScript call stack — a ceiling that exists in *both* the historical JavaScript build (GitHub issue konsoletyper/teavm-javac #3, open since Feb 2018) and, by the same mechanism, the current WasmGC build. There is no maintainer-documented "just flip this switch" fix.
 - **The single highest-value mitigation you fully control is to run the compile where the JS stack is larger and/or avoid the constructs that deepen javac recursion.** TeaVM exposes **no runtime WasmGC "recursion depth / JS stack size" option** (`LoadOptions.stack` only sizes the *Emscripten C stack*, not the JS/Wasm call stack). The documented `maxTopLevelNames` option is JS-backend-only and addresses a *different* Chromium stack bug. So the practical levers are environment stack size, avoiding annotation-heavy/deeply-nested input, and rebuilding against current TeaVM (0.15.0, June 2026).
