@@ -266,6 +266,16 @@ jobs:
           echo "8548fc86b738be62619889560995a127a9be6026ed4d6b21fe525c184d322206  web/vendor/asm-x86_64/gnu-ld.elf"      | sha256sum -c -
           test "$(stat -c%s web/vendor/asm-x86_64/gnu-ld.elf)" -gt 1000000 || { echo "gnu-ld.elf too small (fetch failed?)"; exit 1; }
           echo "{\"runtime\":\"asm-x86_64\",\"via\":\"robalb/x86-64-playground@$REF\",\"blink\":\"ISC\",\"binutils\":\"2.43.50 (GPL-3.0)\"}" > web/vendor/asm-x86_64/manifest.json
+      - name: Resolve emsdk version pin
+        id: emsdkver
+        run: |
+          . tools/arm64-toolchain/pins.env
+          echo "v=$EMSDK_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Cache emsdk (survives vendor-cache busts; keyed on EMSDK_VERSION)
+        uses: actions/cache@v6
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ steps.emsdkver.outputs.v }}
       - name: Vendor arm64 toolchain (VIXL wasm32 + musl binutils, pinned)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
