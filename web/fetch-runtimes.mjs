@@ -86,13 +86,13 @@ const RUNTIMES = {
   postgres: {
     version: "0.5.4", license: "Apache-2.0",
     files: [
-      { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/dist/index.js`, required: true },
-      // wasm/data asset names have varied across PGlite releases — candidates:
-      { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/dist/pglite.wasm`, group: "pgwasm" },
-      { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/dist/postgres.wasm`, group: "pgwasm" },
-      { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/dist/pglite.data`, group: "pgdata" },
-      { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/dist/postgres.data`, group: "pgdata" },
-      { url: `${CDN}/npm/@electric-sql/pglite@0.5.4/LICENSE`, save: "LICENSE" },
+      { url: CDN + "/npm/@electric-sql/pglite@0.5.4/dist/index.js", required: true },
+      { url: CDN + "/npm/@electric-sql/pglite@0.5.4/dist/pglite.wasm", required: true },
+      { url: CDN + "/npm/@electric-sql/pglite@0.5.4/dist/pglite.data", required: true },
+      // initdb.wasm has a stable name (not content-hashed) -> pin explicitly.
+      // The content-hashed chunk-*.js are discovered below.
+      { url: CDN + "/npm/@electric-sql/pglite@0.5.4/dist/initdb.wasm", save: "initdb.wasm", required: true },
+      { url: CDN + "/npm/@electric-sql/pglite@0.5.4/LICENSE", save: "LICENSE", required: true },
     ],
   },
   php: {
@@ -177,6 +177,24 @@ if (!RECORD) {
   try { expected = JSON.parse(await readFile(HASHES_PATH, "utf8")); }
   catch { expected = null; }
 }
+if (process.argv.includes("--verify")) {
+  const pins = expected || {};
+  const keys = Object.keys(pins).sort();
+  if (!keys.length) { console.log("integrity: runtime-hashes.json absent/empty -- nothing to verify (checking OFF)"); process.exit(0); }
+  console.log("== runtime integrity audit (no fetch): " + keys.length + " pinned files, verifying web/vendor ==");
+  let vok = 0, vbad = 0, vmiss = 0;
+  for (const key of keys) {
+    const want = pins[key];
+    let buf;
+    try { buf = await readFile(join(VENDOR, key)); }
+    catch { console.log("  MISSING  " + key + "  (not present in web/vendor)"); vmiss++; continue; }
+    const got = createHash("sha256").update(buf).digest("hex");
+    if (got === want) { console.log("  ok       " + key + "  " + got.slice(0, 12) + "  (" + (buf.length / 1024).toFixed(0) + " KB, matched local cache)"); vok++; }
+    else { console.log("  MISMATCH " + key + "  pinned " + want.slice(0, 12) + " got " + got.slice(0, 12)); vbad++; }
+  }
+  console.log("integrity: verified " + vok + "/" + keys.length + " pinned files (" + vbad + " mismatch, " + vmiss + " missing)" + ((vbad || vmiss) ? " -- FAILED" : " -- all match"));
+  process.exit((vbad || vmiss) ? 1 : 0);
+}
 if (!RECORD && !expected) {
   console.log("  ! runtime-hashes.json absent -- integrity checking OFF (run with --record to create it)");
 }
@@ -207,7 +225,9 @@ for (const [lang, spec] of Object.entries(RUNTIMES)) {
     if (f.group && groupsSatisfied.has(f.group)) continue;   // alternate already landed
     try {
       const r = await fetchTo(f.url, dir, f.save);
-      checkOrRecord(lang, r);
+      // es.js is mutated after fetch (the __phpBuf patch below), so its integrity
+      // is checked on the SHIPPED bytes there -- not on the raw download.
+      if (!(lang === "php" && r.name === "es.js")) checkOrRecord(lang, r);
       got.push(r);
       if (f.group) groupsSatisfied.add(f.group);
       console.log(`  ✓ ${lang}: ${r.name} (${(r.bytes / 1024).toFixed(0)} KB)`);
@@ -223,34 +243,34 @@ for (const [lang, spec] of Object.entries(RUNTIMES)) {
     JSON.stringify({ lang, version: spec.version, license: spec.license, files: got, fetchedAt: new Date().toISOString() }, null, 2));
   summary[lang] = { version: spec.version, license: spec.license, files: got.map((f) => f.name) };
 }
-// PGlite's index.js is a multi-chunk ESM bundle; chunk names are content
-// hashes that change per release. Discover and fetch them by scanning the
-// JS we already downloaded, to a fixpoint (chunks can import chunks).
+// PGlite's index.js is a multi-chunk ESM bundle whose chunk names are content
+// hashes (they change per release), so we can't hardcode them -- we discover them
+// by scanning the JS we already have, to a fixpoint (chunks import chunks). We match
+// ONLY chunk-*.js: every .wasm/.data asset (pglite.wasm/.data, initdb.wasm) is named
+// explicitly in the spec, and the old .wasm|.data scan matched minified identifiers
+// (r.data, Module.wasm) and 404'd on them. Discovered chunks are always hashed --
+// fetched if absent, read from disk if a cache has them -- so --record is deterministic.
 {
-  const { readFile, readdir } = await import("node:fs/promises");
+  const { readFile } = await import("node:fs/promises");
   const dir = join(VENDOR, "postgres");
   const base = RUNTIMES.postgres.files[0].url.replace(/index\.js$/, "");
-  const have = new Set(await readdir(dir));
+  const seen = new Set();
   let queue = ["index.js"];
   while (queue.length) {
     const file = queue.shift();
     const text = await readFile(join(dir, file), "utf8").catch(() => "");
-    for (const m of text.matchAll(/[A-Za-z0-9_-]+\.(?:wasm|data)|chunk-[A-Za-z0-9_-]+\.js/g)) {
+    for (const m of text.matchAll(/chunk-[A-Za-z0-9_-]+\.js/g)) {
       const chunk = m[0];
-      if (have.has(chunk)) continue;
-      have.add(chunk);
-      try {
-        const r = await fetchTo(base + chunk, dir);
-        checkOrRecord("postgres", r);
-        summary.postgres.files.push(r.name);
-        console.log(`  ✓ postgres: ${chunk} (${(r.bytes / 1024).toFixed(0)} KB) [auto-discovered]`);
-        queue.push(chunk);
-      } catch (e) {
-        // js chunks are required; wasm/data hits may be regex false positives
-        const hard = chunk.endsWith(".js");
-        console.log(`  ✗ postgres: ${chunk} ${e.message} [auto-discovered${hard ? " — REQUIRED" : ", tolerated"}]`);
-        if (hard) failed = true;
-      }
+      if (seen.has(chunk)) continue;
+      seen.add(chunk);
+      let r, buf = null;
+      try { buf = await readFile(join(dir, chunk)); } catch { buf = null; }
+      if (buf) r = { name: chunk, url: base + chunk, bytes: buf.length, sha256: createHash("sha256").update(buf).digest("hex") };
+      else r = await fetchTo(base + chunk, dir);
+      checkOrRecord("postgres", r);
+      summary.postgres.files.push(r.name);
+      console.log("  \u2713 postgres: " + chunk + " (" + (r.bytes / 1024).toFixed(0) + " KB) [auto-discovered]");
+      queue.push(chunk);
     }
   }
 }
@@ -277,6 +297,10 @@ for (const [lang, spec] of Object.entries(RUNTIMES)) {
     } else {
       console.log("  \u2717 php es.js: buffer needle not found (build changed?) -- Lab PHP space disabled");
     }
+    // Integrity is checked on the SHIPPED bytes (post-patch), so runtime-hashes.json
+    // and --verify both refer to exactly what lands on disk.
+    const shipped = await readFile(esPath);
+    checkOrRecord("php", { name: "es.js", url: "(patched on disk)", bytes: shipped.length, sha256: createHash("sha256").update(shipped).digest("hex") });
   } catch (e) {
     console.log("  \u2717 php es.js space-patch skipped:", e.message);
   }
@@ -288,6 +312,8 @@ if (RECORD) {
   await writeFile(HASHES_PATH, JSON.stringify(sorted, null, 2) + "\n");
   console.log("\nRecorded " + Object.keys(sorted).length + " sha256 hashes -> web/runtime-hashes.json. Review the diff and commit it.");
 }
-if (integrityFailed) failed = true;
-console.log(`\n${failed ? "INCOMPLETE — see ✗ lines above" : "Done"}. web/vendor/VERSIONS.json records what shipped (use it to amend THIRD_PARTY_NOTICES.md).`);
-process.exit(failed ? 1 : 0);  // failed now includes integrity failures
+const bad = failed || integrityFailed;
+console.log("\n" + (bad ? "INCOMPLETE -- see the lines above" : "Done") + ". web/vendor/VERSIONS.json records what shipped (use it to amend THIRD_PARTY_NOTICES.md).");
+// exit 3 = integrity failure (do NOT retry -- a retry cannot fix a hash mismatch, and
+// retrying is what used to mask it); 1 = fetch/network failure (retryable); 0 = clean.
+process.exit(integrityFailed ? 3 : failed ? 1 : 0);

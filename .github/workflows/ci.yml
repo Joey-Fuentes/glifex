@@ -183,7 +183,7 @@ jobs:
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
-          ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; echo "fetch-runtimes attempt $i failed; retrying in 20s"; sleep 20; done; [ "$ok" = 1 ]
+          ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; rc=$?; [ "$rc" = 3 ] && { echo "fetch-runtimes: integrity failure (rc=3) -- not retrying"; break; }; echo "fetch-runtimes attempt $i failed (rc=$rc); retry 20s"; sleep 20; done; [ "$ok" = 1 ]
           # e2e drives the plain #editor textarea directly; keep CodeMirror OUT so it
           # doesn't wrap (and hide) the textarea. CM is a production-only UI enhancement
           # exercised manually — the runtimes are what e2e must regression-cover.
@@ -388,6 +388,8 @@ jobs:
           node tools/customasm-toolchain/verify-customasm.mjs web/vendor/asm-6502
       - name: Mark vendor complete (cached for future runs)
         run: touch web/vendor/.vendor-complete
+      - name: Verify vendored runtime integrity
+        run: node web/fetch-runtimes.mjs --verify
       - name: Save vendored runtimes cache
         if: always() && steps.vendor.outputs.cache-hit != 'true' && hashFiles('web/vendor/.vendor-complete') != ''
         uses: actions/cache/save@v6
