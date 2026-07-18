@@ -831,7 +831,46 @@ const Runtimes = (() => {
     };
   }
 
-  const LOADERS = { java: loadJava, typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, go: loadGo, "asm-x86_64": loadAsmX86, "asm-arm64": loadAsmArm64, "asm-riscv64": loadAsmRiscv64, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
+  // -- Dart: dart2js, self-hosted to JavaScript (Bx-13b) --
+  // A MODULE worker, measured rather than assumed. The Bx-13b spike drove a real
+  // module Worker against the real artifacts in real headless Chromium: it loaded
+  // gx_web.js with await import(), main()'s side effects ran, and it saw the
+  // globals installed before the import. Classic + importScripts works too --
+  // module is chosen to match go-worker.js, which this track is shaped after.
+  //
+  // No cross-origin isolation, and this is measured too, on a plain server with
+  // SharedArrayBuffer absent: dart2js emits plain JS. No wasm, no threads, no
+  // SAB -- so Dart joins C#/Rust/Go/Java in the needs-no-COI group rather than
+  // being assumed into it.
+  //
+  // No wallByLang cap yet. The compile is a one-time cost per program and the
+  // output then runs at native JS speed, so the full ladder is probably right --
+  // but "probably" is not a measurement, and Bx-13b step 4 takes it.
+  async function loadDart() {
+    if (!(await vendored("dart"))) return null;
+    const dartWorkerState = { worker: null };
+    // First run fetches 5.4MB gzipped (compiler 2.37 + platform 3.28) and then
+    // compiles in-browser: measured at ~3.6s cold, ~2.7s warm in headless
+    // Chromium. This budget is for a cold cache on a slow link, not a warm one.
+    const DART_TIMEOUT_MS = 120000;
+    return {
+      async run(source, cases) {
+        try {
+          const res = await window.callWorker(
+            dartWorkerState, "dart-worker.js", { id: "run", source, cases },
+            DART_TIMEOUT_MS, "Dart took too long (over 120s) -- the first run fetches the compiler and platform (~5.4MB gzipped) and then dart2js compiles your code in the browser.",
+            { type: "module" });
+          if (res.id === "error") return { error: res.error };
+          const { id, ...out } = res;
+          return out;
+        } catch (e) {
+          return { error: String((e && e.message) || e) };
+        }
+      },
+    };
+  }
+
+  const LOADERS = { java: loadJava, typescript: loadTypeScript, python: loadPython, ruby: loadRuby, postgres: loadPostgres, wat: loadWat, php: loadPhp, c: loadC, cpp: loadCpp, csharp: loadCsharp, rust: loadRust, go: loadGo, dart: loadDart, "asm-x86_64": loadAsmX86, "asm-arm64": loadAsmArm64, "asm-riscv64": loadAsmRiscv64, "asm-6502": load6502, sm83: loadSm83, i8080: load8080 };
 
   async function get(lang) {
     if (lang === "javascript") return "native";        // no runtime needed

@@ -329,6 +329,15 @@ jobs:
           # and compiles nothing, dying in _js_interop_checks before any work.
           # Only running it catches that.
           node tools/dart-toolchain/verify-dart.mjs web/vendor/dart
+      # A SEPARATE step, deliberately outside the vendor step's cache guard.
+      # web/vendor is keyed on hashFiles(fetch-runtimes.mjs, tools/**, ci.yml) --
+      # which does NOT include web/dart-core.mjs. Inside the guard, a PR that
+      # touched only the worker would hit the cache, skip the step, and go green
+      # without the worker ever running. That is the shape of the regression
+      # Decision 10 records. Out here it runs on hit and miss alike, against the
+      # artifacts the cache just restored.
+      - name: Verify the Dart core against the real compiler and the real corpus
+        run: node tools/dart-toolchain/verify-dart-worker.mjs web/vendor/dart
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "25" }   # pins.env TEAVM_JAVAC_JDK.
                                                               # NOT the README's 21: settings.gradle
