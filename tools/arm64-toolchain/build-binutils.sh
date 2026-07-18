@@ -24,12 +24,13 @@ cd "$HOME"
 curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
   "https://ftp.gnu.org/gnu/binutils/binutils-$VER.tar.xz" -o "binutils-$VER.tar.xz"
 SHA=$(sha256sum "binutils-$VER.tar.xz" | cut -d' ' -f1)
-if [ -n "${BINUTILS_SHA256:-}" ]; then
-  echo "$BINUTILS_SHA256  binutils-$VER.tar.xz" | sha256sum -c -
-else
-  echo "## binutils-$VER.tar.xz sha256 $SHA"
-  echo "## (BINUTILS_SHA256 is unset in pins.env -- paste the above in to pin it)"
+if [ -z "${BINUTILS_SHA256:-}" ]; then
+  echo "## FATAL: BINUTILS_SHA256 unset in pins.env -- refusing to build unverified source."
+  echo "## Observed sha256: $SHA"
+  echo "## Establish the pin first: bash tools/pin-binutils.sh $VER (verifies the GNU signature)."
+  exit 1
 fi
+echo "$BINUTILS_SHA256  binutils-$VER.tar.xz" | sha256sum -c -
 tar xf "binutils-$VER.tar.xz"
 
 BUILD="bu-$TARGET_TRIPLE"
