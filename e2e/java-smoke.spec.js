@@ -14,10 +14,19 @@
 // So this asserts a real shipped solution compiles AND answers -- the failure a
 // ceiling regression would actually produce.
 //
-// Single-threaded WasmGC: no SharedArrayBuffer, no cross-origin isolation, plain
-// e2e server. Chromium-only (the only browser installed locally); long timeout
-// because the first run fetches ~6.7MB and compiles javac-in-wasm.
-const { test, expect } = require("@playwright/test");
+// Single-threaded WasmGC: no SharedArrayBuffer, no cross-origin isolation needed.
+// Chromium-only (the only browser installed locally); long timeout because the
+// first run fetches ~6.7MB and compiles javac-in-wasm.
+//
+// coi-fixtures, NOT bare @playwright/test. The app still runs its cross-origin
+// isolation bootstrap on first load and RELOADS once, and the fixture waits for
+// <html data-coi> -- the settled, non-reloading load. Its own comment names the
+// exact failure this spec hit without it: "a test's post-goto action races that
+// reload and dies with execution context destroyed". rust/csharp/go-smoke use
+// bare @playwright/test and survive only because they wait on a locator straight
+// after goto, which rides the reload out by accident. The manifest assertion
+// below evaluates immediately, so accident is not available to it.
+const { test, expect } = require("./coi-fixtures");
 
 test.describe("Java runtime (teavm-javac, built from pinned source)", () => {
   test.skip(({ browserName }) => browserName !== "chromium", "smoke runs on chromium for now");
