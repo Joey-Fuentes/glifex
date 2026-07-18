@@ -33,6 +33,30 @@ if [ -z "${BINUTILS_SHA256:-}" ]; then
   exit 1
 fi
 echo "$BINUTILS_SHA256  binutils-$VER.tar.xz" | sha256sum -c -
+
+# Signature check against the COMMITTED signing key (tools/keys/binutils-signing.asc).
+# Self-contained: verifies the tarball with the key in the repo, no keyserver/keyring
+# fetch. Fail closed -- key must be present, its fingerprint must equal
+# BINUTILS_SIGNING_FPR, and it must have signed THIS tarball.
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+KEYFILE="$REPO_ROOT/tools/keys/binutils-signing.asc"
+[ -f "$KEYFILE" ] || { echo "## FATAL: $KEYFILE missing -- cannot verify signature."; exit 1; }
+[ -n "${BINUTILS_SIGNING_FPR:-}" ] || { echo "## FATAL: BINUTILS_SIGNING_FPR unset in pins.env."; exit 1; }
+curl -fsSL --retry 5 --retry-all-errors "https://ftp.gnu.org/gnu/binutils/binutils-$VER.tar.xz.sig" -o "binutils-$VER.tar.xz.sig" || { echo "## FATAL: could not fetch signature."; exit 1; }
+VH="$(mktemp -d)"; chmod 700 "$VH"
+gpg --homedir "$VH" --batch --import "$KEYFILE" 2>/dev/null || { echo "## FATAL: could not import committed key."; rm -rf "$VH"; exit 1; }
+GOTFPR="$(gpg --homedir "$VH" --batch --with-colons --fingerprint 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')"
+if [ "$GOTFPR" != "$BINUTILS_SIGNING_FPR" ]; then echo "## FATAL: committed key fp $GOTFPR != BINUTILS_SIGNING_FPR $BINUTILS_SIGNING_FPR"; rm -rf "$VH"; exit 1; fi
+VST="$(gpg --homedir "$VH" --batch --status-fd 1 --verify "binutils-$VER.tar.xz.sig" "binutils-$VER.tar.xz" 2>/dev/null)"
+VFP="$(printf '%s\n' "$VST" | awk '/^\[GNUPG:\] VALIDSIG/{print $12; exit}')"
+if printf '%s\n' "$VST" | grep -q '^\[GNUPG:\] GOODSIG' && [ "$VFP" = "$BINUTILS_SIGNING_FPR" ] && ! printf '%s\n' "$VST" | grep -qE '^\[GNUPG:\] (REVKEYSIG|EXPKEYSIG|EXPSIG)'; then
+  printf '%s\n' "$VST" | grep '^\[GNUPG:\] GOODSIG' | sed 's/^/## /'
+  echo "## GOOD signature over binutils-$VER.tar.xz from committed key $BINUTILS_SIGNING_FPR"
+else
+  echo "## FATAL: signature did NOT verify against the committed key."; printf '%s\n' "$VST" | sed 's/^/## /'; rm -rf "$VH"; exit 1
+fi
+rm -rf "$VH"
+
 tar xf "binutils-$VER.tar.xz"
 
 BUILD="bu-$TARGET_TRIPLE"
