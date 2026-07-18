@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with: { go-version: "1.25" }
-      - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres/WAT/customasm + CodeMirror)
+      - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres/WAT + CodeMirror)
         run: |
           ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; echo "fetch-runtimes attempt $i failed; retry 20s"; sleep 20; done; [ "$ok" = 1 ]
 
@@ -143,6 +143,13 @@ jobs:
           # compiling a kata and running the output catches a compiler that
           # builds to exactly the right size and compiles nothing.
           node tools/java-toolchain/verify-java.mjs web/vendor/java
+      - name: Vendor asm-6502 (customasm built from pinned source)
+        run: |
+          . tools/customasm-toolchain/pins.env
+          mkdir -p web/vendor/asm-6502
+          bash tools/customasm-toolchain/build-customasm.sh "$PWD/web/vendor/asm-6502"
+          ls -la web/vendor/asm-6502
+          node tools/customasm-toolchain/verify-customasm.mjs web/vendor/asm-6502
       - name: Vendor x86-64 toolchain (robalb/x86-64-playground, pinned)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
