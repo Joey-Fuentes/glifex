@@ -30,7 +30,7 @@ jobs:
       - uses: actions/setup-node@v6
         with: { node-version: "24" }
       - name: Biome (JS/TS lint + format check)
-        run: npx --yes @biomejs/biome check web/ languages/templates/ || true
+        run: npx --yes @biomejs/biome@2.5.4 check web/ languages/templates/ || true   # pinned: new biome releases add rules; bump deliberately
         # '|| true' until the codebase is Biome-formatted; flip to blocking then.
       - name: Asset-stamp transform test
         run: node web/stamp.test.mjs
@@ -100,7 +100,7 @@ jobs:
       # C/C++ use the runners' system compilers (gcc/clang preinstalled on
       # ubuntu/macos; Windows runners include MinGW gcc — doctor skips if absent)
       - name: TypeScript
-        run: npm install -g typescript
+        run: npm install -g typescript@7.0.2   # pinned; bump deliberately
       - name: WABT (WebAssembly Text toolchain)
         shell: bash
         run: |
@@ -167,10 +167,20 @@ jobs:
         with: { node-version: "24" }
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: "10.0.x" }
+      - name: Cache Playwright browsers + npm
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.npm
+          key: playwright-${{ runner.os }}-1.61.1
       - name: Install Playwright
         run: |
           npm init -y >/dev/null
-          npm install -D @playwright/test
+          npm install -D @playwright/test@1.61.1
+          # browsers restored from cache on hit -> this becomes a fast no-op verify;
+          # --with-deps still ensures the OS libs. Cache key is the pinned version.
           npx playwright install --with-deps chromium firefox
       - uses: actions/setup-go@v6
         with: { go-version: "1.25" }
