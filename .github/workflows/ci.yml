@@ -450,7 +450,48 @@ jobs:
       # without the worker ever running. That is the shape of the regression
       # Decision 10 records. Out here it runs on hit and miss alike, against the
       # artifacts the cache just restored.
+      - name: Determine if anything dart-relevant changed (gates the dart verify below)
+        id: dart-scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # dart_touched=true if any changed file feeds the dart integration verify
+          # below: web/dart-core.mjs (the core it drives), the harness itself, or any
+          # problem's test_cases.json / dart solution. Any uncertainty (API error,
+          # empty/unknown event) -> true, so the verify runs. Combined with the vendor
+          # cache-hit signal, the verify is skipped ONLY when the compiler is cached
+          # AND no dart input moved. (Toolchain/build changes bust the vendor key, so
+          # they surface as a cache miss and are already covered by that signal.)
+          set -uo pipefail
+          files=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files="$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --jq '.[].filename' 2>/dev/null)" || files="__ERR__"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            base="${{ github.event.before }}"
+            case "$base" in *[!0]*) : ;; *) base="" ;; esac   # all-zero base (new ref) -> unknown
+            if [ -n "$base" ]; then
+              files="$(gh api "repos/${{ github.repository }}/compare/${base}...${{ github.sha }}" --jq '.files[].filename' 2>/dev/null)" || files="__ERR__"
+            else
+              files="__ERR__"
+            fi
+          else
+            files="__ERR__"
+          fi
+          if [ "$files" = "__ERR__" ] || [ -z "$files" ]; then
+            echo "changed-file list unavailable/empty -- running the dart verify to be safe"
+            echo "dart_touched=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          dart="$(printf '%s\n' "$files" | grep -E '^web/dart-core\.mjs$|^tools/dart-toolchain/verify-dart-worker\.mjs$|^problems/[^/]+/test_cases\.json$|^problems/[^/]+/dart/.*\.dart$' || true)"
+          if [ -n "$dart" ]; then
+            echo "dart-relevant changes -- the dart verify will run:"
+            printf '%s\n' "$dart" | sed 's/^/  dart: /'
+            echo "dart_touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no dart-relevant changes -- dart verify skips if the compiler is cached"
+            echo "dart_touched=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Verify the Dart core against the real compiler and the real corpus
+        if: steps.vendor.outputs.cache-hit != 'true' || steps.dart-scope.outputs.dart_touched == 'true'
         run: node tools/dart-toolchain/verify-dart-worker.mjs web/vendor/dart
       - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9  # v4
         with: { distribution: temurin, java-version: "25" }   # pins.env TEAVM_JAVAC_JDK.
