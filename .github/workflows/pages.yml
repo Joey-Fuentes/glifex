@@ -46,7 +46,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: web/vendor
-          key: vendor-v8-pages-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', '.github/workflows/pages.yml') }}
+          key: vendor-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', 'web/runtime-hashes.json', 'web/csharp-runtime/**') }}
       - name: Vendor WASM runtimes
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
@@ -246,7 +246,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: web/vendor
-          key: vendor-v8-pages-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', '.github/workflows/pages.yml') }}
+          key: vendor-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', 'web/runtime-hashes.json', 'web/csharp-runtime/**') }}
       - run: node web/build.mjs
       - name: Stamp document version (badge reports the page it lives in)
         run: |
