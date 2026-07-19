@@ -1,0 +1,40 @@
+name: fp-actions-resolver-spike
+# THROWAWAY spike (chore/*-spike-*, pushed, never merged). Resolves first-party
+# actions/* tag -> SHA for uniform SHA-pinning. Delete when done.
+on:
+  push:
+    branches:
+      - 'chore/fp-actions-resolver-spike-*'
+permissions:
+  contents: read
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: actions/* tag -> commit SHA (drift normalized to standard major)
+        run: |
+          set -uo pipefail
+          echo "=== PIN lines: repo@sha  # tag  (paste back) ==="
+          for entry in \
+            "actions/checkout v7" \
+            "actions/setup-node v6" \
+            "actions/setup-python v6" \
+            "actions/setup-go v6" \
+            "actions/setup-java v4" \
+            "actions/setup-dotnet v4" \
+            "actions/cache v6" \
+            "actions/configure-pages v6" \
+            "actions/deploy-pages v4" \
+            "actions/upload-artifact v7" \
+            "actions/upload-pages-artifact v5"; do
+            set -- $entry
+            repo="$1"; tag="$2"
+            sha="$(git ls-remote "https://github.com/$repo" "$tag" 2>/dev/null | head -1 | cut -f1)"
+            if [ -n "$sha" ]; then printf 'PIN  %-30s %s  # %s\n' "$repo" "$sha" "$tag"
+            else printf 'PIN  %-30s <UNRESOLVED>  # %s\n' "$repo" "$tag"; fi
+          done
+          echo
+          echo "Note: actions/cache@<sha> covers cache, cache/restore, cache/save (same repo)."
+      - name: Done
+        run: echo "Paste the PIN lines back to finish the uniform first-party SHA-pinning."
