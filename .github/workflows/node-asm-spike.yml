@@ -1,0 +1,51 @@
+name: node-asm-spike
+# THROWAWAY probe (handoff s6/s10): run the PRODUCTION assembly emulators
+# headless under Node on ALL THREE runner OSes. In the browser, Blink (x86-64,
+# wasm) runs the as/ld toolchain and libriscv / VIXL / Blink execute the emitted
+# code; this drives the exact same cores (web/asm-*-core.mjs -> driveProblem)
+# from Node, which runs everywhere. (The vendored wasm is emscripten, so wasmtime
+# cannot run it standalone -- Node provides the runtime.) It reuses main's
+# vendored-runtimes cache, so run the main CI e2e job once first to populate it.
+# Self-triggers on its own branch, opens NO pull request, and does not touch main
+# CI. Delete the branch when done:  git push origin --delete <this-branch>
+on:
+  push:
+    branches: ['chore/node-asm-spike-*']
+
+permissions:
+  contents: read
+
+jobs:
+  node-asm:
+    name: node-asm (${{ matrix.os }})
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
+        with: { node-version: "24" }
+      - name: Restore vendored runtimes (main's e2e cache; cross-OS -- artifacts are wasm)
+        id: vendor
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
+        with:
+          path: web/vendor
+          key: vendor-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', 'web/runtime-hashes.json', 'web/csharp-runtime/*.cs', 'web/csharp-runtime/*.csproj') }}
+          restore-keys: vendor-
+      - name: Vendor cache status
+        shell: bash
+        run: |
+          echo "cache-hit: ${{ steps.vendor.outputs.cache-hit }}   matched-key: ${{ steps.vendor.outputs.cache-matched-key }}"
+          for a in asm-x86_64 asm-arm64 asm-riscv64; do
+            if [ -d "web/vendor/$a" ]; then
+              echo "present: web/vendor/$a ($(ls web/vendor/$a | wc -l) files)"
+            else
+              echo "MISSING: web/vendor/$a (cross-OS cache restore may not have worked on this leg)"
+            fi
+          done
+      - name: Run the production asm emulators headless under Node
+        shell: bash
+        run: node web/spike-node-asm.mjs
