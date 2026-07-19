@@ -100,3 +100,8 @@ this incident months earlier, without deciding anything about mirroring.
   busts it (measured: editing one flips the hash). Every place a pin can live --
   `web/fetch-runtimes.mjs`, `tools/**`, the workflow -- is hashed, so the key
   always self-bumps. See Invariant 10 in `docs/architecture.md`.
+- **Updating a GNU/binutils signature is a documented two-command flow**, not an
+  ad-hoc paste: `scout-signing-key` discovers and corroborates the signer
+  fingerprint out-of-band, then `pin-binutils.sh --write <fpr> <ver>` re-verifies
+  every leg and writes the key + both `pins.env` (unstaged) for you to review with
+  `git diff` and commit. Full walkthrough: `tools/keys/README.md`.

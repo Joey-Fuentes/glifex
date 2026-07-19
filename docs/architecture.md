@@ -217,6 +217,15 @@ quietly break. If a diff violates one of these, it is wrong even if CI is green.
     To prove the pipeline works, change a hashed input and watch the miss: that
     tests the mechanism instead of bypassing it.
 
+11. **Signing-key trust anchors are established by a human, not automation.** The
+    committed keys in `tools/keys/` (e.g. `binutils-signing.asc`) and their pinned
+    `BINUTILS_SIGNING_FPR` are the root of the whole source-integrity chain, so a
+    machine may *corroborate* a fingerprint but never *accept* it. The flow is two
+    commands -- `scout-signing-key` (discover + corroborate) then
+    `pin-binutils.sh --write <fpr> <ver>` (verify + write the anchor files
+    unstaged) -- closed by a human eyeballing the maintainer identity and
+    committing. See `tools/keys/README.md`.
+
 ## Diagrams
 
 **Single-sourcing and the two drift gates** -- how templates and problems become
