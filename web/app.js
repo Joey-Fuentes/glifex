@@ -463,7 +463,7 @@ function renderDocs() {
     browser — desktop or mobile. First run downloads a runtime once; after
     that it works offline too. The <b>database track</b> runs on an in-browser
     PostgreSQL (PGlite). All other languages — Go, Java, C#, C, C++, Rust,
-    PHP, Dart, Zig, Kotlin, Swift, and the assembly family — run via the CLI:
+    PHP, Dart, Zig, and the assembly family — run via the CLI:
     <code>glifex test &lt;problem&gt; &lt;lang&gt;</code>.</p>
     <h2>The contract</h2>
     <pre><code>// implement this, in practice.js

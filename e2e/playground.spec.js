@@ -106,7 +106,7 @@ test.describe("non-vendored language", () => {
   test("degrades gracefully with CLI guidance", async ({ page }) => {
     // This selected Go back when Go had no browser runtime. Bx-12 gave it one, and
     // Go was the last BAKED language without one -- so no selectable language is
-    // left to point this at. (Kotlin, Swift, Dart and Zig are still CLI-only, but
+    // left to point this at. (Dart and Zig are still CLI-only, but
     // web/build.mjs's ext map never bakes them, so they are not in the dropdown
     // and selectOption would fail on them.)
     //

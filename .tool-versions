@@ -16,8 +16,6 @@ dotnet  10.0
 # npm once Node is present (`npm install -g typescript`).
 #
 # C++ uses the system compiler (g++/clang++); no mise pin needed.
-kotlin  2.1
-swift   6.0
 rust    1.85
 php     8.4
 dart    3.7

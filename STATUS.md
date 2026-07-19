@@ -24,8 +24,6 @@ what remains written-but-unrun.
 | TypeScript  | ✅ | ✅ | ✅ | explicit-filename compile (cmd.exe doesn't glob) |
 | Go          | ✅ | ✅ | ✅ | root `go.mod` provides module context; also in-browser via the real `gc` toolchain in a worker (Bx-12) |
 | Java        | ✅ | ✅ | ✅ | in-browser via teavm-javac (compile in a worker), **built from pinned source at deploy** (Bx-8b: konsoletyper/teavm-javac @ 7e4a44cf; upstream ships no releases or tags, so the commit is the version -- docs/teavm-javac-self-built.md); vendored minimal JSON parser (CLI) |
-| Kotlin      | ✅ | ✅ | ✅ | explicit source list (kotlinc.bat doesn't glob) |
-| Swift       | ✅ | ✅ | ⏭ tc | harness is `main.swift` (top-level statements rule); JSONSerialization-canonical compare defeats NSNumber bool/int bridging |
 | Ruby        | ✅ | ✅ | ✅ | passed native Windows first try |
 | C#          | ✅ | ✅ | ✅ | harness compares JSON-to-JSON |
 | C++         | ✅ | ✅ | ✅ | gcc-is-clang on macOS confirmed fine |

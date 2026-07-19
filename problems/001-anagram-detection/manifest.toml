@@ -9,8 +9,6 @@ javascript  = { variants = ["practice", "clean", "optimized"] }
 typescript  = { variants = ["practice", "clean", "optimized"] }
 go          = { variants = ["practice", "brute-force", "clean", "optimized"] }
 java        = { variants = ["practice", "brute-force", "clean", "optimized"] }
-kotlin      = { variants = ["practice", "clean", "optimized"] }
-swift       = { variants = ["practice", "clean", "optimized"] }
 ruby        = { variants = ["practice", "clean", "optimized"] }
 csharp      = { variants = ["practice", "brute-force", "clean", "optimized"] }
 cpp         = { variants = ["practice", "clean", "optimized"] }

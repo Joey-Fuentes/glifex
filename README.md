@@ -10,7 +10,6 @@ Practice coding problems **blind**, in **many languages**, against **one shared 
 
 > **Ships with:** Python · JavaScript · TypeScript · Go · Java · Ruby · C# · C++ · C · Rust · PHP · Dart · Zig
 > **Assembly family:** x86-64 · ARM64 · WebAssembly Text (numeric problems, added per-problem)
-> **Plugins included (bring the toolchain):** Kotlin · Swift
 > **Plus a database track:** PostgreSQL
 > **Adding another language is a single plugin file** — see [Extending Glifex](#extending-glifex).
 > **License:** MIT · **Requires:** only the toolchains for the languages *you* actually use
@@ -302,7 +301,7 @@ harness_template = "harness.rs"           # the generated per-problem harness
 tool_version   = "rust 1.85"              # feeds .tool-versions
 ```
 
-Drop in the `.toml` and its harness template, and everything else picks it up automatically. **C++, Kotlin, and Swift** are planned on exactly this mechanism (C++ exercises the optional `compile` stage; Swift is first-class on Linux/macOS/WSL and second-class on native Windows). See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full harness contract.
+Drop in the `.toml` and its harness template, and everything else picks it up automatically. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full harness contract.
 
 > **A plugin gets you the CLI tier, not the playground tier.** A `languages/*.toml` makes a language run *natively* under `glifex test` on whatever machine has its toolchain. Running that language **in the browser** is a separate, heavier piece of work: a WASM runtime must be built or vendored and wired into `web/runtimes.js` (see [`docs/browser-runtimes.md`](docs/browser-runtimes.md)). Until that exists, a newly added language is fully supported in the CLI and simply **CLI-only in the playground** -- disclosed honestly in the UI, never faked.
 
