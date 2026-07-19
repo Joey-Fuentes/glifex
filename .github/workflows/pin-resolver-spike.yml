@@ -1,0 +1,41 @@
+name: pin-resolver-spike
+# THROWAWAY spike (chore/*-spike-*, pushed, never merged). Resolves B1a action
+# tag->SHA and B2c NuGet wildcard->version from the runner. Delete when done.
+on:
+  push:
+    branches:
+      - 'chore/pin-resolver-spike-*'
+permissions:
+  contents: read
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: B1a -- action tag -> commit SHA
+        run: |
+          set -uo pipefail
+          echo "=== PIN lines: repo@sha  # tag ==="
+          for entry in \
+            "dart-lang/setup-dart v1" \
+            "ruby/setup-ruby v1" \
+            "dtolnay/rust-toolchain stable" \
+            "shivammathur/setup-php v2" \
+            "mlugg/setup-zig v1" \
+            "github/codeql-action v4"; do
+            set -- $entry
+            repo="$1"; tag="$2"
+            sha="$(git ls-remote "https://github.com/$repo" "$tag" 2>/dev/null | head -1 | cut -f1)"
+            if [ -n "$sha" ]; then printf 'PIN  %-32s %s  # %s\n' "$repo" "$sha" "$tag"
+            else printf 'PIN  %-32s <UNRESOLVED>  # %s\n' "$repo" "$tag"; fi
+          done
+      - name: B2c -- NuGet wildcard -> concrete version
+        run: |
+          set -uo pipefail
+          for pkg in microsoft.codeanalysis.csharp basic.reference.assemblies.net90; do
+            echo "=== $pkg ==="
+            curl -fsSL "https://api.nuget.org/v3-flatcontainer/$pkg/index.json" -o /tmp/idx.json || { echo "  fetch failed"; continue; }
+            python3 -c "import json,re,sys; v=[x for x in json.load(open('/tmp/idx.json'))['versions'] if not re.search(r'[-+]',x)]; v.sort(key=lambda s:[int(y) if y.isdigit() else 0 for y in re.split(r'[.]',s)]); pkg=sys.argv[1]; sel=(([x for x in v if x.startswith('4.')] or [None])[-1] if 'csharp' in pkg else (v[-1] if v else None)); print('  stable tail:', v[-6:]); print('  PICK:', sel)" "$pkg"
+          done
+      - name: Done
+        run: echo "Paste the PIN lines + both PICK versions back to finish B1a + B2c."
