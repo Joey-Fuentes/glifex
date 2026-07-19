@@ -10,11 +10,12 @@ import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ARCH = basename(HERE);
 const RETRO = join(HERE, "..", "..", "..", "web", "retro");
+const CUSTOMASM = process.platform === "win32" ? "customasm.exe" : "customasm";
 
 // Values copied from runtimes.js's makeRetroLoader cfgs (kept in one place so
 // behavior matches the browser exactly, not approximately).
@@ -38,7 +39,7 @@ const binPath = join(dir, "out.bin");
 writeFileSync(asmPath, preamble + source);
 let bytes;
 try {
-  execFileSync("customasm", [asmPath, "-f", "binary", "-o", binPath], { stdio: ["ignore", "ignore", "pipe"] });
+  execFileSync(CUSTOMASM, [asmPath, "-f", "binary", "-o", binPath], { stdio: ["ignore", "ignore", "pipe"] });
   bytes = new Uint8Array(readFileSync(binPath));
 } catch (e) {
   const msg = String((e && (e.stderr || e.message)) || e).replace(/\x1b\[[0-9;]*m/g, "");
@@ -46,7 +47,7 @@ try {
   process.exit(2);
 }
 
-const { [CFG.cls]: Core } = await import(join(RETRO, CFG.core));
+const { [CFG.cls]: Core } = await import(pathToFileURL(join(RETRO, CFG.core)).href);
 
 let passed = 0;
 for (let i = 0; i < cases.length; i++) {
