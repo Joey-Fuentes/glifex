@@ -27,20 +27,22 @@ jobs:
       - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
         run: |
           mkdir -p web/vendor/c
-          VER=0.8.0-beta.1
-          npm pack @wasmer/sdk@${VER}
+          . tools/vendor-pins.env
+          npm pack @wasmer/sdk@${WASMER_SDK_VERSION}
           tar xzf wasmer-sdk-*.tgz
           cp -r package/dist/. web/vendor/c/
           rm -rf package wasmer-sdk-*.tgz
           curl --retry 5 --retry-delay 15 --retry-all-errors https://get.wasmer.io -sSfL | sh
           export PATH="$HOME/.wasmer/bin:$PATH"
-          ok=0; for i in 1 2 3 4 5; do wasmer package download clang/clang -o web/vendor/c/clang.webc && { ok=1; break; }; echo "wasmer download attempt $i failed; retry 15s"; sleep 15; done; [ "$ok" = 1 ]
+          ok=0; for i in 1 2 3 4 5; do wasmer package download "clang/clang@${WASMER_CLANG_VERSION}" -o web/vendor/c/clang.webc && { ok=1; break; }; echo "wasmer download attempt $i failed; retry 15s"; sleep 15; done; [ "$ok" = 1 ]
+          echo "$WASMER_CLANG_SHA256  web/vendor/c/clang.webc" | sha256sum -c -
           echo '{"runtime":"c","via":"wasmer"}' > web/vendor/c/manifest.json
 
       - name: Vendor C++ toolchain (Binji wasm-clang)
         run: |
           mkdir -p web/vendor/cpp
-          BASE=https://raw.githubusercontent.com/binji/wasm-clang/master
+          . tools/vendor-pins.env
+          BASE=https://raw.githubusercontent.com/binji/wasm-clang/${BINJI_WASM_CLANG_REF}
           for f in clang lld memfs sysroot.tar shared.js worker.js; do
             curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/$f" -o "web/vendor/cpp/$f"
           done
@@ -63,7 +65,11 @@ jobs:
 
       - name: Vendor Rust runtime (Miri-in-wasm via Rubri)
         run: |
-          git clone --depth 1 --branch 1.78-dev https://github.com/LyonSyonII/rubri /tmp/rubri || git clone --depth 1 https://github.com/LyonSyonII/rubri /tmp/rubri
+          . tools/vendor-pins.env
+          rm -rf /tmp/rubri && mkdir -p /tmp/rubri && git -C /tmp/rubri init -q
+          git -C /tmp/rubri remote add origin https://github.com/LyonSyonII/rubri
+          git -C /tmp/rubri fetch -q --depth 1 origin "$RUBRI_REF"
+          git -C /tmp/rubri checkout -q FETCH_HEAD
           SRC=/tmp/rubri/example/public/wasm-rustc
           LIB=web/vendor/rust/wasm-rustc/lib/rustlib/x86_64-unknown-linux-gnu/lib
           mkdir -p web/vendor/rust/wasm-rustc/bin "$LIB"
@@ -154,7 +160,8 @@ jobs:
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           mkdir -p web/vendor/asm-x86_64
-          REF=d617f6a19879157c1debbe0454b6c4cff2ebe094
+          . tools/vendor-pins.env
+          REF=${X86_64_PLAYGROUND_REF}
           BASE="https://raw.githubusercontent.com/robalb/x86-64-playground/$REF/webapp/src/assets"
           curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.js"                 -o web/vendor/asm-x86_64/blinkenlib.js
           curl -fsSL --retry 5 --retry-delay 15 --retry-all-errors "$BASE/blinkenlib.wasm"               -o web/vendor/asm-x86_64/blinkenlib.wasm
