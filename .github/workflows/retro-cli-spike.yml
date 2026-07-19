@@ -1,0 +1,60 @@
+name: retro-cli-spike
+# THROWAWAY probe (handoff s6/s10): prove the retro tracks (6502 / SM83 / i8080)
+# run from the CLI -- install customasm (the Rust assembler, pinned to the same
+# v0.14.1 the browser wasm is built from), then drive each variant through the
+# new per-problem harness.mjs (assemble with customasm + execute on the pure-JS
+# CPU core). Pure node + customasm, arch-independent, so ONE OS proves it.
+# Self-triggers on its own branch, opens NO pull request, does not touch main CI.
+# Delete the branch when done:  git push origin --delete <this-branch>
+on:
+  push:
+    branches: ['chore/retro-cli-spike-*']
+
+permissions:
+  contents: read
+
+jobs:
+  retro-cli:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
+        with: { node-version: "24" }
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
+        with:
+          toolchain: stable
+      - name: Install customasm (pinned to the version the browser wasm is built from)
+        run: cargo install customasm --version 0.14.1 --locked
+
+      - name: Assemble + run every retro track through the CLI harness (003, all variants)
+        shell: bash
+        run: |
+          # The runner applies -eo pipefail; practice exits nonzero by design and
+          # we probe results, so turn both off and judge explicitly.
+          set +e +o pipefail
+          customasm --version
+          flags=0
+          for arch in asm-6502 sm83 i8080; do
+            echo "==================== $arch ===================="
+            for v in practice clean optimized; do
+              out=$(cd "problems/003-nth-fibonacci/$arch" && node harness.mjs "$v" 2>&1); rc=$?
+              m=$(printf '%s\n' "$out" | grep -oE '[0-9]+/[0-9]+ passed' | tail -1)
+              if [ -z "$m" ]; then
+                verdict="NO-MARKER"; flags=$((flags+1))
+                printf "  %-10s rc=%-3s %-14s %s\n" "$v" "$rc" "<none>" "$verdict"
+                printf '%s\n' "$out" | head -3 | sed 's/^/        > /'
+                continue
+              fi
+              p=${m%%/*}; rest=${m#*/}; t=${rest%% *}
+              if [ "$v" = "practice" ]; then
+                if [ "$p" -lt "$t" ]; then verdict="ok(unsolved)"; else verdict="FLAG(practice-solved)"; flags=$((flags+1)); fi
+              else
+                if [ "$p" = "$t" ]; then verdict="ok"; else verdict="FLAG(ref-failed)"; flags=$((flags+1)); fi
+              fi
+              printf "  %-10s rc=%-3s %-14s %s\n" "$v" "$rc" "$m" "$verdict"
+            done
+          done
+          echo
+          echo "SPIKE SUMMARY: flagged=$flags (0 = all three retro ISAs assemble under customasm and run green through the JS cores)."
+          echo "This job opened no PR. Delete the branch when done."
