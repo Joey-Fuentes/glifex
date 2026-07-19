@@ -149,7 +149,7 @@ plus an aggregate `{ results, instructions, spaceBytes, codeBytes }`.
 **and `export-vendor-bundle.yml`** — `vendor-sync.test.mjs` will force the third.
 
 The cache key is a content hash of the pinned inputs (`web/fetch-runtimes.mjs`,
-`tools/**`, `web/runtime-hashes.json`, `web/csharp-runtime/**`), so it
+`tools/**`, `web/runtime-hashes.json`, `web/csharp-runtime/*.cs` / `*.csproj`), so it
 **self-versions**. Adding `tools/<lang>-toolchain/` moves the key on its own,
 there are no `restore-keys`, and a miss is a real miss -- nothing is restored, so
 no step early-exits on `.vendor-complete`.

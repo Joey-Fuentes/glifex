@@ -205,9 +205,11 @@ quietly break. If a diff violates one of these, it is wrong even if CI is green.
    again.
 
 10. **The vendor cache self-versions from its inputs. A manual bump means CI is
-    broken.** Every pin lives in a hashed file -- a `pins.env` under `tools/**`,
-    or `web/fetch-runtimes.mjs` / `web/runtime-hashes.json` /
-    `web/csharp-runtime/**` -- never inline in a workflow. The key is a content
+    broken.** Every pin lives in a hashed file -- a `pins.env` under `tools/**`
+    (the web-runtime fetch pins live in `tools/vendor-pins.env`), or
+    `web/fetch-runtimes.mjs` / `web/runtime-hashes.json` /
+    `web/csharp-runtime/*.cs` / `web/csharp-runtime/*.csproj` -- never inline in
+    a workflow. The key is a content
     hash of exactly those inputs, so changing any pin busts it by construction;
     there is no salt to turn. There are no `restore-keys`, so a miss is a real
     miss: nothing is restored, `.vendor-complete` is absent, and every vendor step
