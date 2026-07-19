@@ -27,7 +27,7 @@ jobs:
           pip install ruff==0.15.20   # pinned: new ruff releases add rules; bump deliberately
           ruff check glifex.py
           ruff format --check glifex.py
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with: { node-version: "24" }
       - name: Biome (JS/TS lint + format check)
         run: npx --yes @biomejs/biome@2.5.4 check web/ languages/templates/ || true   # pinned: new biome releases add rules; bump deliberately
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with: { node-version: "24" }
       - uses: actions/setup-python@v5
         with: { python-version: "3.13" }
@@ -126,7 +126,7 @@ jobs:
       - uses: actions/setup-python@v6
         if: steps.scope.outputs.matrix_skippable != 'true'
         with: { python-version: "3.13" }
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         if: steps.scope.outputs.matrix_skippable != 'true'
         with: { node-version: "24" }
       - uses: actions/setup-go@v6
@@ -199,7 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with: { node-version: "24" }
       - name: Browser JS engine executes the corpus green
         run: |
@@ -226,7 +226,7 @@ jobs:
       pull-requests: read   # read changed-file list to skip the e2e test step on docs-only changes
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with: { node-version: "24" }
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: "10.0.x" }

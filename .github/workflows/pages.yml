@@ -35,7 +35,7 @@ jobs:
           # Falls back to the default ref for workflow_dispatch, which has
           # no workflow_run context at all.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with: { node-version: "24" }
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: "10.0.x" }
