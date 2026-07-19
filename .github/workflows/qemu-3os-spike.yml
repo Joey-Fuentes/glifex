@@ -1,0 +1,134 @@
+name: qemu-3os-spike
+# THROWAWAY probe (handoff s6/s10): attempt all three assembly emulators
+# (x86_64 / arm64 / riscv64 under QEMU user-mode) on ALL THREE runner OSes,
+# best-effort, to map exactly where qemu user-mode actually works. It never
+# hard-fails a leg: each leg reports which cross-compilers and qemu binaries it
+# found, runs what it can, and prints the first output lines when a run yields no
+# result marker (so a failing macOS/Windows leg says WHY). Self-triggers on its
+# own branch, opens NO pull request, and does not touch main CI (ci.yml triggers
+# only on push to main). Delete the branch when finished:
+#   git push origin --delete <this-branch>
+on:
+  push:
+    branches: ['chore/qemu-3os-spike-*']
+
+permissions:
+  contents: read
+
+jobs:
+  qemu-3os:
+    name: qemu-3os (${{ matrix.os }})
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+
+      - name: Install cross gcc + qemu-user-static (Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu qemu-user-static
+
+      - name: Install linux cross toolchains + qemu (macOS, best-effort)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: |
+          brew tap messense/macos-cross-toolchains || true
+          brew install aarch64-unknown-linux-gnu riscv64-unknown-linux-gnu x86_64-unknown-linux-gnu qemu || true
+
+      - name: Note (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: bash
+        run: echo "Windows native has no linux-user qemu or linux-targeting cross-gcc; the run step will report them absent."
+
+      - name: Attempt every asm track under qemu (best-effort; never hard-fails)
+        shell: bash
+        run: |
+          # The runner applies -eo pipefail; this step deliberately runs binaries
+          # that exit nonzero (practice) and probes for tools that may be absent,
+          # so turn both off and drive control flow explicitly.
+          set +e +o pipefail
+          echo "runner OS: $RUNNER_OS"
+
+          pick() { for c in $1; do command -v "$c" >/dev/null 2>&1 && { echo "$c"; return 0; }; done; return 1; }
+          cc_candidates() {
+            case "$1" in
+              asm-x86_64)  if [ "$RUNNER_OS" = "Linux" ]; then echo "gcc x86_64-linux-gnu-gcc"; else echo "x86_64-unknown-linux-gnu-gcc x86_64-linux-gnu-gcc"; fi ;;
+              asm-arm64)   echo "aarch64-linux-gnu-gcc aarch64-unknown-linux-gnu-gcc" ;;
+              asm-riscv64) echo "riscv64-linux-gnu-gcc riscv64-unknown-linux-gnu-gcc" ;;
+            esac
+          }
+          qemu_candidates() {
+            case "$1" in
+              asm-x86_64)  echo "qemu-x86_64-static qemu-x86_64" ;;
+              asm-arm64)   echo "qemu-aarch64-static qemu-aarch64" ;;
+              asm-riscv64) echo "qemu-riscv64-static qemu-riscv64" ;;
+            esac
+          }
+          ld_prefix() {   # dynamic-link fallback sysroot, if we can find one
+            case "$1" in
+              asm-arm64)   for p in /usr/aarch64-linux-gnu; do [ -d "$p" ] && { echo "$p"; return; }; done ;;
+              asm-riscv64) for p in /usr/riscv64-linux-gnu; do [ -d "$p" ] && { echo "$p"; return; }; done ;;
+            esac
+          }
+
+          flags=0; ran=0
+          for arch in asm-x86_64 asm-arm64 asm-riscv64; do
+            CC=$(pick "$(cc_candidates "$arch")")
+            QEMU=$(pick "$(qemu_candidates "$arch")")
+            echo "==================== $RUNNER_OS / $arch  (cc=${CC:-none}  qemu=${QEMU:-none}) ===================="
+            if [ -z "$CC" ] || [ -z "$QEMU" ]; then
+              reason=""
+              [ -z "$CC" ] && reason="cross-gcc absent"
+              [ -z "$QEMU" ] && reason="${reason:+$reason, }qemu absent"
+              echo "  skipped: $reason"
+              continue
+            fi
+            PFX=$(ld_prefix "$arch")
+            for d in problems/*/"$arch"; do
+              [ -d "$d" ] || continue
+              prob=$(basename "$(dirname "$d")")
+              pushd "$d" >/dev/null
+              mode=""
+              if "$CC" -std=c11 -O2 -static -o .glifex_bin harness.c ./*.s 2>/tmp/cc.err; then
+                mode=static
+              elif "$CC" -std=c11 -O2 -o .glifex_bin harness.c ./*.s 2>>/tmp/cc.err; then
+                mode=dynamic
+              else
+                echo "  [BUILD-FAIL] $prob"; sed 's/^/      /' /tmp/cc.err | head -6
+                flags=$((flags+1)); popd >/dev/null; continue
+              fi
+              for v in practice brute-force clean optimized; do
+                [ -f "$v.s" ] || continue
+                if [ "$mode" = "dynamic" ] && [ -n "$PFX" ]; then
+                  out=$(QEMU_LD_PREFIX="$PFX" "$QEMU" ./.glifex_bin "$v" 2>&1); rc=$?
+                else
+                  out=$("$QEMU" ./.glifex_bin "$v" 2>&1); rc=$?
+                fi
+                ran=$((ran+1))
+                m=$(printf '%s\n' "$out" | grep -oE '[0-9]+/[0-9]+ passed' | tail -1)
+                if [ -z "$m" ]; then
+                  verdict="NO-MARKER"; flags=$((flags+1))
+                  printf "  %-16s %-12s [%s] rc=%-3s %-14s %s\n" "$prob" "$v" "$mode" "$rc" "<none>" "$verdict"
+                  printf '%s\n' "$out" | head -2 | sed 's/^/        > /'
+                  continue
+                fi
+                p=${m%%/*}; rest=${m#*/}; t=${rest%% *}
+                if [ "$v" = "practice" ]; then
+                  if [ "$p" -lt "$t" ]; then verdict="ok(unsolved)"; else verdict="FLAG(practice-solved)"; flags=$((flags+1)); fi
+                else
+                  if [ "$p" = "$t" ]; then verdict="ok"; else verdict="FLAG(ref-failed)"; flags=$((flags+1)); fi
+                fi
+                printf "  %-16s %-12s [%s] rc=%-3s %-14s %s\n" "$prob" "$v" "$mode" "$rc" "$m" "$verdict"
+              done
+              rm -f .glifex_bin
+              popd >/dev/null
+            done
+          done
+          echo
+          echo "SPIKE SUMMARY [$RUNNER_OS]: ran=$ran flagged=$flags  (a green leg does NOT mean all-worked; read the table)."
+          echo "This job opened no PR. Delete the branch when done."
