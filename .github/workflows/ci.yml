@@ -163,11 +163,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Detect docs-only change (pass e2e vacuously if so)
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            range="${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+          else
+            range="${{ github.event.before }}...${{ github.sha }}"
+          fi
+          changed=$(git diff --name-only $range 2>/dev/null || true)
+          echo "changed files ($range):"; echo "$changed"
+          nonbenign=$(echo "$changed" | grep -vE '^(docs/|.*\.md$|(.*/)?LICENSE$|\.gitignore$)' || true)
+          if [ -n "$changed" ] && [ -z "$nonbenign" ]; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+            echo "ONLY DOCS/BENIGN FILES TOUCHED IN THIS CI... NO E2E NEEDED... PASSING VACUOUSLY"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "non-doc changes (or unknown diff) -- running full e2e"
+          fi
       - uses: actions/setup-node@v6
+        if: steps.gate.outputs.docs_only != 'true'
         with: { node-version: "24" }
       - uses: actions/setup-dotnet@v4
+        if: steps.gate.outputs.docs_only != 'true'
         with: { dotnet-version: "10.0.x" }
       - name: Cache Playwright browsers + npm
+        if: steps.gate.outputs.docs_only != 'true'
         id: pw-cache
         uses: actions/cache@v6
         with:
@@ -176,6 +199,7 @@ jobs:
             ~/.npm
           key: playwright-${{ runner.os }}-1.61.1
       - name: Install Playwright
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           npm init -y >/dev/null
           npm install -D @playwright/test@1.61.1
@@ -183,18 +207,22 @@ jobs:
           # --with-deps still ensures the OS libs. Cache key is the pinned version.
           npx playwright install --with-deps chromium firefox
       - uses: actions/setup-go@v6
+        if: steps.gate.outputs.docs_only != 'true'
         with: { go-version: "1.25" }
       - name: Restore vendored runtimes cache
+        if: steps.gate.outputs.docs_only != 'true'
         id: vendor
         uses: actions/cache/restore@v6
         with:
           path: web/vendor
           key: vendor-v8-ci-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', '.github/workflows/ci.yml') }}
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           ok=0; for i in 1 2 3; do node web/fetch-runtimes.mjs && { ok=1; break; }; rc=$?; [ "$rc" = 3 ] && { echo "fetch-runtimes: integrity failure (rc=3) -- not retrying"; break; }; echo "fetch-runtimes attempt $i failed (rc=$rc); retry 20s"; sleep 20; done; [ "$ok" = 1 ]
       - name: Vendor C toolchain (@wasmer/sdk + clang.webc)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           mkdir -p web/vendor/c
@@ -209,6 +237,7 @@ jobs:
           echo '{"runtime":"c","via":"wasmer"}' > web/vendor/c/manifest.json
           ls -la web/vendor/c
       - name: Vendor C++ toolchain (Binji wasm-clang)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           mkdir -p web/vendor/cpp
@@ -225,6 +254,7 @@ jobs:
           ls -la web/vendor/cpp
           test "$(stat -c%s web/vendor/cpp/clang)" -gt 1000000 || { echo "clang too small (LFS pointer?)"; exit 1; }
       - name: Vendor C# runtime (.NET-wasm + Roslyn via dotnet publish)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           dotnet workload install wasm-tools
@@ -238,6 +268,7 @@ jobs:
           ls -la web/vendor/csharp | head
           test "$(stat -c%s web/vendor/csharp/dotnet.native.wasm)" -gt 1000000 || { echo "dotnet.native.wasm too small (publish failed?)"; exit 1; }
       - name: Vendor Rust runtime (Miri-in-wasm via Rubri)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           git clone --depth 1 --branch 1.78-dev https://github.com/LyonSyonII/rubri /tmp/rubri || git clone --depth 1 https://github.com/LyonSyonII/rubri /tmp/rubri
@@ -251,11 +282,13 @@ jobs:
           test "$(stat -c%s web/vendor/rust/wasm-rustc/bin/miri.wasm)" -gt 1000000 || { echo "miri.wasm too small"; exit 1; }
           N=$(find web/vendor/rust/wasm-rustc -type f | wc -l); echo "rust vendor files: $N"; test "$N" -eq 24
       - name: Vendor Go toolchain (gc self-hosted to wasip1/wasm)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           bash tools/go-vendor.sh web/vendor/go
           du -sh web/vendor | sed 's/^/all vendored runtimes: /'
       - name: Vendor x86-64 toolchain (robalb/x86-64-playground, pinned)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           mkdir -p web/vendor/asm-x86_64
@@ -273,16 +306,19 @@ jobs:
           test "$(stat -c%s web/vendor/asm-x86_64/gnu-ld.elf)" -gt 1000000 || { echo "gnu-ld.elf too small (fetch failed?)"; exit 1; }
           echo "{\"runtime\":\"asm-x86_64\",\"via\":\"robalb/x86-64-playground@$REF\",\"blink\":\"ISC\",\"binutils\":\"2.43.50 (GPL-3.0)\"}" > web/vendor/asm-x86_64/manifest.json
       - name: Resolve emsdk version pin
+        if: steps.gate.outputs.docs_only != 'true'
         id: emsdkver
         run: |
           . tools/arm64-toolchain/pins.env
           echo "v=$EMSDK_VERSION" >> "$GITHUB_OUTPUT"
       - name: Cache emsdk (survives vendor-cache busts; keyed on EMSDK_VERSION)
+        if: steps.gate.outputs.docs_only != 'true'
         uses: actions/cache@v6
         with:
           path: ~/emsdk
           key: emsdk-${{ steps.emsdkver.outputs.v }}
       - name: Vendor arm64 toolchain (VIXL wasm32 + musl binutils, pinned)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           sudo apt-get update
@@ -313,6 +349,7 @@ jobs:
           # around n=256 and looks like a hash bug, not a stack bug.
           node tools/arm64-toolchain/verify-stack.mjs web/vendor/asm-arm64
       - name: Vendor riscv64 toolchain (libriscv wasm32 + musl binutils, pinned)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           sudo apt-get install -y binutils-riscv64-linux-gnu >/dev/null
@@ -340,10 +377,12 @@ jobs:
           # RISCV_EXT_C=OFF fails at ELF LOAD, so only running something catches it.
           node tools/riscv-toolchain/verify-riscv.mjs web/vendor/asm-riscv64
       - uses: dart-lang/setup-dart@v1
+        if: steps.gate.outputs.docs_only != 'true'
         with:
           sdk: "3.12.2"   # pins.env DART_SDK_VERSION. NOT "stable" -- a pin that
                           # drifts is a cache key that lies. See tools/dart-toolchain/pins.env.
       - name: Vendor Dart toolchain (dart2js self-hosted to JS, pinned + patched)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           . tools/dart-toolchain/pins.env
@@ -363,14 +402,17 @@ jobs:
       # Decision 10 records. Out here it runs on hit and miss alike, against the
       # artifacts the cache just restored.
       - name: Verify the Dart core against the real compiler and the real corpus
+        if: steps.gate.outputs.docs_only != 'true'
         run: node tools/dart-toolchain/verify-dart-worker.mjs web/vendor/dart
       - uses: actions/setup-java@v4
+        if: steps.gate.outputs.docs_only != 'true'
         with: { distribution: temurin, java-version: "25" }   # pins.env TEAVM_JAVAC_JDK.
                                                               # NOT the README's 21: settings.gradle
                                                               # sets VERSION_25 and :javac compiles
                                                               # jdk25u source. build-teavm-javac.sh
                                                               # refuses if these disagree.
       - name: Vendor Java toolchain (teavm-javac built from pinned source)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           . tools/java-toolchain/pins.env
@@ -383,6 +425,7 @@ jobs:
           # builds to exactly the right size and compiles nothing.
           node tools/java-toolchain/verify-java.mjs web/vendor/java
       - name: Vendor asm-6502 (customasm built from pinned source)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
           . tools/customasm-toolchain/pins.env
@@ -393,21 +436,24 @@ jobs:
           # the assembler the retro worker can actually drive.
           node tools/customasm-toolchain/verify-customasm.mjs web/vendor/asm-6502
       - name: Mark vendor complete (cached for future runs)
+        if: steps.gate.outputs.docs_only != 'true'
         run: touch web/vendor/.vendor-complete
       - name: Verify vendored runtime integrity
+        if: steps.gate.outputs.docs_only != 'true'
         run: node web/fetch-runtimes.mjs --verify
       - name: Save vendored runtimes cache
-        if: always() && steps.vendor.outputs.cache-hit != 'true' && hashFiles('web/vendor/.vendor-complete') != ''
+        if: always() && steps.gate.outputs.docs_only != 'true' && steps.vendor.outputs.cache-hit != 'true' && hashFiles('web/vendor/.vendor-complete') != ''
         uses: actions/cache/save@v6
         with:
           path: web/vendor
           key: vendor-v8-ci-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', '.github/workflows/ci.yml') }}
       - name: Build corpus & run E2E (incl. offline-mode test)
+        if: steps.gate.outputs.docs_only != 'true'
         run: |
           node web/build.mjs
           npx playwright test e2e/ --config e2e/playwright.config.js
       - name: Upload traces on failure
-        if: failure()
+        if: failure() && steps.gate.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: playwright-traces
