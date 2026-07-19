@@ -72,6 +72,9 @@ jobs:
     timeout-minutes: 40
     name: glifex test (${{ matrix.os }})
     needs: [lint, corpus]
+    permissions:
+      contents: read
+      pull-requests: read   # read changed-file list to skip the CLI matrix on browser/docs-only changes
     strategy:
       fail-fast: false
       matrix:
@@ -79,38 +82,93 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      - name: Determine if this change is irrelevant to the CLI matrix (gates the steps below)
+        id: scope
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # matrix_skippable=true ONLY when every changed file is provably irrelevant
+          # to `glifex.py test/verify/db test` -- i.e. under the browser/docs/meta
+          # safelist below. Anything else (glifex.py, languages/, problems/,
+          # problems-db/, .github/, build files, unknown paths) -> false (run).
+          # Any uncertainty (API error, empty list, unknown event) -> false.
+          # Gates ONLY this job's steps; other jobs (e2e, playground) are unaffected.
+          set -uo pipefail
+          files=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files="$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --jq '.[].filename' 2>/dev/null)" || files="__ERR__"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            base="${{ github.event.before }}"
+            case "$base" in *[!0]*) : ;; *) base="" ;; esac
+            if [ -n "$base" ]; then
+              files="$(gh api "repos/${{ github.repository }}/compare/${base}...${{ github.sha }}" --jq '.files[].filename' 2>/dev/null)" || files="__ERR__"
+            else
+              files="__ERR__"
+            fi
+          else
+            files="__ERR__"
+          fi
+          if [ "$files" = "__ERR__" ] || [ -z "$files" ]; then
+            echo "changed-file list unavailable/empty -- running the CLI matrix to be safe"
+            echo "matrix_skippable=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          relevant="$(printf '%s\n' "$files" | grep -vE '^docs/|\.md$|^web/|^e2e/|^problems-fe/|^retro/|^tools/|^\.vscode/|^\.devcontainer/|^\.editorconfig$|^\.gitattributes$|^\.gitignore$|^\.pre-commit-config\.yaml$|^LICENSE$' || true)"
+          if [ -z "$relevant" ]; then
+            echo "no CLI-relevant files changed -- the glifex test matrix will be skipped:"
+            printf '%s\n' "$files" | sed 's/^/  skip: /'
+            echo "matrix_skippable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "CLI-relevant files changed -- the matrix will run. Relevant files:"
+            printf '%s\n' "$relevant" | sed 's/^/  run:  /'
+            echo "matrix_skippable=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-python@v6
+        if: steps.scope.outputs.matrix_skippable != 'true'
         with: { python-version: "3.13" }
       - uses: actions/setup-node@v6
+        if: steps.scope.outputs.matrix_skippable != 'true'
         with: { node-version: "24" }
       - uses: actions/setup-go@v6
+        if: steps.scope.outputs.matrix_skippable != 'true'
         with: { go-version: "1.25" }
       - uses: actions/setup-java@v4
+        if: steps.scope.outputs.matrix_skippable != 'true'
         with: { distribution: temurin, java-version: "25" }
       - uses: ruby/setup-ruby@v1
+        if: steps.scope.outputs.matrix_skippable != 'true'
         with: { ruby-version: "3.4" }
       - uses: actions/setup-dotnet@v4
+        if: steps.scope.outputs.matrix_skippable != 'true'
         with: { dotnet-version: "10.0.x" }
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.scope.outputs.matrix_skippable != 'true'
       - uses: shivammathur/setup-php@v2
+        if: steps.scope.outputs.matrix_skippable != 'true'
         with: { php-version: "8.4" }
       - uses: dart-lang/setup-dart@v1
+        if: steps.scope.outputs.matrix_skippable != 'true'
       - uses: mlugg/setup-zig@v1
+        if: steps.scope.outputs.matrix_skippable != 'true'
         with: { version: "0.14.0" }
       # C/C++ use the runners' system compilers (gcc/clang preinstalled on
       # ubuntu/macos; Windows runners include MinGW gcc — doctor skips if absent)
       - name: TypeScript
+        if: steps.scope.outputs.matrix_skippable != 'true'
         run: npm install -g typescript@7.0.2   # pinned; bump deliberately
       - name: WABT (WebAssembly Text toolchain)
+        if: steps.scope.outputs.matrix_skippable != 'true'
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then sudo apt-get update -qq && sudo apt-get install -y wabt; fi
           if [ "$RUNNER_OS" = "macOS" ]; then brew install wabt; fi
           # Windows: wabt not installed — wat skips honestly on that leg
       - name: Toolchain report
+        if: steps.scope.outputs.matrix_skippable != 'true'
         run: python3 glifex.py doctor || python glifex.py doctor
         shell: bash
       - name: Test all problems, all installed languages
+        if: steps.scope.outputs.matrix_skippable != 'true'
         shell: bash
         run: |
           PY=python3; command -v python3 >/dev/null || PY=python
@@ -118,6 +176,7 @@ jobs:
             $PY glifex.py test "$(basename "$p")"
           done
       - name: Verify manifests + reference variants (glifex verify)
+        if: steps.scope.outputs.matrix_skippable != 'true'
         shell: bash
         run: |
           PY=python3; command -v python3 >/dev/null || PY=python
@@ -125,6 +184,7 @@ jobs:
             $PY glifex.py verify "$(basename "$p")"
           done
       - name: Database track (SQLite engine)
+        if: steps.scope.outputs.matrix_skippable != 'true'
         shell: bash
         run: |
           PY=python3; command -v python3 >/dev/null || PY=python
