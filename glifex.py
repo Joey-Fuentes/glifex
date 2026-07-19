@@ -6,7 +6,7 @@ One CLI, driven entirely by the plugin registry in languages/*.toml.
 Adding a language is a plugin file, never an edit to this runner.
 
 Usage:
-    glifex test   <problem> [language] [variant]   # correctness (default variant: practice)
+    glifex test   <problem> [language] [variant]   # references must solve; practice must run but not solve
     glifex run    <problem> <language> [variant]    # run a variant, print its output
     glifex bench  <problem> <language> [variant]    # coarse timing (see STATUS.md)
     glifex new    <problem>                          # scaffold an algorithm problem
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -164,71 +165,141 @@ def _arch_ok(spec: dict) -> bool:
     return aliases.get(have, have) == aliases.get(want.lower(), want.lower())
 
 
-def _run_variant(prob: Path, name: str, spec: dict, variant: str, mode: str) -> bool | None:
-    """True = ran & passed, False = ran & failed, None = skipped."""
+# Every language's harness prints one final "N/M passed" line and nothing else
+# reports the tally. That line is the reliable "the harness ran to completion"
+# signal: on a compile error the build short-circuits (`compile && run`) and the
+# harness never runs, so the marker is absent. Parsing it lets us tell "built,
+# ran, got the wrong answer" (marker present, passed<total) apart from "did not
+# build / crashed" (marker absent) -- a distinction a bare exit code cannot make,
+# since gcc-failed and harness-failed both exit 1.
+_MARKER = re.compile(r"(\d+)\s*/\s*(\d+)\s+passed")
+
+
+class Outcome:
+    """Result of running one variant.
+
+    state == "skip"    -> not applicable on this machine (no toolchain / wrong
+                          arch or OS / no language dir). Not a failure.
+    state == "nobuild" -> the command ran but no "N/M passed" line appeared:
+                          a compile error, a crash, or a harness that never
+                          finished. The variant is not runnable here.
+    state == "ran"     -> the harness completed; .passed / .total hold the tally.
+    """
+
+    def __init__(self, state: str, passed: int | None = None, total: int | None = None):
+        self.state, self.passed, self.total = state, passed, total
+
+    @property
+    def solved(self) -> bool:
+        return self.state == "ran" and self.passed == self.total
+
+
+def _run_variant(prob: Path, name: str, spec: dict, variant: str, mode: str) -> Outcome:
+    """Run one (language, variant). For mode='test' the output is captured and
+    the result marker parsed into an Outcome. For 'run'/'bench' the output
+    streams live and an Outcome('ran') is returned (callers ignore it)."""
     langdir = prob / name
     if not langdir.is_dir():
         print(dim(f"  {name}: no {name}/ folder in this problem — skipping"))
-        return None
+        return Outcome("skip")
     if not _arch_ok(spec):
         print(dim(f"  {name}: requires {spec['arch']} (this machine isn't) — skipping"))
-        return None
+        return Outcome("skip")
     if not _platform_ok(spec):
         print(dim(f"  {name}: not supported on this OS ({', '.join(spec['platforms'])} only) — skipping"))
-        return None
+        return Outcome("skip")
     exe = (spec.get("detect") or "x").split()[0]
     if not shutil.which(exe):
         print(dim(f"  {name}: toolchain not installed — skipping (run `glifex doctor`)"))
-        return None
+        return Outcome("skip")
     key = {"test": "test_cmd", "run": "run_cmd", "bench": "bench_cmd"}[mode]
     cmd = _build_cmd(spec, key, variant) or _build_cmd(spec, "test_cmd", variant)
-    r = run_cmd(cmd, langdir)
-    return r.returncode == 0
+    if mode != "test":
+        run_cmd(cmd, langdir)  # stream live; return value unused by run/bench
+        return Outcome("ran")
+    r = run_cmd(cmd, langdir, capture=True)
+    out = (r.stdout or "") + (r.stderr or "")
+    if out:
+        sys.stdout.write(out if out.endswith("\n") else out + "\n")
+    last = None
+    for line in out.splitlines():
+        m = _MARKER.search(line)
+        if m:
+            last = m
+    if not last:
+        return Outcome("nobuild")
+    return Outcome("ran", int(last.group(1)), int(last.group(2)))
 
 
-def _worked_example(prob: Path) -> bool:
-    import tomllib
-
+def _declared_variants(prob: Path) -> dict[str, list[str]]:
+    """{language: [declared variants]} from the problem manifest — the single
+    source of truth for what a problem actually ships and expects tested."""
     m = prob / "manifest.toml"
     if not m.exists():
-        return False
-    try:
-        return bool(tomllib.loads(m.read_text(encoding="utf-8")).get("problem", {}).get("worked_example", False))
-    except Exception:
-        return False
+        return {}
+    data = tomllib.loads(m.read_text(encoding="utf-8"))
+    return {lang: list(info.get("variants", [])) for lang, info in (data.get("languages") or {}).items()}
+
+
+def _judge(variant: str, o: Outcome) -> tuple[bool | None, str]:
+    """Compare an Outcome against what the variant is contractually supposed to
+    do. Returns (ok, label): ok True = met expectation, False = did not,
+    None = skipped (no toolchain here). PRACTICE is a deliberate stub: it must
+    build and run but must NOT solve the problem. Every other variant is a
+    reference and must pass every case."""
+    if o.state == "skip":
+        return None, "skipped"
+    if o.state == "nobuild":
+        return False, "did not build / run (no result reported)"
+    tally = f"{o.passed}/{o.total}"
+    if variant == "practice":
+        if o.solved:
+            return False, f"UNEXPECTEDLY SOLVED ({tally}) — practice must ship an unsolved stub"
+        return True, f"correctly unsolved ({tally})"
+    if o.solved:
+        return True, tally
+    return False, f"{tally} — a reference must pass every case"
 
 
 def cmd_test(args):
     prob = resolve_problem(args.problem)
     langs = load_languages()
-    variant = args.variant or "practice"
-    targets = [args.language] if args.language else list(langs.keys())
-    # RELAXED (Bx / compiler build-out): a non-worked problem ships BLANK practice
-    # stubs, so bulk-testing 'practice' across all languages is meaningless. Skip it
-    # (references are still checked by `glifex verify`). An explicit language/variant
-    # (e.g. verify's reference runs) still executes. Re-tighten when stubs get filled.
-    if not args.language and variant == "practice" and not _worked_example(prob):
-        print(
-            dim(
-                f"\n{prob.name}: non-worked problem — blank practice stubs; skipping bulk practice test (references checked by `glifex verify`)\n"
-            )
-        )
-        return
-    print(bold(f"\n{prob.name}  ·  variant={variant}\n"))
-    results = {}
+    declared = _declared_variants(prob)
+    if args.language and args.language not in langs:
+        sys.exit(red(f"unknown language '{args.language}'"))
+    targets = [args.language] if args.language else list(declared.keys())
+    print(bold(f"\n{prob.name}\n"))
+    passed = failed = skipped = 0
+    fails: list[str] = []
     for name in targets:
         if name not in langs:
-            print(red(f"  unknown language '{name}'"))
+            print(red(f"  {name}: declared but not in the language registry"))
+            failed += 1
+            fails.append(name)
+            continue
+        variants = [args.variant] if args.variant else declared.get(name, [])
+        if not variants:
             continue
         print(dim(f"── {name} ──"))
-        results[name] = _run_variant(prob, name, langs[name], variant, "test")
+        for v in variants:
+            o = _run_variant(prob, name, langs[name], v, "test")
+            ok, label = _judge(v, o)
+            tag = f"{name}/{v}"
+            if ok is None:
+                skipped += 1
+            elif ok:
+                passed += 1
+                print(green(f"  ✓ {tag}: {label}"))
+            else:
+                failed += 1
+                fails.append(tag)
+                print(red(f"  ✗ {tag}: {label}"))
     print()
-    ran_pass = sum(1 for v in results.values() if v is True)
-    ran_fail = sum(1 for v in results.values() if v is False)
-    skipped = sum(1 for v in results.values() if v is None)
-    line = f"{ran_pass} passed, {ran_fail} failed, {skipped} skipped ({len(results)} registered)"
-    print(red(line) if ran_fail else green(line))
-    sys.exit(1 if ran_fail else 0)
+    line = f"{passed} passed, {failed} failed, {skipped} skipped"
+    print(red(line) if failed else green(line))
+    if failed:
+        print(red("  failing: " + ", ".join(fails)))
+    sys.exit(1 if failed else 0)
 
 
 def cmd_run(args):
@@ -333,9 +404,10 @@ def cmd_verify(args):
     Static: manifest parses; floor languages declared (or exempted); every
     declared language x variant file exists; every existing language dir is
     declared or excluded; complexity present per declared variant, whitelist
-    notation, optimized <= practice. Then (unless --static) runs clean and
-    optimized for every declared language via the normal test path (installed
-    toolchains run; missing ones skip, exactly like `glifex test`).
+    notation, optimized <= practice. Then (unless --static) runs EVERY declared
+    variant of every declared language via the normal test path — so references
+    are confirmed to pass and practice stubs are confirmed to build, run, and
+    NOT solve (installed toolchains run; missing ones skip, like `glifex test`).
     """
     import subprocess
     import sys as _sys
@@ -377,7 +449,6 @@ def cmd_verify(args):
     excluded = man.get("exclusions", {})
     exempt = man.get("exemptions", {})
     comp = man.get("complexity", {})
-    worked = man.get("problem", {}).get("worked_example", False)
 
     def variant_file(lang, variant):
         pf = registry[lang]["practice_file"]
@@ -387,9 +458,7 @@ def cmd_verify(args):
 
     for lang in FLOOR:
         if lang not in declared and lang not in exempt:
-            m = f"floor language '{lang}' not declared (add it, or a reviewer-approved [exemptions] entry)"
-            # RELAXED for non-worked problems during compiler build-out (see ROADMAP Bx). Re-tighten later.
-            (errors if worked else warnings).append(m if worked else m + " [relaxed: non-worked]")
+            errors.append(f"floor language '{lang}' not declared (add it, or a reviewer-approved [exemptions] entry)")
     for lang, reason in exempt.items():
         warnings.append(f"exemption: {lang} - {reason} (requires reviewer sign-off)")
 
@@ -435,14 +504,9 @@ def cmd_verify(args):
 
         n_cases = len(_json.loads(tc.read_text(encoding="utf-8")))
         if n_cases < 6:
-            m = f"only {n_cases} test cases - minimum is 6, including edge classes (see policy)"
-            # RELAXED for non-worked problems during compiler build-out (see ROADMAP Bx). Re-tighten later.
-            (errors if worked else warnings).append(m if worked else m + " [relaxed: non-worked]")
+            errors.append(f"only {n_cases} test cases - minimum is 6, including edge classes (see policy)")
     else:
         errors.append("test_cases.json missing")
-
-    if not worked:
-        warnings.append("practice stubs must be BLANK for new problems (reviewer-checked)")
 
     for w in warnings:
         print(f"  ! {w}")
@@ -457,21 +521,24 @@ def cmd_verify(args):
         print(f"{prob.name}: verify (static) PASSED")
         return
 
+    # Run every declared variant through the normal test path. `glifex test`
+    # already encodes each variant's contract in its exit code (references must
+    # solve; practice must build+run+NOT solve), so a nonzero exit here means
+    # that contract was broken on an installed toolchain.
     failed = []
     for lang in declared:
-        for v in ("clean", "optimized"):
-            if v not in declared[lang].get("variants", []):
-                continue
+        for v in declared[lang].get("variants", []):
             r = subprocess.run(
                 [_sys.executable, str(root / "glifex.py"), "test", prob.name, lang, v], capture_output=True, text=True
             )
             if r.returncode != 0:
                 failed.append(f"{lang}/{v}")
-                print(f"  x reference run failed: {lang} {v}")
+                print(f"  x variant check failed: {lang} {v}")
+                print("    " + "\n    ".join((r.stdout or r.stderr or "").strip().splitlines()[-3:]))
     if failed:
-        print(f"\n{prob.name}: verify FAILED - broken references: {', '.join(failed)}")
+        print(f"\n{prob.name}: verify FAILED - {', '.join(failed)}")
         _sys.exit(1)
-    print(f"{prob.name}: verify PASSED (references green on every installed toolchain)")
+    print(f"{prob.name}: verify PASSED (every declared variant met its contract on each installed toolchain)")
 
 
 def cmd_sync_harnesses(args):

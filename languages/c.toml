@@ -9,5 +9,5 @@ run_cmd = "gcc -std=c11 -O2 -o .glifex_bin *.c -lm && ./.glifex_bin {variant}"
 bench_cmd = "gcc -std=c11 -O2 -o .glifex_bin *.c -lm && ./.glifex_bin {variant} --bench"
 harness_template = "harness.c"
 tool_version = "gcc 14"
-stub = "#include \"solution.h\"\n\nJVal *solve(JVal *c) {\n    /* TODO: implement */\n    fprintf(stderr, \"not implemented\\n\");\n    exit(2);\n}\n"
+stub = "#include \"solution.h\"\n\nJVal *solve(JVal *c) {\n    /* TODO: implement -- return the answer for input c */\n    (void)c;\n    return jnew(J_NULL);\n}\n"
 support_files = ["solution.h", "json.h"]

@@ -7,4 +7,4 @@ test_cmd = "swiftc -O -o .glifex_bin *.swift && ./.glifex_bin {variant}"
 run_cmd = "swiftc -O -o .glifex_bin *.swift && ./.glifex_bin {variant}"
 harness_template = "main.swift"   # Swift: top-level statements only legal in main.swift
 tool_version = "swift 6.0"
-stub = "import Foundation\n\nfunc {variant}(_ c: [String: Any]) -> Any {\n    // TODO: implement\n    fatalError(\"not implemented\")\n}\n"
+stub = "import Foundation\n\nfunc {variant}(_ c: [String: Any]) -> Any {\n    // TODO: implement\n    return NSNull()\n}\n"

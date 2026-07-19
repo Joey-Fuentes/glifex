@@ -8,5 +8,5 @@ run_cmd = "go run . {variant}"
 bench_cmd = "go test -bench ."
 harness_template = "main.go"
 tool_version = "go 1.25"
-stub = "package main\n\nfunc {variant}(c map[string]any) any {\n\t// TODO: implement\n\tpanic(\"not implemented\")\n}\n"
+stub = "package main\n\nfunc {variant}(c map[string]any) any {\n\t// TODO: implement\n\treturn nil\n}\n"
 support_files = ["bench_test.go"]

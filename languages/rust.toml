@@ -9,5 +9,5 @@ run_cmd = "rustc -O --edition 2021 -o .glifex_bin main.rs && ./.glifex_bin {vari
 bench_cmd = "rustc -O --edition 2021 -o .glifex_bin main.rs && ./.glifex_bin {variant} --bench"
 harness_template = "main.rs"
 tool_version = "rust 1.85"
-stub = "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    // TODO: implement\n    unimplemented!()\n}\n"
+stub = "use crate::json::JVal;\n\npub fn solve(c: &JVal) -> JVal {\n    // TODO: implement\n    let _ = c;\n    JVal::Null\n}\n"
 support_files = ["json.rs"]
