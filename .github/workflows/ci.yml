@@ -683,6 +683,7 @@ jobs:
       security-events: write
       contents: read
       actions: read
+      pull-requests: read   # read changed-file list to skip CodeQL when no scanned source changed
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -690,6 +691,53 @@ jobs:
         language: [javascript-typescript, python]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+      - name: Determine if ${{ matrix.language }} sources changed (gates CodeQL init/analyze)
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # codeql_skippable=true when no changed file is a source CodeQL scans for THIS
+          # language (JS/TS: js/jsx/ts/tsx/mjs/cjs/html; Python: py/pyi + pyproject.toml).
+          # Any uncertainty (API error, empty/unknown event) -> false, so CodeQL runs.
+          # Only init/analyze are gated: the JOB still runs and reports "success" (skipped
+          # steps do not make a job "skipped"), so ci-status-gate passes on a skip and still
+          # blocks if a real analysis fails.
+          set -uo pipefail
+          case "${{ matrix.language }}" in
+            javascript-typescript) rx='\.(js|jsx|ts|tsx|mjs|cjs|html|htm)$' ;;
+            python) rx='\.pyi?$|(^|/)pyproject\.toml$' ;;
+            *) rx='.' ;;   # unknown language -> match everything -> never skip
+          esac
+          files=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files="$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --jq '.[].filename' 2>/dev/null)" || files="__ERR__"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            base="${{ github.event.before }}"
+            case "$base" in *[!0]*) : ;; *) base="" ;; esac   # all-zero base (new ref) -> unknown
+            if [ -n "$base" ]; then
+              files="$(gh api "repos/${{ github.repository }}/compare/${base}...${{ github.sha }}" --jq '.files[].filename' 2>/dev/null)" || files="__ERR__"
+            else
+              files="__ERR__"
+            fi
+          else
+            files="__ERR__"
+          fi
+          if [ "$files" = "__ERR__" ] || [ -z "$files" ]; then
+            echo "changed-file list unavailable/empty -- running CodeQL to be safe"
+            echo "codeql_skippable=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          hits="$(printf '%s\n' "$files" | grep -E "$rx" || true)"
+          if [ -z "$hits" ]; then
+            echo "no ${{ matrix.language }} source changed -- CodeQL analysis will be skipped:"
+            printf '%s\n' "$files" | sed 's/^/  unscanned: /'
+            echo "codeql_skippable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "${{ matrix.language }} source changed -- CodeQL will run:"
+            printf '%s\n' "$hits" | sed 's/^/  code: /'
+            echo "codeql_skippable=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a  # v4
+        if: steps.scope.outputs.codeql_skippable != 'true'
         with: { languages: "${{ matrix.language }}" }
       - uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a  # v4
+        if: steps.scope.outputs.codeql_skippable != 'true'
