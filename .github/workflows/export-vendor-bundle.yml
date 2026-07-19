@@ -121,7 +121,7 @@ jobs:
 
       - name: Vendor Go toolchain (gc self-hosted to wasip1/wasm)
         run: bash tools/go-vendor.sh web/vendor/go
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260  # v1
         with:
           sdk: "3.12.2"   # pins.env DART_SDK_VERSION. NOT "stable" -- a pin that
                           # drifts is a cache key that lies. See tools/dart-toolchain/pins.env.
