@@ -261,7 +261,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: web/vendor
-          key: vendor-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', 'web/runtime-hashes.json', 'web/csharp-runtime/**') }}
+          key: vendor-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', 'web/runtime-hashes.json', 'web/csharp-runtime/*.cs', 'web/csharp-runtime/*.csproj') }}
       - name: Vendor WASM runtimes (Python/Ruby/TypeScript/Postgres)
         run: |
           if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
@@ -480,7 +480,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: web/vendor
-          key: vendor-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', 'web/runtime-hashes.json', 'web/csharp-runtime/**') }}
+          key: vendor-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', 'web/runtime-hashes.json', 'web/csharp-runtime/*.cs', 'web/csharp-runtime/*.csproj') }}
       - name: Determine if the change is docs-only (gates the e2e test step below)
         id: scope
         env:
