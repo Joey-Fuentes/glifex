@@ -8,5 +8,7 @@ scaffold = false
 detect = "gcc --version"
 install_hint = "gcc assembles .s natively on ARM64 hosts (Apple Silicon, RPi, Graviton)"
 test_cmd = "gcc -O2 -o .glifex_bin harness.c *.s && ./.glifex_bin {variant}"
+# Linux-only qemu-user fallback when the host arch is not aarch64 (glifex fills {cross}/{qemu}).
+emu_test_cmd = "{cross} -O2 -static -o .glifex_bin harness.c *.s && {qemu} ./.glifex_bin {variant}"
 run_cmd = "gcc -O2 -o .glifex_bin harness.c *.s && ./.glifex_bin {variant}"
 tool_version = "gcc 14"

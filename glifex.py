@@ -119,8 +119,13 @@ def cmd_doctor(args):
                 found = r.returncode == 0
                 version = (r.stdout or r.stderr or "").strip().splitlines()[0] if found else ""
         if found and not _arch_ok(spec):
+            emu = _emu_tools(spec)
+            if emu:
+                print(f"  {green('✓')}  {name:<12} {dim('via qemu-user (' + emu[1] + ') — cross-built, emulated')}")
+                ok += 1
+                continue
             print(
-                f"  {dim('−')}  {name:<12} {dim('toolchain present but needs ' + spec['arch'] + ' hardware — will skip')}"
+                f"  {dim('−')}  {name:<12} {dim('toolchain present but needs ' + spec['arch'] + ' hardware (no qemu-user here) — will skip')}"
             )
             continue
         mark = green("✓") if found else red("✗")
@@ -165,6 +170,35 @@ def _arch_ok(spec: dict) -> bool:
     return aliases.get(have, have) == aliases.get(want.lower(), want.lower())
 
 
+# qemu-user runs a guest of ANY arch on ANY Linux host (it emulates the guest CPU
+# and translates its syscalls), so a Linux box whose native arch doesn't match an
+# asm track can still build for the target with a cross-gcc and run under qemu.
+# Map: target arch -> (cross compiler, static qemu-user binary). All three guest
+# emulators ship in the single qemu-user-static package regardless of host arch.
+_EMU = {
+    "x86_64": ("x86_64-linux-gnu-gcc", "qemu-x86_64-static"),
+    "aarch64": ("aarch64-linux-gnu-gcc", "qemu-aarch64-static"),
+    "riscv64": ("riscv64-linux-gnu-gcc", "qemu-riscv64-static"),
+}
+
+
+def _emu_tools(spec: dict):
+    """If this asm track can't run natively but CAN be emulated here, return
+    (cross_gcc, qemu_static); else None. Requires Linux, an emu_test_cmd in the
+    spec, and both the cross compiler and the qemu-user binary on PATH."""
+    if sys.platform != "linux" or not spec.get("emu_test_cmd"):
+        return None
+    want = spec.get("arch")
+    if not want:
+        return None
+    aliases = {"amd64": "x86_64", "arm64": "aarch64"}
+    pair = _EMU.get(aliases.get(want.lower(), want.lower()))
+    if not pair:
+        return None
+    cc, qemu = pair
+    return (cc, qemu) if (shutil.which(cc) and shutil.which(qemu)) else None
+
+
 # Every language's harness prints one final "N/M passed" line and nothing else
 # reports the tally. That line is the reliable "the harness ran to completion"
 # signal: on a compile error the build short-circuits (`compile && run`) and the
@@ -202,18 +236,30 @@ def _run_variant(prob: Path, name: str, spec: dict, variant: str, mode: str) -> 
     if not langdir.is_dir():
         print(dim(f"  {name}: no {name}/ folder in this problem — skipping"))
         return Outcome("skip")
+    emu = None
     if not _arch_ok(spec):
-        print(dim(f"  {name}: requires {spec['arch']} (this machine isn't) — skipping"))
-        return Outcome("skip")
+        emu = _emu_tools(spec)
+        if emu is None:
+            print(dim(f"  {name}: requires {spec['arch']} (this machine isn't; no qemu-user emulation here) — skipping"))
+            return Outcome("skip")
     if not _platform_ok(spec):
         print(dim(f"  {name}: not supported on this OS ({', '.join(spec['platforms'])} only) — skipping"))
         return Outcome("skip")
-    exe = (spec.get("detect") or "x").split()[0]
-    if not shutil.which(exe):
-        print(dim(f"  {name}: toolchain not installed — skipping (run `glifex doctor`)"))
-        return Outcome("skip")
+    if emu is None:
+        exe = (spec.get("detect") or "x").split()[0]
+        if not shutil.which(exe):
+            print(dim(f"  {name}: toolchain not installed — skipping (run `glifex doctor`)"))
+            return Outcome("skip")
     key = {"test": "test_cmd", "run": "run_cmd", "bench": "bench_cmd"}[mode]
-    cmd = _build_cmd(spec, key, variant) or _build_cmd(spec, "test_cmd", variant)
+    if emu is not None:
+        # Cross-build static for the target arch and run it under qemu-user. Same
+        # harness, same "N/M passed" contract -- only the compiler and runner change.
+        cc, qemu = emu
+        tpl = spec.get("emu_test_cmd")
+        cmd = tpl.replace("{variant}", variant).replace("{cross}", cc).replace("{qemu}", qemu)
+        print(dim(f"  {name}: emulating {spec['arch']} via {qemu} (cross-built with {cc})"))
+    else:
+        cmd = _build_cmd(spec, key, variant) or _build_cmd(spec, "test_cmd", variant)
     if mode != "test":
         run_cmd(cmd, langdir)  # stream live; return value unused by run/bench
         return Outcome("ran")
