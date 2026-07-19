@@ -1,0 +1,83 @@
+name: qemu-asm-spike
+# THROWAWAY probe (handoff s6/s10): run the arch-specific assembly tracks under
+# QEMU user-mode on a single ubuntu runner, to see whether emulation can fill the
+# native-arch gaps in the CLI matrix (a Linux x86_64 runner has no native arm64 or
+# riscv64; this asks whether qemu can stand in). Self-triggers on push to its own
+# branch and opens NO pull request; it does not touch main's CI, since ci.yml
+# triggers only on push to main / PRs to main. Delete the branch when finished:
+#   git push origin --delete <this-branch>
+on:
+  push:
+    branches: ['chore/qemu-asm-spike-*']
+
+permissions:
+  contents: read
+
+jobs:
+  qemu-asm:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+      - name: Install cross toolchains + qemu-user-static
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu qemu-user-static
+      - name: Tool versions
+        run: |
+          gcc --version | head -1
+          aarch64-linux-gnu-gcc --version | head -1
+          riscv64-linux-gnu-gcc --version | head -1
+          qemu-x86_64-static --version | head -1
+          qemu-aarch64-static --version | head -1
+          qemu-riscv64-static --version | head -1
+      - name: Run every asm track under its QEMU emulator (all problems, all variants)
+        shell: bash
+        run: |
+          set -uo pipefail
+          declare -A CC=(     [asm-x86_64]=gcc                     [asm-arm64]=aarch64-linux-gnu-gcc [asm-riscv64]=riscv64-linux-gnu-gcc )
+          declare -A QEMU=(   [asm-x86_64]=qemu-x86_64-static      [asm-arm64]=qemu-aarch64-static   [asm-riscv64]=qemu-riscv64-static )
+          declare -A PREFIX=( [asm-x86_64]=                        [asm-arm64]=/usr/aarch64-linux-gnu [asm-riscv64]=/usr/riscv64-linux-gnu )
+          flags=0
+          for arch in asm-x86_64 asm-arm64 asm-riscv64; do
+            echo "==================== $arch  (cc=${CC[$arch]}  qemu=${QEMU[$arch]}) ===================="
+            for d in problems/*/"$arch"; do
+              [ -d "$d" ] || continue
+              prob=$(basename "$(dirname "$d")")
+              pushd "$d" >/dev/null
+              mode=""
+              if ${CC[$arch]} -std=c11 -O2 -static -o .glifex_bin harness.c ./*.s 2>/tmp/cc.err; then
+                mode=static
+              elif ${CC[$arch]} -std=c11 -O2 -o .glifex_bin harness.c ./*.s 2>>/tmp/cc.err; then
+                mode=dynamic
+              else
+                echo "  [BUILD-FAIL] $prob"; sed 's/^/      /' /tmp/cc.err | head -8
+                flags=$((flags+1)); popd >/dev/null; continue
+              fi
+              for v in practice brute-force clean optimized; do
+                [ -f "$v.s" ] || continue
+                if [ "$mode" = dynamic ] && [ -n "${PREFIX[$arch]}" ]; then
+                  out=$(QEMU_LD_PREFIX="${PREFIX[$arch]}" ${QEMU[$arch]} ./.glifex_bin "$v" 2>&1); rc=$?
+                else
+                  out=$(${QEMU[$arch]} ./.glifex_bin "$v" 2>&1); rc=$?
+                fi
+                m=$(printf '%s\n' "$out" | grep -oE '[0-9]+/[0-9]+ passed' | tail -1)
+                if [ -z "$m" ]; then
+                  verdict=NO-MARKER; flags=$((flags+1))
+                else
+                  p=${m%%/*}; r=${m#*/}; t=${r%% *}
+                  if [ "$v" = practice ]; then
+                    if [ "$p" -lt "$t" ]; then verdict='ok(unsolved)'; else verdict='FLAG(practice-solved)'; flags=$((flags+1)); fi
+                  else
+                    if [ "$p" = "$t" ]; then verdict=ok; else verdict='FLAG(ref-failed)'; flags=$((flags+1)); fi
+                  fi
+                fi
+                printf "  %-16s %-12s [%s] rc=%-3s %-14s %s\n" "$prob" "$v" "$mode" "$rc" "${m:-<none>}" "$verdict"
+              done
+              rm -f .glifex_bin
+              popd >/dev/null
+            done
+          done
+          echo
+          echo "SPIKE SUMMARY: $flags flagged line(s) (BUILD-FAIL / NO-MARKER / unexpected contract). Read the table above."
+          echo "This job opened no PR. When finished, delete the branch."
