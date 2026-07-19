@@ -27,7 +27,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
         with:
           # Build the exact commit CI tested, not whatever main happens to
           # be when this event fires (best practice for workflow_run
@@ -35,15 +35,15 @@ jobs:
           # Falls back to the default ref for workflow_dispatch, which has
           # no workflow_run context at all.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
         with: { node-version: "24" }
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v4
         with: { dotnet-version: "10.0.x" }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6
         with: { go-version: "1.25" }
       - name: Restore vendored runtimes cache (production, keeps CodeMirror)
         id: vendor
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
         with:
           path: web/vendor
           key: vendor-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', 'web/runtime-hashes.json', 'web/csharp-runtime/*.cs', 'web/csharp-runtime/*.csproj') }}
@@ -139,7 +139,7 @@ jobs:
           . tools/arm64-toolchain/pins.env
           echo "v=$EMSDK_VERSION" >> "$GITHUB_OUTPUT"
       - name: Cache emsdk (survives vendor-cache busts; keyed on EMSDK_VERSION)
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
         with:
           path: ~/emsdk
           key: emsdk-${{ steps.emsdkver.outputs.v }}
@@ -216,7 +216,7 @@ jobs:
           # and compiles nothing, dying in _js_interop_checks before any work.
           # Only running it catches that.
           node tools/dart-toolchain/verify-dart.mjs web/vendor/dart
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9  # v4
         with: { distribution: temurin, java-version: "25" }   # pins.env TEAVM_JAVAC_JDK.
                                                               # NOT the README's 21: settings.gradle
                                                               # sets VERSION_25 and :javac compiles
@@ -250,7 +250,7 @@ jobs:
         run: node web/fetch-runtimes.mjs --verify
       - name: Save vendored runtimes cache
         if: always() && steps.vendor.outputs.cache-hit != 'true' && hashFiles('web/vendor/.vendor-complete') != ''
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
         with:
           path: web/vendor
           key: vendor-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', 'web/runtime-hashes.json', 'web/csharp-runtime/*.cs', 'web/csharp-runtime/*.csproj') }}
@@ -264,13 +264,13 @@ jobs:
           # B2: content-stamp asset URLs (?v=<sha>) + self-version the SW cache.
           node web/stamp.mjs "$SHA"
           grep glifex-version web/index.html && grep -m1 "app.js?v=" web/index.html && grep "const CACHE" web/sw.js
-      - uses: actions/configure-pages@v6
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6
       - name: Strip repo-only test fixtures from the site artifact
         # web/retro/test-roms are CPU-validation fixtures (incl. GPLv3 CP/M
         # diagnostics) executed only by the test harness -- never deployed.
         # See THIRD_PARTY_NOTICES.md "Repo-only test fixtures".
         run: rm -rf web/retro/test-roms
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5
         with: { path: web }
 
   deploy:
@@ -282,4 +282,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4
