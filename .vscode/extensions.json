@@ -15,9 +15,6 @@
     // Database track (Postgres problems)
     "ms-ossdata.vscode-pgsql",
 
-    // Planned languages (harmless to recommend early)
-    "ms-vscode.cpptools",
-    "fwcd.kotlin",
-    "swiftlang.swift-vscode"
+    "ms-vscode.cpptools"
   ]
 }
