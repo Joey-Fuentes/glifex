@@ -167,9 +167,9 @@ jobs:
         with: { node-version: "24" }
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: "10.0.x" }
-      - name: Cache Playwright browsers + npm
+      - name: Restore Playwright browsers + npm
         id: pw-cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cache/ms-playwright
@@ -182,6 +182,15 @@ jobs:
           # browsers restored from cache on hit -> this becomes a fast no-op verify;
           # --with-deps still ensures the OS libs. Cache key is the pinned version.
           npx playwright install --with-deps chromium firefox
+      - name: Save Playwright browsers + npm (main only)
+        id: pw-cache-save
+        if: always() && github.ref == 'refs/heads/main' && steps.pw-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.npm
+          key: playwright-${{ runner.os }}-1.61.1
       - uses: actions/setup-go@v6
         with: { go-version: "1.25" }
       - name: Restore vendored runtimes cache
@@ -277,8 +286,15 @@ jobs:
         run: |
           . tools/arm64-toolchain/pins.env
           echo "v=$EMSDK_VERSION" >> "$GITHUB_OUTPUT"
-      - name: Cache emsdk (survives vendor-cache busts; keyed on EMSDK_VERSION)
-        uses: actions/cache@v6
+      - name: Restore emsdk (survives vendor-cache busts; keyed on EMSDK_VERSION)
+        id: emsdk-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ steps.emsdkver.outputs.v }}
+      - name: Save emsdk (main only)
+        if: always() && github.ref == 'refs/heads/main' && steps.emsdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
         with:
           path: ~/emsdk
           key: emsdk-${{ steps.emsdkver.outputs.v }}
@@ -397,7 +413,7 @@ jobs:
       - name: Verify vendored runtime integrity
         run: node web/fetch-runtimes.mjs --verify
       - name: Save vendored runtimes cache
-        if: always() && steps.vendor.outputs.cache-hit != 'true' && hashFiles('web/vendor/.vendor-complete') != ''
+        if: always() && github.ref == 'refs/heads/main' && steps.vendor.outputs.cache-hit != 'true' && hashFiles('web/vendor/.vendor-complete') != ''
         uses: actions/cache/save@v6
         with:
           path: web/vendor
