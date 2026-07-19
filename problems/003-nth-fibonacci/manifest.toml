@@ -2,7 +2,6 @@
 title = "Nth Fibonacci"
 difficulty = "easy"
 tags = ["math", "dynamic-programming"]
-worked_example = false   # new problem: practice ships BLANK stubs (fillable starters)
 
 # WAT is the star here (numeric problem).
 [languages]
@@ -13,6 +12,8 @@ i8080       = { variants = ["practice", "clean", "optimized"] }   # Intel 8080 a
 javascript  = { variants = ["practice", "clean", "optimized"] }   # L1-fib-manifest: JS clean/optimized added -- unblocks the Complexity Lab (oracle is always JS clean) on every language for this problem
 typescript  = { variants = ["practice", "clean", "optimized"] }
 python      = { variants = ["practice", "clean", "optimized"] }
+c           = { variants = ["practice", "brute-force", "clean", "optimized"] }   # floor language (browser: Wasmer WASIX clang)
+cpp         = { variants = ["practice", "brute-force", "clean", "optimized"] }   # floor language (browser: Binji wasm-clang)
 go          = { variants = ["practice", "brute-force", "clean", "optimized"] }   # the real gc toolchain, self-hosted to wasip1/wasm in the browser (Bx-12)
 java        = { variants = ["practice", "brute-force", "clean", "optimized"] }
 ruby        = { variants = ["practice", "clean", "optimized"] }
@@ -84,6 +85,16 @@ space = "O(1)"
 notes = "fast doubling. RV64G has no count-leading-zeros (clz is Zbb, unlike aarch64), so the MSB comes from a 3-step binary search -- fib(93) is the largest that fits in u64, so n < 128"
 
 [complexity.java.brute-force]
+time = "O(phi^n)"
+space = "O(n)"
+notes = "naive recursion -- the obvious definition; exponential time, linear call-stack depth"
+
+[complexity.c.brute-force]
+time = "O(phi^n)"
+space = "O(n)"
+notes = "naive recursion -- the obvious definition; exponential time, linear call-stack depth"
+
+[complexity.cpp.brute-force]
 time = "O(phi^n)"
 space = "O(n)"
 notes = "naive recursion -- the obvious definition; exponential time, linear call-stack depth"

@@ -7,4 +7,4 @@ test_cmd = "tsc --module commonjs --target es2020 --outDir .tsbuild harness.ts {
 run_cmd = "tsc --module commonjs --target es2020 --outDir .tsbuild harness.ts {variant}.ts && node .tsbuild/harness.js {variant}"
 harness_template = "harness.ts"
 tool_version = "nodejs 24"
-stub = "export function solve(c: any): any {\n  // TODO: implement\n  throw new Error('not implemented');\n}\n"
+stub = "export function solve(c: any): any {\n  // TODO: implement\n  return null;\n}\n"

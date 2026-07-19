@@ -9,5 +9,5 @@ run_cmd = "g++ -std=c++20 -O2 -o .glifex_bin *.cpp && ./.glifex_bin {variant} < 
 bench_cmd = "g++ -std=c++20 -O2 -o .glifex_bin *.cpp && ./.glifex_bin {variant} --bench < ../test_cases.json"
 harness_template = "harness.cpp"
 tool_version = "gcc 14"
-stub = "#include \"solution.hpp\"\n\nValue {variant}(const Input& c) {\n    // TODO: implement\n    throw std::runtime_error(\"not implemented\");\n}\n"
+stub = "#include \"solution.hpp\"\n\nValue {variant}(const Input& c) {\n    // TODO: implement -- return the answer for input c\n    (void)c;\n    return make_rc<JValue>();\n}\n"
 support_files = ["solution.hpp", "json.hpp"]

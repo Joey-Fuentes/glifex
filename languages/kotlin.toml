@@ -7,5 +7,5 @@ test_cmd = "kotlinc HarnessKt.kt SolutionKt.kt JsonKt.kt Practice.kt Clean.kt Op
 run_cmd = "kotlinc HarnessKt.kt SolutionKt.kt JsonKt.kt Practice.kt Clean.kt Optimized.kt -include-runtime -d .glifex.jar && java -jar .glifex.jar {variant}"
 harness_template = "HarnessKt.kt"
 tool_version = "kotlin 2.1"
-stub = "class {Variant} : Solution {\n    override fun solve(c: Map<String, Any?>): Any? {\n        TODO(\"implement\")\n    }\n}\n"
+stub = "class {Variant} : Solution {\n    override fun solve(c: Map<String, Any?>): Any? {\n        return null\n    }\n}\n"
 support_files = ["SolutionKt.kt", "JsonKt.kt"]

@@ -7,5 +7,5 @@ test_cmd = "javac *.java && java Harness {variant}"
 run_cmd = "javac *.java && java Harness {variant}"
 harness_template = "Harness.java"
 tool_version = "java temurin-25"
-stub = "import java.util.*;\npublic class {Variant} implements Solution {\n    public Object solve(Map<String,Object> c) {\n        throw new RuntimeException(\"not implemented\");\n    }\n}\n"
+stub = "import java.util.*;\npublic class {Variant} implements Solution {\n    public Object solve(Map<String,Object> c) {\n        return null;\n    }\n}\n"
 support_files = ["Solution.java", "Json.java"]

@@ -177,13 +177,21 @@ jobs:
           for p in problems/*/; do
             $PY glifex.py test "$(basename "$p")"
           done
-      - name: Verify manifests + reference variants (glifex verify)
+      - name: Verify manifests (glifex verify --static)
+        # Static manifest gate only: floor languages declared, every declared
+        # language x variant file exists, complexity whitelist, optimized <=
+        # practice. The variants themselves are EXECUTED by the "Test all
+        # problems" step above (which now runs every declared variant with its
+        # contract: references must solve, practice must build+run+not solve),
+        # so running verify's dynamic loop here too would compile+run every
+        # variant a second time on each OS. --static keeps the manifest gate
+        # without that duplication.
         if: steps.scope.outputs.matrix_skippable != 'true'
         shell: bash
         run: |
           PY=python3; command -v python3 >/dev/null || PY=python
           for p in problems/*/; do
-            $PY glifex.py verify "$(basename "$p")"
+            $PY glifex.py verify --static "$(basename "$p")"
           done
       - name: Database track (SQLite engine)
         if: steps.scope.outputs.matrix_skippable != 'true'
