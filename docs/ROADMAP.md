@@ -306,16 +306,22 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       det-tier language inherits its ladder at RUNTIME, so an absent
       `sizes.det` silently means the full wall ladder -- which shipped, and is
       what `web/lab-ladder.test.mjs` now guards.
-- [ ] **CI dependency hardening** -- not a Bx track; affects every track already
+- [x] **CI dependency hardening** -- not a Bx track; affected every track already
       shipped. Every vendored runtime is fetched at deploy from a third party, and
-      a pinned ref protects against *change*, not *unavailability*. Java fetches
-      from a single project own web server (teavm.org) and answered 415 during
-      Bx-10 vendor work -- cause never confirmed, and the stale cache had been
-      hiding a broken cold re-vendor on main. arm64 added two more single-origin
-      deps (ftp.gnu.org, gitlab.arm.com). Options and evidence:
-      `docs/ci-dependency-hardening.md`. *Cheapest first step: a scheduled
-      cold-vendor canary with no cache, so the next break surfaces on a Tuesday
-      instead of at the next cache-key bump.*
+      a pinned ref protects against *change*, not *unavailability*. The
+      integrity/change axis is now fully hardened: every fetch pin lives in a
+      hashed file (`tools/vendor-pins.env` for the web runtimes; wasmer clang
+      `@0.160000.1` + sha256, binji + rubri pinned to commits), the vendor cache
+      key self-versions correctly (the csharp key-poisoning bug is fixed), and
+      every GitHub Action is SHA-pinned, first- and third-party, Dependabot-
+      managed. Java also stopped fetching teavm.org (Bx-8b, built from source).
+      Options and evidence: `docs/ci-dependency-hardening.md`.
+- [ ] **Hermetic, reproducible builds + full dependency mirroring** -- close the
+      remaining availability exposure at the root instead of monitoring for it:
+      build from pinned source wherever possible and mirror every remaining
+      fetched asset (binutils from ftp.gnu.org, VIXL from gitlab.arm.com, and the
+      web-runtime CDNs) into the repo or a release the deploy owns, so vendoring
+      depends on nothing external and reproduces offline.
 - [x] **Bx-10b. RISC-V RV64GC** -- SHIPPED. Bx-10's continuation. Full record,
       numbers and gotchas: `docs/libriscv-riscv64.md`. Emulator is **libriscv**
       (BSD-3, ~256 files, built for embedding) compiled to **wasm32**; it already

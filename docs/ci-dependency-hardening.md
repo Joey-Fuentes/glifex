@@ -50,9 +50,9 @@ protects you from *change*. It does not protect you from *unavailability*.
 |---|---|---|
 | ~~**Java**~~ | ~~`teavm.org/playground/`~~ **FIXED (Bx-8b)**: built from pinned source at deploy; Maven Central + the plugin portal + github.com | ~~a single project's own web server~~ the CDN class every other track already uses |
 | Python/Ruby/TS/Postgres/PHP/WAT/6502 | jsDelivr / GitHub raw, via `fetch-runtimes.mjs` | CDN |
-| C | wasmer registry (`clang/clang` webc, ~100 MB) | registry |
-| C++ | `raw.githubusercontent.com` (binji) | CDN |
-| Rust | `github.com/LyonSyonII/rubri` clone | repo |
+| C | wasmer registry (`clang/clang` webc, ~100 MB, pinned `@0.160000.1` + sha256) | registry |
+| C++ | `raw.githubusercontent.com` (binji, pinned commit) | CDN |
+| Rust | `github.com/LyonSyonII/rubri` clone (pinned commit SHA) | repo |
 | x86-64 | `raw.githubusercontent.com` (robalb, pinned + sha) | CDN |
 | arm64 | `ftp.gnu.org` (binutils) + `gitlab.arm.com` (VIXL) + robalb | **two more single-origin servers** |
 
@@ -75,13 +75,12 @@ pattern.
 2. **A vendor-bundle release.** Build the full tree once, attach it to a release,
    have deploys fetch *that* — one dependency instead of eight. `pins.env`-style
    pinning per runtime makes it reproducible.
-3. **A scheduled cold-vendor canary.** A weekly `workflow_dispatch`/cron job that
-   vendors from scratch with no cache and fails loudly. Turns "we find out at the
-   next key bump" into "we find out on Tuesday". Cheapest of the three and it
-   catches the class, not the instance.
-
-**Option 3 first**, probably: it costs one scheduled job and would have caught
-this incident months earlier, without deciding anything about mirroring.
+**Build what you can, mirror the rest.** The durable fix removes the external
+dependency at deploy time rather than watching for it to break: build from pinned
+source wherever possible (as Java now does, Bx-8b) and mirror every remaining
+fetched asset into the repo or a release the deploy owns. That makes vendoring
+hermetic and reproducible offline -- strictly stronger than detecting a break
+after the fact.
 
 ## Related
 
@@ -91,11 +90,16 @@ this incident months earlier, without deciding anything about mirroring.
   them about arm64 and silently forgot the third.
 - `tools/arm64-toolchain/pins.env` is the pinning shape every runtime uses: one
   file, one place to look, hashed into the vendor cache key. Every pin lives in a
-  hashed file -- a `pins.env` under `tools/**`, `web/fetch-runtimes.mjs`,
-  `web/runtime-hashes.json`, or `web/csharp-runtime/**` -- and never inline in a
+  hashed file -- a `pins.env` under `tools/**` (web-runtime fetch pins live in
+  `tools/vendor-pins.env`), `web/fetch-runtimes.mjs`, `web/runtime-hashes.json`,
+  or `web/csharp-runtime/*.cs` / `*.csproj` -- and never inline in a
   workflow, so the key is a content hash of exactly the things that can change a
   build, and it always self-versions. See Invariant 10 in
   `docs/architecture.md`.
+- **Every GitHub Action is pinned to a full commit SHA** (with a `# tag`
+  comment), first- and third-party alike, so a moved or compromised action tag
+  cannot change a build. Dependabot's `github-actions` ecosystem opens PRs to
+  bump the SHAs, keeping the pins current without hand-editing.
 - **Updating a GNU/binutils signature is a documented two-command flow**, not an
   ad-hoc paste: `scout-signing-key` discovers and corroborates the signer
   fingerprint out-of-band, then `pin-binutils.sh --write <fpr> <ver>` re-verifies
