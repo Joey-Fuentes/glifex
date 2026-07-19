@@ -161,6 +161,9 @@ jobs:
     timeout-minutes: 45
     needs: [playground]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read   # read changed-file list to skip the e2e test step on docs-only changes
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -181,7 +184,7 @@ jobs:
           npm install -D @playwright/test@1.61.1
           # browsers restored from cache on hit -> this becomes a fast no-op verify;
           # --with-deps still ensures the OS libs. Cache key is the pinned version.
-          npx playwright install --with-deps chromium firefox
+          npx playwright install chromium firefox
       - name: Save Playwright browsers + npm (main only)
         id: pw-cache-save
         if: always() && github.ref == 'refs/heads/main' && steps.pw-cache.outputs.cache-hit != 'true'
@@ -418,7 +421,46 @@ jobs:
         with:
           path: web/vendor
           key: vendor-${{ hashFiles('web/fetch-runtimes.mjs', 'tools/**', 'web/runtime-hashes.json', 'web/csharp-runtime/**') }}
+      - name: Determine if the change is docs-only (gates the e2e test step below)
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Sets docs_only=true ONLY when every changed file is under docs/ or ends
+          # in .md. Any uncertainty (API error, empty/'.' list, unknown event) ->
+          # false, so e2e runs. This gates ONLY the test step below; the rest of the
+          # job (vendor, emsdk, --verify, cache save) is unaffected.
+          set -uo pipefail
+          files=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files="$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --jq '.[].filename' 2>/dev/null)" || files="__ERR__"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            base="${{ github.event.before }}"
+            case "$base" in *[!0]*) : ;; *) base="" ;; esac   # all-zero base (new ref) -> unknown
+            if [ -n "$base" ]; then
+              files="$(gh api "repos/${{ github.repository }}/compare/${base}...${{ github.sha }}" --jq '.files[].filename' 2>/dev/null)" || files="__ERR__"
+            else
+              files="__ERR__"
+            fi
+          else
+            files="__ERR__"
+          fi
+          if [ "$files" = "__ERR__" ] || [ -z "$files" ]; then
+            echo "changed-file list unavailable/empty -- running e2e to be safe"
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          nondocs="$(printf '%s\n' "$files" | grep -vE '^docs/|\.md$' || true)"
+          if [ -z "$nondocs" ]; then
+            echo "docs-only change -- the e2e test step will be skipped:"
+            printf '%s\n' "$files" | sed 's/^/  doc: /'
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "non-docs changes present -- e2e will run. Non-docs files:"
+            printf '%s\n' "$nondocs" | sed 's/^/  code: /'
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Build corpus & run E2E (incl. offline-mode test)
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           node web/build.mjs
           npx playwright test e2e/ --config e2e/playwright.config.js
