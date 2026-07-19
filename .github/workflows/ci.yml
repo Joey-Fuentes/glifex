@@ -148,7 +148,7 @@ jobs:
         with: { php-version: "8.4" }
       - uses: dart-lang/setup-dart@v1
         if: steps.scope.outputs.matrix_skippable != 'true'
-      - uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@v2
         if: steps.scope.outputs.matrix_skippable != 'true'
         with: { version: "0.14.0" }
       # C/C++ use the runners' system compilers (gcc/clang preinstalled on
