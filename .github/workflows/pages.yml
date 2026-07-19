@@ -200,7 +200,7 @@ jobs:
           # A size check proves the fetch worked, not that the runtime is CORRECT.
           # RISCV_EXT_C=OFF fails at ELF LOAD, so only running something catches it.
           node tools/riscv-toolchain/verify-riscv.mjs web/vendor/asm-riscv64
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260  # v1
         with:
           sdk: "3.12.2"   # pins.env DART_SDK_VERSION. NOT "stable" -- a pin that
                           # drifts is a cache key that lies. See tools/dart-toolchain/pins.env.

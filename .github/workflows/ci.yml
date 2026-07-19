@@ -135,20 +135,22 @@ jobs:
       - uses: actions/setup-java@v4
         if: steps.scope.outputs.matrix_skippable != 'true'
         with: { distribution: temurin, java-version: "25" }
-      - uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600  # v1
         if: steps.scope.outputs.matrix_skippable != 'true'
         with: { ruby-version: "3.4" }
       - uses: actions/setup-dotnet@v4
         if: steps.scope.outputs.matrix_skippable != 'true'
         with: { dotnet-version: "10.0.x" }
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable
         if: steps.scope.outputs.matrix_skippable != 'true'
-      - uses: shivammathur/setup-php@v2
+        with:
+          toolchain: stable
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240  # v2
         if: steps.scope.outputs.matrix_skippable != 'true'
         with: { php-version: "8.4" }
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260  # v1
         if: steps.scope.outputs.matrix_skippable != 'true'
-      - uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@53fc45b17fe98b52f92ee5ea08ff48a85a3e7eb7  # v1
         if: steps.scope.outputs.matrix_skippable != 'true'
         with: { version: "0.14.0" }
       # C/C++ use the runners' system compilers (gcc/clang preinstalled on
@@ -425,7 +427,7 @@ jobs:
           # A size check proves the fetch worked, not that the runtime is CORRECT.
           # RISCV_EXT_C=OFF fails at ELF LOAD, so only running something catches it.
           node tools/riscv-toolchain/verify-riscv.mjs web/vendor/asm-riscv64
-      - uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260  # v1
         with:
           sdk: "3.12.2"   # pins.env DART_SDK_VERSION. NOT "stable" -- a pin that
                           # drifts is a cache key that lies. See tools/dart-toolchain/pins.env.
@@ -609,7 +611,7 @@ jobs:
           format: sarif
           output: trivy.sarif
       - name: Upload Trivy report to the Security tab
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a  # v4
         with:
           sarif_file: trivy.sarif
           category: trivy
@@ -647,6 +649,6 @@ jobs:
         language: [javascript-typescript, python]
     steps:
       - uses: actions/checkout@v7
-      - uses: github/codeql-action/init@v4
+      - uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a  # v4
         with: { languages: "${{ matrix.language }}" }
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a  # v4
