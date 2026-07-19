@@ -63,6 +63,19 @@ was moved in from the old standalone `codeql.yml`: a separate workflow cannot
 be a dependency of `ci-status-gate`, so requiring it meant making it a job
 here (with job-level `security-events: write`).
 
+**CodeQL skips analysis on changes it can't be affected by, but the job stays
+`success`.** Each CodeQL matrix leg is gated by a scope step that reads the PR's
+changed files and skips `init`/`analyze` when nothing that leg scans changed
+(`javascript-typescript`: no `.js/.jsx/.ts/.tsx/.mjs/.cjs/.html`; `python`: no
+`.py/.pyi` or `pyproject.toml`) -- a docs-only change skips both. This is a
+**step-level** skip, so the job still runs and reports `success` and
+`ci-status-gate` is satisfied; only a **job-level** `if: false` yields `skipped`,
+which (per above) the gate treats as failure. A real analysis failure still flips
+the job to `failure` and blocks the merge; found alerts do not (they surface on
+the Security tab). The same scope-gating pattern skips the expensive `e2e`,
+`matrix`, and dart-core-verify steps on changes that don't touch them. Fail-safe
+throughout: if the changed-file list can't be read, the work runs.
+
 **Deliberately no `name:` field on this job.** See "The naming gotcha" below
 for why that matters and what happened when an earlier version of this fix
 had one.
