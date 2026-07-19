@@ -3,6 +3,10 @@
 Findings in third-party projects we depend on. Policy: collect here, file
 upstream in one pass once the retro track settles (we will surely find more).
 
+> Not an upstream finding, but filed near the other dependency-trust notes: the
+> procedure for updating GNU/binutils release signatures (discover -> verify ->
+> write the anchor) lives in `tools/keys/README.md`.
+
 ## customasm (hlorenzi/customasm) -- found on v0.14.1
 
 1. **BUG -- std/cpu/sm83.asm `ADD HL,{r16}` emits garbage.** The rule reads

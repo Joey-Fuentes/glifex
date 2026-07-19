@@ -6,8 +6,12 @@
 # "whatever the mirror served". Trust model: tools/keys/README.md.
 #
 #   cd ~/glifex
-#   bash tools/pin-binutils.sh 2.43           # verify + print the sha256 line
-#   bash tools/pin-binutils.sh 2.43 --write   # also write it into both pins.env
+#   bash tools/pin-binutils.sh --verify <fpr> <ver>   # read-only: verify + identity URLs
+#   bash tools/pin-binutils.sh --write  <fpr> <ver>   # verify, then write anchor files (unstaged)
+# Two modes, one grammar (fingerprint first, version last). --write does everything
+# --verify does, then writes tools/keys/binutils-signing.asc + both pins.env
+# (BINUTILS_VERSION/SHA256/SIGNING_FPR) into the WORKING TREE only -- never staged.
+# Trust model + full walkthrough: tools/keys/README.md.
 set -euo pipefail
 
 # --- verify mode: end-to-end pre-commit check for a CANDIDATE fingerprint.
@@ -15,10 +19,17 @@ set -euo pipefail
 # prints the one identity step it cannot do (the sourceware announcement /
 # MAINTAINERS eyeball). It never gates on that manual step. No fingerprint or
 # signer name is hardcoded anywhere -- everything is read from the release/key.
-#   bash tools/pin-binutils.sh --verify <40-hex-fingerprint> <version>
-if [ "${1:-}" = "--verify" ]; then
-  FPR="$(printf '%s' "${2:?usage: --verify <fingerprint> <version>}" | tr -d ' ' | tr '[:lower:]' '[:upper:]')"
-  VER="${3:?usage: --verify <fingerprint> <version>}"
+#   bash tools/pin-binutils.sh --verify <40-hex-fingerprint> <version>   # read-only
+#   bash tools/pin-binutils.sh --write  <40-hex-fingerprint> <version>   # writes anchor files (unstaged)
+# --write here (fingerprint form) runs the identical legs, then -- only on full
+# pass -- writes the key + both pins.env in the WORKING TREE (never staged/committed):
+# review with `git diff` and commit yourself. Any leg failing writes nothing.
+ANCHOR_WRITE=0
+if [ "${1:-}" = "--write" ] && printf '%s' "${2:-}" | grep -qiE '^[0-9A-Fa-f]{40}$'; then ANCHOR_WRITE=1; fi
+if [ "${1:-}" = "--verify" ] || [ "$ANCHOR_WRITE" = "1" ]; then
+  MODE="${1}"
+  FPR="$(printf '%s' "${2:?usage: ${MODE} <fingerprint> <version>}" | tr -d ' ' | tr '[:lower:]' '[:upper:]')"
+  VER="${3:?usage: ${MODE} <fingerprint> <version>}"
   printf '%s' "$FPR" | grep -qE '^[0-9A-F]{40}$' || { echo "FATAL: fingerprint must be 40 hex characters."; exit 2; }
   BASE="https://ftp.gnu.org/gnu/binutils"; TAR="binutils-$VER.tar.xz"
   D="$(mktemp -d "${TMPDIR:-/tmp}/bu-verify.XXXXXX")"; trap 'rm -rf "$D"' EXIT
@@ -88,6 +99,29 @@ if [ "${1:-}" = "--verify" ]; then
   echo "   keyservers  : $KS_SEEN"
   echo "   WKD         : $WKD"
   echo "   BINUTILS_SHA256=$SHA"
+  if [ "$ANCHOR_WRITE" = "1" ]; then
+    echo
+    echo "== writing anchor files (WORKING TREE ONLY -- not staged) =="
+    ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+    KEY="$ROOT/tools/keys/binutils-signing.asc"
+    ARM_PINS="$ROOT/tools/arm64-toolchain/pins.env"
+    RV_PINS="$ROOT/tools/riscv-toolchain/pins.env"
+    if [ -f "$KEY" ]; then echo "   NOTE: overwriting existing $KEY (signer rotation -- review the diff)"; fi
+    if ! gpg --batch --no-default-keyring --keyring "$D/kr.gpg" --export --armor "$FPR" > "$KEY" 2>/dev/null || [ ! -s "$KEY" ]; then
+      echo "   FATAL: could not export $FPR from the GNU keyring."; exit 1
+    fi
+    echo "   wrote $KEY"
+    for p in "$ARM_PINS" "$RV_PINS"; do
+      [ -f "$p" ] || { echo "   skip (absent): $p"; continue; }
+      tmp="$(mktemp "${TMPDIR:-/tmp}/pins.XXXXXX")"
+      sed -e "s/^BINUTILS_VERSION=.*/BINUTILS_VERSION=$VER/" \
+          -e "s/^BINUTILS_SHA256=.*/BINUTILS_SHA256=$SHA/" \
+          -e "s/^BINUTILS_SIGNING_FPR=.*/BINUTILS_SIGNING_FPR=$FPR/" "$p" > "$tmp" && mv "$tmp" "$p"
+      echo "   updated $p (VERSION=$VER, SHA256, SIGNING_FPR)"
+    done
+    echo "   -> files written but NOT staged. Do the identity check below, then 'git diff' and commit."
+  fi
+
   echo
   echo "-------- MANUAL identity check (this command cannot do it for you) --------"
   echo "The legs above corroborate the fingerprint mechanically; confirm the PERSON by eye:"
@@ -99,84 +133,21 @@ if [ "${1:-}" = "--verify" ]; then
   echo "       -> open the archive window around the $VER release, find 'binutils $VER"
   echo "          Released', and confirm the same person posted/signed it."
   echo "When the UID, the announcement, and MAINTAINERS all name the same person, the"
-  echo "identity leg is closed and you can commit BINUTILS_SIGNING_FPR=$FPR ."
+  echo "identity leg is closed."
+  if [ "$ANCHOR_WRITE" = "1" ]; then
+    echo "The anchor files are already written (unstaged) -- review 'git diff' and commit."
+  else
+    echo "Re-run with --write <fpr> $VER to write the key + both pins.env."
+  fi
   exit 0
 fi
 
-VER="${1:?usage: tools/pin-binutils.sh <version> [--write]}"
-WRITE=0
-[ "${2:-}" = "--write" ] && WRITE=1
-
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-cd "$ROOT"
-
-KEY="tools/keys/binutils-signing.asc"
-ARM_PINS="tools/arm64-toolchain/pins.env"
-RV_PINS="tools/riscv-toolchain/pins.env"
-
-[ -f "$KEY" ] || { echo "FATAL: $KEY missing -- commit the vetted signing key first (tools/keys/README.md)."; exit 1; }
-[ -f "$ARM_PINS" ] || { echo "FATAL: $ARM_PINS missing -- run from the repo root."; exit 1; }
-
-# expected fingerprint: read from pins.env, normalize to 40 uppercase hex
-FPR="$( ( . "$ARM_PINS" >/dev/null 2>&1; printf '%s' "${BINUTILS_SIGNING_FPR:-}" ) | tr -d ' ' | tr '[:lower:]' '[:upper:]' )"
-if ! printf '%s' "$FPR" | grep -qE '^[0-9A-F]{40}$'; then
-  echo "FATAL: BINUTILS_SIGNING_FPR in $ARM_PINS is unset or not a 40-hex fingerprint."
-  echo "Establish the anchor out-of-band first (see tools/keys/README.md), then set it there."
-  exit 1
-fi
-
-# isolated keyring; import ONLY the committed key
-GNUPGHOME_TMP="$(mktemp -d "${TMPDIR:-/tmp}/binutils-verify.XXXXXX")"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/binutils-dl.XXXXXX")"
-trap 'rm -rf "$GNUPGHOME_TMP" "$WORK"' EXIT
-chmod 700 "$GNUPGHOME_TMP"
-export GNUPGHOME="$GNUPGHOME_TMP"
-gpg --quiet --import "$KEY"
-
-GOT_FPR="$(gpg --with-colons --fingerprint 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')"
-if [ "$GOT_FPR" != "$FPR" ]; then
-  echo "FATAL: committed key fingerprint $GOT_FPR does not match pinned $FPR."
-  exit 1
-fi
-echo "committed key fingerprint matches pin: $FPR"
-
-# fetch tarball + detached signature from GNU
-BASE="https://ftp.gnu.org/gnu/binutils"
-TAR="binutils-$VER.tar.xz"
-for f in "$TAR" "$TAR.sig"; do
-  curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "$BASE/$f" -o "$WORK/$f"
-done
-
-# verify: require GOODSIG, VALIDSIG whose PRIMARY fp equals the pin, and refuse
-# any revoked/expired-key signature
-STATUS="$(gpg --status-fd 1 --verify "$WORK/$TAR.sig" "$WORK/$TAR" 2>/dev/null || true)"
-printf '%s\n' "$STATUS" | grep -q '^\[GNUPG:\] GOODSIG' || { echo "FATAL: not a GOOD signature."; printf '%s\n' "$STATUS"; exit 1; }
-VALID_FPR="$(printf '%s\n' "$STATUS" | awk '/^\[GNUPG:\] VALIDSIG/{print $12; exit}')"
-if [ "$VALID_FPR" != "$FPR" ]; then
-  echo "FATAL: VALIDSIG primary fingerprint $VALID_FPR does not equal pinned $FPR."
-  printf '%s\n' "$STATUS"; exit 1
-fi
-if printf '%s\n' "$STATUS" | grep -qE '^\[GNUPG:\] (REVKEYSIG|EXPKEYSIG|EXPSIG)'; then
-  echo "FATAL: signature made by a revoked or expired key."
-  printf '%s\n' "$STATUS"; exit 1
-fi
-echo "GOOD signature from pinned key over $TAR"
-
-SHA="$(sha256sum "$WORK/$TAR" | cut -d' ' -f1)"
-echo
-echo "verified GNU binutils $VER"
-echo "BINUTILS_SHA256=$SHA"
-echo
-
-if [ "$WRITE" = "1" ]; then
-  for p in "$ARM_PINS" "$RV_PINS"; do
-    [ -f "$p" ] || continue
-    if grep -qE '^BINUTILS_SHA256=' "$p"; then
-      tmp="$(mktemp)"
-      sed "s/^BINUTILS_SHA256=.*/BINUTILS_SHA256=$SHA/" "$p" > "$tmp" && mv "$tmp" "$p"
-      echo "updated $p"
-    fi
-  done
-else
-  echo "(re-run with --write to update both pins.env, or paste the line above.)"
-fi
+# --- no recognized mode matched ------------------------------------------------
+# Reachable when args don't form --verify/--write <fpr> <ver> (e.g. a mistyped
+# fingerprint, a missing flag, or the removed bare-version forms). Fail loud.
+echo "usage:" >&2
+echo "  bash tools/pin-binutils.sh --verify <40-hex-fingerprint> <version>   # read-only" >&2
+echo "  bash tools/pin-binutils.sh --write  <40-hex-fingerprint> <version>   # writes anchor files (unstaged)" >&2
+echo >&2
+echo "note: the fingerprint comes first (paste it), the version last. See tools/keys/README.md." >&2
+exit 2
