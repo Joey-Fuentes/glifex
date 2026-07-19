@@ -1,0 +1,52 @@
+name: wasmer-clang-spike
+# THROWAWAY spike (repo convention: chore/*-spike-*, pushed, never merged).
+# Self-triggers on push to its own spike branch; ci.yml does not run here.
+# Answers the clang/clang pin questions from the real runner, then delete the branch.
+on:
+  push:
+    branches:
+      - 'chore/wasmer-clang-spike-*'
+permissions:
+  contents: read
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install wasmer (same as the vendor step)
+        run: |
+          curl --retry 5 --retry-delay 15 --retry-all-errors https://get.wasmer.io -sSfL | sh
+          echo "$HOME/.wasmer/bin" >> "$GITHUB_PATH"
+      - name: wasmer version
+        run: wasmer --version || true
+      - name: Inspect clang/clang (metadata + versions if listed)
+        run: |
+          echo "=== wasmer package inspect clang/clang ==="
+          wasmer package inspect clang/clang 2>&1 | head -60 || echo "(inspect returned nonzero)"
+      - name: Download clang/clang@0.160000.1 (versioned syntax test)
+        run: |
+          set +e
+          wasmer package download 'clang/clang@0.160000.1' -o /tmp/clang-versioned.webc
+          echo "versioned-download rc=$?"
+          if [ -f /tmp/clang-versioned.webc ]; then ls -la /tmp/clang-versioned.webc; echo "VERSIONED_SHA256=$(sha256sum /tmp/clang-versioned.webc | cut -d' ' -f1)"; fi
+      - name: Download clang/clang (unversioned = current latest)
+        run: |
+          set +e
+          wasmer package download clang/clang -o /tmp/clang-latest.webc
+          echo "unversioned-download rc=$?"
+          if [ -f /tmp/clang-latest.webc ]; then ls -la /tmp/clang-latest.webc; echo "LATEST_SHA256=$(sha256sum /tmp/clang-latest.webc | cut -d' ' -f1)"; fi
+      - name: Verdict
+        run: |
+          if [ -f /tmp/clang-versioned.webc ] && [ -f /tmp/clang-latest.webc ]; then
+            a="$(sha256sum /tmp/clang-versioned.webc | cut -d' ' -f1)"
+            b="$(sha256sum /tmp/clang-latest.webc | cut -d' ' -f1)"
+            echo "versioned   @0.160000.1 sha256 = $a"
+            echo "unversioned latest       sha256 = $b"
+            if [ "$a" = "$b" ]; then echo "VERDICT: @0.160000.1 IS current latest; @version syntax works -> pin version + sha256=$a"
+            else echo "VERDICT: @0.160000.1 differs from latest -> pin version $a (versioned is the deterministic one)"; fi
+          elif [ -f /tmp/clang-latest.webc ]; then
+            echo "VERDICT: @version download did NOT produce a file; only unversioned worked."
+            echo "  -> anchor by sha256 of latest = $(sha256sum /tmp/clang-latest.webc | cut -d' ' -f1)"
+          else
+            echo "VERDICT: neither download produced a file -- see logs above."
+          fi
