@@ -3,7 +3,6 @@ display = "Intel 8080 assembly"
 extension = "s"
 practice_file = "practice.s"
 family = "assembly"
-arch = "i8080"
 scaffold = false           # numeric-only, CPU-core contract; added per-problem
 detect = "customasm --version"
 install_hint = "cargo install customasm  (Rust); browser tier vendors customasm.wasm + first-party 8080 core"
@@ -11,6 +10,6 @@ install_hint = "cargo install customasm  (Rust); browser tier vendors customasm.
 # The core is cycle-exact (T-states), validated against the CP/M diagnostic
 # ROMs incl. the exhaustive 8080EXM (see web/retro/test-roms/8080/README.md);
 # reference clock 2.000 MHz. First track with deterministic time + space metrics.
-test_cmd = "customasm {variant}.s -f binary -o .glifex.bin && node harness.mjs {variant}"
+test_cmd = "node harness.mjs {variant}"
 run_cmd = "customasm {variant}.s -f binary -o .glifex.bin && node harness.mjs {variant}"
 tool_version = "customasm 0.14"
