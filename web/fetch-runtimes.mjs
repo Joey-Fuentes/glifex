@@ -10,7 +10,7 @@
 // lands. Every runtime's LICENSE is fetched alongside (see
 // THIRD_PARTY_NOTICES.md), and VERSIONS.json records exactly what shipped.
 
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,8 +103,7 @@ const RUNTIMES = {
       // straight at php-web.wasm).
       { url: `${PHP_NPM}/es.js`, save: "es.js", required: true },
       { url: `${PHP_NPM}/php-web.wasm`, save: "php-web.wasm", required: true },
-      // Wrapper ships no LICENSE of its own; fall back to upstream php-wasm's.
-      { url: `${PHP_NPM}/LICENSE`, save: "LICENSE", group: "phplic" },
+      // Wrapper ships no LICENSE of its own; use upstream php-wasm's directly.
       { url: `${PHP_GH}/LICENSE`, save: "LICENSE", group: "phplic" },
     ],
   },
@@ -181,7 +180,26 @@ if (process.argv.includes("--verify")) {
   const pins = expected || {};
   const keys = Object.keys(pins).sort();
   if (!keys.length) { console.log("integrity: runtime-hashes.json absent/empty -- nothing to verify (checking OFF)"); process.exit(0); }
-  console.log("== runtime integrity audit (no fetch): " + keys.length + " pinned files, verifying web/vendor ==");
+  // Full inventory: EVERY file under web/vendor is listed, so nothing is silently
+  // unaudited. Files in runtime-hashes.json are hash-verified ("ok"/"MISMATCH");
+  // everything else present (the built runtimes -- c/cpp/rust/go/asm-*/dart/java/
+  // csharp -- and per-lang manifests) is listed as "built" (integrity enforced at
+  // build time from pinned source, not hash-pinned here).
+  const walk = async (d, base = "") => {
+    const out = [];
+    let ents;
+    try { ents = await readdir(d, { withFileTypes: true }); } catch { return out; }
+    for (const e of ents) {
+      const rel = base ? base + "/" + e.name : e.name;
+      if (e.isDirectory()) out.push(...await walk(join(d, e.name), rel));
+      else out.push(rel);
+    }
+    return out;
+  };
+  const allRel = (await walk(VENDOR)).sort();
+  const pinnedSet = new Set(keys);
+  const isMeta = (f) => f === ".vendor-complete" || f.endsWith("manifest.json");
+  console.log("== runtime integrity audit (no fetch): " + allRel.length + " files in web/vendor (" + keys.length + " hash-pinned) ==");
   let vok = 0, vbad = 0, vmiss = 0;
   for (const key of keys) {
     const want = pins[key];
@@ -192,7 +210,22 @@ if (process.argv.includes("--verify")) {
     if (got === want) { console.log("  ok       " + key + "  " + got.slice(0, 12) + "  (" + (buf.length / 1024).toFixed(0) + " KB, matched local cache)"); vok++; }
     else { console.log("  MISMATCH " + key + "  pinned " + want.slice(0, 12) + " got " + got.slice(0, 12)); vbad++; }
   }
-  console.log("integrity: verified " + vok + "/" + keys.length + " pinned files (" + vbad + " mismatch, " + vmiss + " missing)" + ((vbad || vmiss) ? " -- FAILED" : " -- all match"));
+  // Everything present that is NOT hash-pinned here -- list it so the audit is complete.
+  const rest = allRel.filter((f) => !pinnedSet.has(f));
+  const built = rest.filter((f) => !isMeta(f));
+  const meta = rest.filter(isMeta);
+  let nbuilt = 0;
+  if (built.length) {
+    console.log("  -- present, built from pinned source (not hash-pinned in runtime-hashes.json) --");
+    for (const f of built) {
+      let kb = "?";
+      try { kb = ((await stat(join(VENDOR, f))).size / 1024).toFixed(0); } catch {}
+      console.log("  built    " + f + "  (" + kb + " KB)");
+      nbuilt++;
+    }
+  }
+  console.log("integrity: " + vok + "/" + keys.length + " hash-pinned verified (" + vbad + " mismatch, " + vmiss + " missing)" + ((vbad || vmiss) ? " -- FAILED" : " -- all match"));
+  console.log("inventory: " + allRel.length + " files in web/vendor -- " + keys.length + " hash-pinned, " + nbuilt + " built-from-source, " + meta.length + " manifest/marker");
   process.exit((vbad || vmiss) ? 1 : 0);
 }
 if (!RECORD && !expected) {
