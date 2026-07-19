@@ -148,14 +148,17 @@ plus an aggregate `{ results, instructions, spaceBytes, codeBytes }`.
 **runs something in the built artifact**. The step goes in `pages.yml`, `ci.yml`
 **and `export-vendor-bundle.yml`** — `vendor-sync.test.mjs` will force the third.
 
-The cache key hashes `web/fetch-runtimes.mjs`, `tools/**` and the workflow, so it
-**self-bumps**. Adding `tools/<lang>-toolchain/` moves the key on its own, there
-are no `restore-keys`, and a miss is a real miss -- nothing is restored, so no
-step early-exits on `.vendor-complete`.
+The cache key is a content hash of the pinned inputs (`web/fetch-runtimes.mjs`,
+`tools/**`, `web/runtime-hashes.json`, `web/csharp-runtime/**`), so it
+**self-versions**. Adding `tools/<lang>-toolchain/` moves the key on its own,
+there are no `restore-keys`, and a miss is a real miss -- nothing is restored, so
+no step early-exits on `.vendor-complete`.
 
-**Do not bump `vendor-vN`.** If a rebuild ever needs forcing, an input is missing
-from the key: that is a CI bug and the fix is the key, not the counter. See
-Invariant 10 in `docs/architecture.md`.
+Keep the new runtime's pins in its `pins.env` (or the other hashed files above),
+never inline in a workflow -- an inline pin is not in the key and drifts silently.
+If a rebuild ever needs forcing, an input is missing from the key: that is a CI
+bug and the fix is the key, not a counter. See Invariant 10 in
+`docs/architecture.md`.
 
 ### 3g. The Lab — usually nothing
 

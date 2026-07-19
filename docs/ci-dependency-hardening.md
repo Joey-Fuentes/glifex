@@ -5,8 +5,7 @@ track already shipped.**
 
 ## The incident that surfaced it
 
-Bx-10's vendor step bumped the cache key (`vendor-v5` → `v6`), which forced the
-first full re-vendor in a long time. It failed:
+A cache-key change forced the first full re-vendor in a long time. It failed:
 
 ```
 ✗ java: compiler.wasm 415 (REQUIRED)          x4, from https://teavm.org/playground/
@@ -90,16 +89,13 @@ this incident months earlier, without deciding anything about mirroring.
   loaders probe must be vendored by **all three** pipelines (`pages.yml`,
   `ci.yml`, `export-vendor-bundle.yml`). It exists because Bx-10 taught two of
   them about arm64 and silently forgot the third.
-- `tools/arm64-toolchain/pins.env` is the pinning shape worth copying: one file,
-  one place to look, hashed into the vendor cache key. The other runtimes
-  hardcode their pins inline in the workflows, which is worth fixing for
-  readability -- but **not** because the key misses them. **Correction:** an
-  earlier version of this line claimed the key does not see inline pins, and that
-  "remember to bump the cache key" was a footgun everywhere except arm64. Both
-  are false. The key hashes the workflow file itself, so an inline pin change
-  busts it (measured: editing one flips the hash). Every place a pin can live --
-  `web/fetch-runtimes.mjs`, `tools/**`, the workflow -- is hashed, so the key
-  always self-bumps. See Invariant 10 in `docs/architecture.md`.
+- `tools/arm64-toolchain/pins.env` is the pinning shape every runtime uses: one
+  file, one place to look, hashed into the vendor cache key. Every pin lives in a
+  hashed file -- a `pins.env` under `tools/**`, `web/fetch-runtimes.mjs`,
+  `web/runtime-hashes.json`, or `web/csharp-runtime/**` -- and never inline in a
+  workflow, so the key is a content hash of exactly the things that can change a
+  build, and it always self-versions. See Invariant 10 in
+  `docs/architecture.md`.
 - **Updating a GNU/binutils signature is a documented two-command flow**, not an
   ad-hoc paste: `scout-signing-key` discovers and corroborates the signer
   fingerprint out-of-band, then `pin-binutils.sh --write <fpr> <ver>` re-verifies

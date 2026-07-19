@@ -204,18 +204,18 @@ quietly break. If a diff violates one of these, it is wrong even if CI is green.
    its immediate parent, to catch this exact regression before it merges
    again.
 
-10. **The vendor cache self-bumps. A manual bump means CI is broken.** The key
-    hashes `web/fetch-runtimes.mjs`, `tools/**` and the workflow file itself --
-    every place a pin can live -- so any input change busts it by construction.
-    There are no `restore-keys`, so a miss is a real miss: nothing is restored,
-    `.vendor-complete` is absent, and every vendor step runs. Adding a runtime
-    touches `tools/**` and the workflow, so the key moves on its own; changing an
-    inline pin moves it too, because the workflow is hashed. **Never bump
-    `vendor-vN` to force a rebuild.** Wanting to force one is not a requirement,
-    it is a symptom -- it means an input is not in the key, and the fix is the
-    key. "Why do I need to force this?" is the question; the answer is a CI bug.
-    To prove the pipeline works, change a hashed input and watch the miss: that
-    tests the mechanism instead of bypassing it.
+10. **The vendor cache self-versions from its inputs. A manual bump means CI is
+    broken.** Every pin lives in a hashed file -- a `pins.env` under `tools/**`,
+    or `web/fetch-runtimes.mjs` / `web/runtime-hashes.json` /
+    `web/csharp-runtime/**` -- never inline in a workflow. The key is a content
+    hash of exactly those inputs, so changing any pin busts it by construction;
+    there is no salt to turn. There are no `restore-keys`, so a miss is a real
+    miss: nothing is restored, `.vendor-complete` is absent, and every vendor step
+    runs. Wanting to force a rebuild is not a requirement, it is a symptom -- an
+    input is not in the key (or a pin has drifted inline), and the fix is to move
+    it into a hashed file, not to salt the key. To prove the pipeline works,
+    change a hashed input and watch the miss: that tests the mechanism instead of
+    bypassing it.
 
 11. **Signing-key trust anchors are established by a human, not automation.** The
     committed keys in `tools/keys/` (e.g. `binutils-signing.asc`) and their pinned
