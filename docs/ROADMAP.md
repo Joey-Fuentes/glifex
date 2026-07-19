@@ -321,7 +321,8 @@ Live edit-compile-run for every remaining corpus language, in the browser — la
       build from pinned source wherever possible and mirror every remaining
       fetched asset (binutils from ftp.gnu.org, VIXL from gitlab.arm.com, and the
       web-runtime CDNs) into the repo or a release the deploy owns, so vendoring
-      depends on nothing external and reproduces offline.
+      depends on nothing external and reproduces offline. Design, the offline build
+      sequence, and the open questions: `docs/hermetic-reproducible-builds.md`.
 - [x] **Bx-10b. RISC-V RV64GC** -- SHIPPED. Bx-10's continuation. Full record,
       numbers and gotchas: `docs/libriscv-riscv64.md`. Emulator is **libriscv**
       (BSD-3, ~256 files, built for embedding) compiled to **wasm32**; it already
