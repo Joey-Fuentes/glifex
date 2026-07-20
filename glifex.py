@@ -240,7 +240,9 @@ def _run_variant(prob: Path, name: str, spec: dict, variant: str, mode: str) -> 
     if not _arch_ok(spec):
         emu = _emu_tools(spec)
         if emu is None:
-            print(dim(f"  {name}: requires {spec['arch']} (this machine isn't; no qemu-user emulation here) — skipping"))
+            print(
+                dim(f"  {name}: requires {spec['arch']} (this machine isn't; no qemu-user emulation here) — skipping")
+            )
             return Outcome("skip")
     if not _platform_ok(spec):
         print(dim(f"  {name}: not supported on this OS ({', '.join(spec['platforms'])} only) — skipping"))
