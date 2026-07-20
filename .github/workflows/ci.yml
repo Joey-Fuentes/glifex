@@ -165,6 +165,19 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then sudo apt-get update -qq && sudo apt-get install -y wabt; fi
           if [ "$RUNNER_OS" = "macOS" ]; then brew install wabt; fi
           # Windows: wabt not installed — wat skips honestly on that leg
+      - name: Cross gcc + qemu-user (Linux only; emulate the non-native asm arches)
+        if: steps.scope.outputs.matrix_skippable != 'true'
+        shell: bash
+        run: |
+          # qemu-user runs any guest arch on any Linux host, so the x86_64 Linux
+          # leg builds the arm64/riscv64 tracks with the cross gcc and runs them
+          # under qemu-user -- proving a Linux box tests every asm arch regardless
+          # of its own hardware. macOS/Windows: qemu-user is Linux-only, so they
+          # test only their native arch (arm64 on macOS) and skip the rest.
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu qemu-user-static
+          fi
       - name: customasm (retro assembler; pinned to the browser wasm version)
         if: steps.scope.outputs.matrix_skippable != 'true'
         run: cargo install customasm --version 0.14.1 --locked
