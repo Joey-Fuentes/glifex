@@ -1,0 +1,31 @@
+name: zig-behave-spike
+on:
+  push:
+    branches: ['chore/zig-behave-spike-*']
+permissions:
+  contents: read
+jobs:
+  behave:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
+        with: { node-version: "24" }
+      - name: Build vendored zig.wasm
+        run: |
+          mkdir -p "$HOME/zigout"
+          bash tools/zig-toolchain/build-zig-wasm.sh "$HOME/zigout"
+      - name: Unpack std
+        run: |
+          mkdir -p "$HOME/zigout/libtree"
+          tar -xzf "$HOME/zigout/zig.tar.gz" -C "$HOME/zigout/libtree"
+      - name: Run behavioral probes (compile + run + check output)
+        run: |
+          node tools/zig-behave-spike/probe-runner.mjs \
+            "$HOME/zigout/zig.wasm" \
+            "$HOME/zigout/libcompiler_rt.a" \
+            "$HOME/zigout/libtree/lib" \
+            tools/zig-behave-spike/b01 \
+            tools/zig-behave-spike/b02 \
+            "$HOME/zigout/wasi-shim.mjs"

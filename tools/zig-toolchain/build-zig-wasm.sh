@@ -114,16 +114,12 @@ echo "== slice the WASI shim out of the committed rust-worker bundle =="
 # network, no second source of truth, and it is the EXACT shim the browser worker
 # will drive, so verifying against it verifies the real path -- not a wasmtime proxy
 # CI does not even have.
-# rust-worker.js lives at <repo>/web/rust-worker.js. Resolve the repo root via git
-# (unambiguous regardless of how deep the vendor dir sits). An earlier "OUT/../.."
-# gave <repo>/web, doubling the path to web/web/rust-worker.js. Use an explicit
-# if/else: a "git ... || cd ... && pwd" one-liner parses so the trailing pwd runs
-# even on git success, concatenating two paths.
-if REPO_ROOT="$(git -C "$OUT" rev-parse --show-toplevel 2>/dev/null)"; then
-  :
-else
-  REPO_ROOT="$(cd "$OUT/../../.." && pwd)"
-fi
+# rust-worker.js lives at <repo>/web/rust-worker.js. Resolve the repo root from the
+# SCRIPT's own location, not OUT: HERE is <repo>/tools/zig-toolchain (set above), so
+# HERE/../.. is the repo root no matter where OUT points. (OUT-based resolution broke
+# when a caller passed an out-dir outside the repo -- git rev-parse failed and the
+# ../.. fallback landed on $HOME, giving an empty root and //web/rust-worker.js.)
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 RW="$REPO_ROOT/web/rust-worker.js"
 test -f "$RW" || { echo "   FAIL: $RW not found -- cannot slice the shim"; exit 1; }
 node - "$RW" "$OUT/wasi-shim.mjs" <<'NODE_EOF'
