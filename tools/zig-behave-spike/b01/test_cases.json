@@ -1,0 +1,1 @@
+[{"input":{"s":"listen","t":"silent"},"expected":true},{"input":{"s":"abc","t":"abd"},"expected":false}]
