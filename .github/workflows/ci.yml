@@ -547,6 +547,16 @@ jobs:
           node tools/customasm-toolchain/verify-customasm.mjs web/vendor/asm-6502
       - name: Mark vendor complete (cached for future runs)
         run: touch web/vendor/.vendor-complete
+      - name: Vendor Zig toolchain (upstream 0.16.0 + dev-wasm patch, self-hosted to wasm)
+        run: |
+          if [ -f web/vendor/.vendor-complete ]; then echo "vendor cache hit -- skipping"; exit 0; fi
+          mkdir -p web/vendor/zig
+          bash tools/zig-toolchain/build-zig-wasm.sh "$PWD/web/vendor/zig"
+          ls -la web/vendor/zig
+          # build-zig-wasm.sh already drove zig.wasm under the sliced browser shim
+          # and refused unless a computed-140 kata compiled and ran -- a size check
+          # proves bytes, not a working compiler (the arm64/dart/java house rule).
+          test "$(stat -c%s web/vendor/zig/zig.wasm)" -gt 1000000 || { echo "zig.wasm too small"; exit 1; }
       - name: Verify vendored runtime integrity
         run: node web/fetch-runtimes.mjs --verify
       - name: Save vendored runtimes cache
